@@ -1,0 +1,23 @@
+name: bug report
+description: report a reproducible problem with helox terminal
+title: "bug: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: version
+      placeholder: "0.5.0 / windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: steps and result
+      description: what you selected, what happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: diagnostics
+      description: optional error or status output; remove device paths and personal information before posting

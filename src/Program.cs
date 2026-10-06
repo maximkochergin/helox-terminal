@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.4.1";
+    internal const string Version="0.5.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -93,7 +93,7 @@ internal static class Program {
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(Selected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  0  back");
         string choice=Ask("choose");
         if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
         else if(choice=="3" || choice=="4") {
@@ -102,7 +102,8 @@ internal static class Program {
         } else if(choice=="5") AimCommand(new string[]{"aim","install"});
         else if(choice=="6") AimCommand(new string[]{"aim","restore"});
         else if(choice=="7") Measure(new string[]{"measure"});
-        else throw new ArgumentException("choose 1..7 or 0");
+        else if(choice=="8") AimCommand(new string[]{"aim","resume"});
+        else throw new ArgumentException("choose 1..8 or 0");
         Finish();
     }
     private static void PrintAim(AimStatus status) {
@@ -111,6 +112,10 @@ internal static class Program {
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
+        if(words.Length==2 && words[1]=="resume") {
+            AimStatus state=Aim.Set(Selected(),"resume",false);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  saved aim resumed / driver readback verified");PrintAim(state);}return;
+        }
         if(words.Length==2 && words[1]=="status") {AimStatus state=Aim.Read(Selected());if(json) Console.WriteLine(Store.Json.Serialize(state));else PrintAim(state);return;}
         if(words.Length==2 && words[1]=="restore") {Aim.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  aim restored / driver readback verified");return;}
         if(words.Length==2 && (words[1]=="install" || words[1]=="prepare")) {
@@ -126,7 +131,7 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),words[1],Toggle(words[2])!=0);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|prepare|install|restore or aim precision|smooth on|off");
+        throw new ArgumentException("use aim status|prepare|install|restore|resume or aim precision|smooth on|off");
     }
     private static void Finish() {
         if(Console.IsInputRedirected || Console.IsOutputRedirected) return;
@@ -135,7 +140,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim prepare / install / status / restore\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on|off      4 ms output half-life / adds lag");
+        Console.WriteLine("\n  aim prepare / install / status / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on|off      4 ms output half-life / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
@@ -281,10 +286,10 @@ internal static class Program {
         else throw new ArgumentException("use profile save|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > restore original restores windows settings.\n  aim resets on reboot; enable again when needed.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > restore original restores windows settings.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
-        if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest"))
+        if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest" || words[0]=="check"))
             throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
             case "aim":AimCommand(words);return;
@@ -327,6 +332,7 @@ internal static class Program {
             case "help":if(words.Length!=1) break;Help();return;
             case "home":case "clear":if(words.Length!=1 || json) break;Home();return;
             case "selftest":if(words.Length!=1) break;SelfTest.Run();return;
+            case "check":if(words.Length!=1) break;SelfTest.Run(false);return;
         }throw new ArgumentException("unknown choice / type home or help");
     }
 }

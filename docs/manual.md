@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.4.1
+  helox / 0.5.0
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -33,7 +33,7 @@ open `8` > `5 install driver`, approve windows uac, close the official installer
 
 settings target the selected hardware id. identical receivers with the same id share the override. existing defaults, profiles and other device overrides are retained; a profile used as the default or shared by another device is cloned before editing. activation is verified by reading the driver after its one-second write delay; no fake success when the backend is missing. failures report whether rollback succeeded. `6 undo aim` restores the complete driver snapshot from before the first helox aim change, including other devices. windows settings have their own restore in `5`.
 
-driver settings reset on reboot: enable the desired features again. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
+driver settings reset on reboot: use `8 resume saved` in aim tools or `aim resume` to reapply the last choices for this mouse. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
 
 the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. uninstall using `%localappdata%\helox-terminal\rawaccel-1.7.1\RawAccel\uninstaller.exe` as administrator, then restart. [mechanics, research and verification](aim.md).
 
@@ -74,6 +74,8 @@ aim status
 aim precision on|off
 aim smooth on|off
 aim restore
+aim resume
+check
 set acceleration on|off
 set speed 1..20
 set wheel 0..100|page

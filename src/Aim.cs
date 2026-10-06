@@ -25,6 +25,21 @@ internal static class Aim {
     private const string Input="Time in ms after which an input is weighted at half its original value.";
     private const string Scale="Time in ms after which scale is weighted at half its original value.";
     private const string X="Whole or horizontal accel parameters";
+    internal static Dictionary<string,object> Saved(string path) {
+        if(!File.Exists(path)) return new Dictionary<string,object>();
+        try {
+            Dictionary<string,object> presets=Parse(File.ReadAllText(path));
+            if(presets==null) throw new ArgumentException();
+            foreach(KeyValuePair<string,object> entry in presets) {
+                Dictionary<string,object> preset=Map(entry.Value);object precision,smooth;
+                if(preset==null || !preset.TryGetValue("precision",out precision) || !(precision is bool) || !preset.TryGetValue("smooth",out smooth) || !(smooth is bool)) throw new ArgumentException();
+            }
+            return presets;
+        }catch(Exception e) {
+            if(e is IOException || e is UnauthorizedAccessException) throw;
+            throw new ArgumentException("invalid saved aim preset / aim restore to reset it");
+        }
+    }
     private static void Load() {
         if(bridge!=null) return;
         if(!Environment.Is64BitProcess) throw new InvalidOperationException("aim tools require 64-bit windows");
@@ -144,11 +159,20 @@ internal static class Aim {
                 Dictionary<string,object> before=Active();string id=Id(device);AimStatus status=Describe(before,id);
                 bool precision=status.Profile!=null && status.Profile.StartsWith("helox-") && status.Mode=="natural";
                 bool smooth=status.Profile!=null && status.Profile.StartsWith("helox-") && status.OutputHalfLifeMs>0;
-                if(feature=="precision") precision=on;else if(feature=="smooth") smooth=on;else throw new ArgumentException("use aim precision|smooth on|off");
+                string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
+                if(feature=="resume") {
+                    object saved;if(!presets.TryGetValue(id,out saved)) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");
+                    precision=(bool)Map(saved)["precision"];smooth=(bool)Map(saved)["smooth"];
+                } else if(feature=="precision") precision=on;else if(feature=="smooth") smooth=on;else throw new ArgumentException("use aim resume or aim precision|smooth on|off");
                 Dictionary<string,object> after=Configure(before,Defaults(),id,precision,smooth);Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
-                return Describe(Transaction(before,after,Write),id);
+                presets[id]=new Dictionary<string,object>{{"precision",precision},{"smooth",smooth}};
+                return Describe(Transaction(before,after,delegate(Dictionary<string,object> requested) {
+                    Dictionary<string,object> readback=Write(requested);
+                    if(Object.ReferenceEquals(requested,after)) Store.Save(preferences,presets);
+                    return readback;
+                }),id);
             }finally {if(held) mutex.ReleaseMutex();}
         }
     }
@@ -161,7 +185,11 @@ internal static class Aim {
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
                 Dictionary<string,object> before=Active();
                 Dictionary<string,object> after=Parse(File.ReadAllText(path));Validate(after);
-                Transaction(before,after,Write);
+                Transaction(before,after,delegate(Dictionary<string,object> requested) {
+                    Dictionary<string,object> readback=Write(requested);
+                    if(Object.ReferenceEquals(requested,after)) Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());
+                    return readback;
+                });
             }finally {if(held) mutex.ReleaseMutex();}
         }
     }

@@ -16,6 +16,11 @@ jobs:
       - name: compile
         shell: powershell
         run: .\build.ps1
+      - name: regression checks
+        shell: powershell
+        run: |
+          .\bin\helox.exe check
+          if ($LASTEXITCODE -ne 0) { throw 'regression checks failed' }
       - name: package
         shell: powershell
         run: .\package.ps1

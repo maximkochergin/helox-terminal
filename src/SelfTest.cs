@@ -5,9 +5,9 @@ using System.IO;
 namespace Helox {
 internal static class SelfTest {
     private static void Expect(bool ok,string name) {if(!ok) throw new Exception("selftest failed: "+name);}
-    internal static void Run() {
+    internal static void Run(bool native=true) {
         AimRegression();
-        Aim.TestEngine();
+        if(native) Aim.TestEngine();
         List<Sample> samples=new List<Sample>();
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
         RateResult rate=Analysis.Rate(samples); Expect(Math.Abs(rate.ObservedHz-1000)<.01,"1000 hz analysis");
@@ -45,6 +45,7 @@ internal static class SelfTest {
         foreach(string reserved in new string[]{"con","prn","aux","nul","com1","lpt9"}) {
             rejected=false;try {Store.Profile(reserved);}catch(ArgumentException) {rejected=true;}Expect(rejected,"reserved windows profile name rejected");
         }
+        if(!native) {Console.WriteLine("  passed / analysis, aim recovery and profile validation / no settings changed");return;}
         Settings before=Settings.Read();
         Settings clone=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));Expect(before.Same(clone),"profile roundtrip");
         string tempDir=Path.Combine(Path.GetTempPath(),"helox-test-"+Guid.NewGuid().ToString("n"));
@@ -88,6 +89,18 @@ internal static class SelfTest {
         Console.WriteLine("  passed / analysis, profiles, native settings readback, restore, raw input registration\n  physical mouse movement measurements require a manual pass");
     }
     private static void AimRegression() {
+        string presetPath=Path.Combine(Path.GetTempPath(),"helox-preset-test-"+Guid.NewGuid().ToString("n")+".json");
+        try {
+            Expect(Aim.Saved(presetPath).Count==0,"missing aim presets are empty");
+            File.WriteAllText(presetPath,"{\"mouse\":{\"precision\":true,\"smooth\":false}}");
+            Dictionary<string,object> saved=Aim.Saved(presetPath);
+            Expect((bool)Aim.Map(saved["mouse"])["precision"] && !(bool)Aim.Map(saved["mouse"])["smooth"],"saved aim toggles roundtrip");
+            foreach(string invalid in new string[]{"null","{\"mouse\":null}","{\"mouse\":{\"precision\":true}}","{\"mouse\":{\"precision\":\"true\",\"smooth\":false}}"}) {
+                File.WriteAllText(presetPath,invalid);bool rejected=false;
+                try {Aim.Saved(presetPath);}catch(ArgumentException) {rejected=true;}
+                Expect(rejected,"incomplete or mistyped saved aim preset rejected");
+            }
+        }finally {if(File.Exists(presetPath)) File.Delete(presetPath);}
         Expect(Aim.SameValue(Aim.Parse("{\"a\":1,\"b\":[2,3]}"),Aim.Parse("{\"b\":[2.0,3],\"a\":1.0}")),"aim readback ignores key order and numeric representation");
         Expect(!Aim.SameValue(Aim.Parse("{\"a\":1}"),Aim.Parse("{\"a\":2}")),"aim readback detects changed values");
         Expect(!Aim.SameValue(Aim.Parse("{\"a\":[1,2]}"),Aim.Parse("{\"a\":[2,1]}")),"aim readback preserves array order");

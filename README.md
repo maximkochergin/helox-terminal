@@ -47,8 +47,9 @@ open **`8 → 5 install driver`**, approve windows uac, close the installer with
 | **`3 smooth on`** | reduces movement magnitude fluctuations with a 4 ms half-life; preserves direction and adds input delay. |
 | **`2 / 4`** | turns the corresponding feature off. |
 | **`6 undo aim`** | restores the complete driver snapshot from before the first aim change. |
+| **`8 resume saved`** | reapplies this mouse's saved precision and smoothing choices after reboot. |
 
-aim settings reset on reboot. enable them again when needed. basic controls need no administrator rights; aim installation needs 64-bit windows, .net 4.7.2+, the visual c++ x64 runtime and one restart. the installer checks the official package hash and driver signature.
+aim settings reset on reboot. use `8 resume saved` in aim tools or `aim resume` to reapply your last choices. basic controls need no administrator rights; aim installation needs 64-bit windows, .net 4.7.2+, the visual c++ x64 runtime and one restart. the installer checks the official package hash and driver signature.
 
 windows acceleration in menu `1` is separate: raw input games bypass it. the aim driver transforms input before it reaches those games. presets are starting points; [read the mechanics and verification](docs/aim.md).
 
@@ -76,6 +77,8 @@ launch.bat aim status --json
 launch.bat aim precision on
 launch.bat aim smooth off
 launch.bat aim restore
+launch.bat aim resume
+launch.bat check
 ```
 
 `help` lists all commands. exit code `0` means success; `1` means failure. profiles and backups live in `%localappdata%\helox-terminal`. exported diagnostics contain device paths; review them before sharing.

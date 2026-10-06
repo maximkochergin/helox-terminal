@@ -2,6 +2,8 @@
 
 ## automated on windows
 
+`launch.bat check` runs analysis, preset validation and recovery checks without native setting changes or an installed aim backend. github actions runs this command on every push and pull request. `selftest` additionally tests native windows preferences and the available aim engine on an interactive desktop.
+
 - source compiles using the installed .net framework c# compiler.
 - native speed, acceleration, scroll lines, double-click timing and swapped-button settings accept changes and read back correctly.
 - all pre-test settings are restored and read back after those mutations.
@@ -33,6 +35,8 @@
 - input speed caps are recognized as count transforms; windows reserved profile filenames are rejected.
 - installer preparation recovers a corrupt cached zip, removes temporary downloads and rejects a parallel setup before extraction; no kernel installation is required for these checks.
 - preparation also succeeds while the cli's native bridge and json assembly are loaded: verified identical files are retained instead of overwriting locked dlls.
+- saved aim choices round-trip; null, incomplete and mistyped presets are rejected.
+- analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
 
 ## manual pass
 

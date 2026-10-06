@@ -21,3 +21,9 @@ live application requires installation and restart. the current machine had no i
 for a physical comparison, run `3` while continuously moving in circles, enable only precision or smooth, repeat the same movement and test tracking/flick tasks in kovaaks. compare p95/p99, long gaps and feel. delivery timing does not measure smoothing quality or end-to-end latency. expect radio gaps to need receiver/surface/power troubleshooting rather than a stronger ema.
 
 the complete original driver snapshot is restored by `aim restore`; it also restores its original device overrides. the snapshot is retained across sessions. no automatic startup application or reboot is performed. driver transforms cannot recover missing reports, and output smoothing does not remove directional hand tremor.
+
+## saved presets
+
+after a verified precision/smooth change, helox atomically stores both choices by hardware id in `aim-presets.json`. `aim resume` or menu `8 > 8 resume saved` applies these choices in one driver update, preserving other devices. it requires the driver to be installed and active, and never runs automatically when opening the app. existing users need one successful aim change in 0.5.0 to create a saved preset.
+
+malformed preset files block changes before activation. a persistence failure triggers driver rollback. `aim restore` clears saved helox choices after restoring the original driver snapshot; a later resume cannot silently reinstate an undone preset.

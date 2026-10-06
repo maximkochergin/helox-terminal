@@ -3,6 +3,11 @@ $ErrorActionPreference = 'Stop'
 $executable = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\helox.exe'
 & $executable selftest
 if ($LASTEXITCODE -ne 0) { throw 'selftest failed' }
+$beforeCheck = & $executable status --json | ConvertFrom-Json
+& $executable check
+if ($LASTEXITCODE -ne 0) { throw 'analysis checks failed' }
+$afterCheck = & $executable status --json | ConvertFrom-Json
+if (($beforeCheck.windows | ConvertTo-Json -Compress) -ne ($afterCheck.windows | ConvertTo-Json -Compress)) { throw 'analysis checks changed windows settings' }
 $status = & $executable status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status contract failed' }
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
@@ -35,6 +40,8 @@ if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validati
 if ($aimStatus.State -ne 'ready') {
     $missingDriver = & $executable aim precision on --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$missingDriver.error -or $missingDriver.applied) { throw 'absent backend must not claim applied' }
+    $missingResume = & $executable aim resume --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$missingResume.error -or $missingResume.applied) { throw 'resume requires an active driver' }
 }
 $aimMenu = "8`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
