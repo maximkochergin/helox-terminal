@@ -77,4 +77,8 @@ tests temporarily change native settings and always restore them. regressions co
 
 [hardware findings](docs/hardware.md) / [verification](docs/verification.md) / [windows raw input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
 
-inspired by [wallhack terminal](https://terminal.wallhack.com/); independent of trust and wallhack. mit license.
+inspired by [wallhack terminal](https://terminal.wallhack.com/); independent of trust and wallhack.
+
+## license
+
+mit.
