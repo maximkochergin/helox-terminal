@@ -45,6 +45,7 @@ if ($PrepareOnly) { Write-Host 'prepared / driver not installed'; exit 0 }
 $installer = Join-Path $backend 'installer.exe'
 # The official installer requires UAC and a final keypress; its window is intentional.
 $process = Start-Process -FilePath $installer -WorkingDirectory $backend -Verb RunAs -PassThru -Wait
+if ($process.ExitCode -ne 0) { throw 'official installer failed; check runtime requirements and retry' }
 $installedDriver = Join-Path $env:WINDIR 'System32\drivers\rawaccel.sys'
 $filters = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96f-e325-11ce-bfc1-08002be10318}' -Name UpperFilters).UpperFilters
 if (!(Test-Path -LiteralPath $installedDriver) -or !(Get-Service rawaccel -ErrorAction SilentlyContinue) -or $filters -notcontains 'rawaccel') { throw 'installation incomplete' }

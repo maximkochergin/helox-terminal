@@ -37,6 +37,8 @@
 - preparation also succeeds while the cli's native bridge and json assembly are loaded: verified identical files are retained instead of overwriting locked dlls.
 - saved aim choices round-trip; null, incomplete and mistyped presets are rejected.
 - analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
+- malformed driver snapshots are rejected before loading the bridge: nonfinite/string numbers, overlong or nul-containing names, duplicate profiles/device ids, missing profile references, invalid clamps/integers and lookup float overflow.
+- driver presence considers its live control endpoint as well as the service registry; inaccessible endpoints fail closed rather than enabling dpi estimation.
 
 ## manual pass
 

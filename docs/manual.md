@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.5.0
+  helox / 0.5.1
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on

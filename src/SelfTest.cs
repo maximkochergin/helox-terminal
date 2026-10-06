@@ -6,6 +6,7 @@ namespace Helox {
 internal static class SelfTest {
     private static void Expect(bool ok,string name) {if(!ok) throw new Exception("selftest failed: "+name);}
     internal static void Run(bool native=true) {
+        ConfigGuardRegression();
         AimRegression();
         if(native) Aim.TestEngine();
         List<Sample> samples=new List<Sample>();
@@ -88,7 +89,36 @@ internal static class SelfTest {
         }
         Console.WriteLine("  passed / analysis, profiles, native settings readback, restore, raw input registration\n  physical mouse movement measurements require a manual pass");
     }
+    private static void ConfigGuardRegression() {
+        string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");
+        string template=File.ReadAllText(path);AimConfigGuard.Check(Aim.Parse(template));
+        List<Action<Dictionary<string,object>>> bad=new List<Action<Dictionary<string,object>>> {
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Output DPI"]="NaN";},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Output DPI"]=Double.NaN;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Degrees of rotation"]=Double.PositiveInfinity;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["name"]=new string('x',256);},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["name"]="default\0hidden";},
+            delegate(Dictionary<string,object> cfg) {object profile=Aim.Items(cfg["profiles"])[0];cfg["profiles"]=new object[]{profile,profile};},
+            delegate(Dictionary<string,object> cfg) {cfg["profiles"]=new object[0];},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["disable"]="false";},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["minimumTime"]=0.0;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["Polling rate Hz (keep at 0 for automatic adjustment)"]=125.5;},
+            delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id",new string('x',200)},{"name","mouse"},{"profile","default"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev};},
+            delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id","HID\\MOUSE"},{"name","mouse"},{"profile","missing"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev};},
+            delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id","HID\\MOUSE"},{"name","mouse"},{"profile","default"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev,dev};},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"])["data"]=new object[]{1e100,1.0};}
+        };
+        foreach(Action<Dictionary<string,object>> corrupt in bad) {
+            Dictionary<string,object> cfg=Aim.Parse(template);corrupt(cfg);bool rejected=false;
+            // Validate must reject before it attempts to load any native backend, also on hosted ci.
+            try {Aim.Validate(cfg);}catch(ArgumentException) {rejected=true;}
+            Expect(rejected,"unsafe driver configuration rejected before native conversion");
+        }
+    }
     private static void AimRegression() {
+        Expect(Aim.EndpointMayExist(true,0),"loaded driver remains present without a service record");
+        Expect(Aim.EndpointMayExist(false,5),"inaccessible driver is not treated as absent");
+        Expect(!Aim.EndpointMayExist(false,2) && !Aim.EndpointMayExist(false,3),"only missing driver paths prove absence");
         string presetPath=Path.Combine(Path.GetTempPath(),"helox-preset-test-"+Guid.NewGuid().ToString("n")+".json");
         try {
             Expect(Aim.Saved(presetPath).Count==0,"missing aim presets are empty");

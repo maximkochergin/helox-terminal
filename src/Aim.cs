@@ -62,6 +62,7 @@ internal static class Aim {
         return Parse(Text(Call(null,"DriverConfig","GetActive")));
     }
     internal static object Validate(Dictionary<string,object> cfg) {
+        AimConfigGuard.Check(cfg);
         object result=Call(null,"DriverConfig","Convert",Store.Json.Serialize(cfg));
         string error=(string)result.GetType().GetProperty("Item2").GetValue(result,null);
         if(error!=null) throw new ArgumentException("invalid aim settings / "+error);
@@ -85,13 +86,24 @@ internal static class Aim {
         return null;
     }
     internal static AimStatus Read(Device device) {
-        bool installed;
-        using(Microsoft.Win32.RegistryKey key=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\rawaccel")) installed=key!=null;
+        bool installed=DriverPresent();
         if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) return new AimStatus {State=installed ? "unavailable" : "not installed",InputTransformed=installed ? (bool?)null : false,Note="8 aim tools / install backend"};
         try {
             return Describe(Active(),Id(device));
         }catch(Exception e) {return new AimStatus {State="unavailable",InputTransformed=installed ? (bool?)null : false,Note=e.Message.ToLowerInvariant()+" / install or restart if pending"};}
     }
+    private static bool DriverPresent() {
+        try {
+            using(Microsoft.Win32.RegistryKey key=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\rawaccel")) if(key!=null) return true;
+            // A driver may remain loaded after its service is removed, until the next restart.
+            using(Microsoft.Win32.SafeHandles.SafeFileHandle handle=Native.CreateFile(@"\\.\rawaccel",0,0,IntPtr.Zero,3,0,IntPtr.Zero)) {
+                if(!handle.IsInvalid) return true;
+                int error=System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                return EndpointMayExist(false,error);
+            }
+        }catch {return true;} // An unreadable state cannot be treated as an unfiltered mouse.
+    }
+    internal static bool EndpointMayExist(bool opened,int error) {return opened || (error!=2 && error!=3);}
     internal static AimStatus Describe(Dictionary<string,object> cfg,string id) {
             Dictionary<string,object> entry=DeviceEntry(cfg,id);
             string name=entry==null || String.IsNullOrEmpty((string)entry["profile"]) ? (string)Map(Items(cfg["profiles"])[0])["name"] : (string)entry["profile"];
