@@ -109,4 +109,4 @@ see [hardware findings](docs/hardware.md) and [manual verification](docs/verific
 
 ## license
 
-mit. third-party brands and the wallhack interface are not bundled.
+mit.
