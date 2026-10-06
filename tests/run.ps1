@@ -17,4 +17,10 @@ $navigation = "1`n0`n6`n3`nhome`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($navigation -join "`n") -notmatch 'game acceleration\?') { throw 'menu navigation failed' }
 $invalidInput = "2`nwrong`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($invalidInput -join "`n") -notmatch 'enter a valid number') { throw 'input recovery failed' }
+$cancel = "2`n`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or @($cancel | Select-String '1  acceleration').Count -ne 2) { throw 'cancel must redraw home menu' }
+$unsupportedJson = & $executable faq --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 1 -or !$unsupportedJson.error) { throw 'unsupported json command must return a json error' }
+$caseInsensitive = & $executable PROFILE LIST --JSON | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'command casing must be consistent' }
 Write-Host 'passed / command status contract and validation'

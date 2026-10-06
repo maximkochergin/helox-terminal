@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using System.Security.Principal;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 namespace Helox {
@@ -55,12 +58,26 @@ internal static class Store {
         string temp=path+"."+Guid.NewGuid().ToString("n")+".tmp";
         try {
             File.WriteAllText(temp,Json.Serialize(value));
-            if(File.Exists(path)) File.Replace(temp,path,null);else File.Move(temp,path);
+            try {File.Move(temp,path);}
+            catch(IOException) {if(!File.Exists(path)) throw;File.Replace(temp,path,null);}
         }finally {if(File.Exists(temp)) File.Delete(temp);}
     }
     internal static T Load<T>(string path) {
         string text=File.ReadAllText(path);
-        try {return Json.Deserialize<T>(text);}catch(ArgumentException) {throw new ArgumentException("invalid settings file");}
+        try {
+            if(typeof(T)==typeof(Settings)) {
+                Dictionary<string,object> fields=Json.Deserialize<Dictionary<string,object>>(text);
+                if(fields==null) throw new ArgumentException();
+                foreach(string key in new string[]{"Speed","Threshold1","Threshold2","Acceleration","WheelLines","DoubleClickMs","SwapButtons"}) {
+                    object value;
+                    if(!fields.TryGetValue(key,out value) || !(value is int)) throw new ArgumentException();
+                }
+            }
+            T result=Json.Deserialize<T>(text);
+            Settings settings=result as Settings;
+            if(settings!=null) settings.Validate();
+            return result;
+        }catch(ArgumentException) {throw new ArgumentException("invalid or incomplete settings file");}
     }
     internal static string Profile(string name) {
         if(!System.Text.RegularExpressions.Regex.IsMatch(name,@"^[a-z0-9][a-z0-9_-]{0,31}$")) throw new ArgumentException("profile name: 1..32 lowercase letters, numbers, underscores or hyphens");
@@ -69,6 +86,30 @@ internal static class Store {
     internal static void Backup() {
         string path=Path.Combine(Root,"original.json");
         if(!File.Exists(path)) Save(path,Settings.Read());
+        else {
+            Settings original=Load<Settings>(path);
+            if(original==null) throw new ArgumentException("invalid backup file / settings unchanged");
+        }
+    }
+    internal static void Apply(Settings settings,bool backup) {
+        Locked(delegate {if(backup) Backup();settings.Apply();});
+    }
+    internal static void Update(Action<Settings> edit) {
+        Locked(delegate {
+            Settings current=Settings.Read();edit(current);current.Validate();Backup();current.Apply();
+        });
+    }
+    private static void Locked(Action work) {
+        // One user's cli instances must not interleave backup, write and rollback.
+        string name="Local\\helox-settings-"+WindowsIdentity.GetCurrent().User.Value;
+        using(Mutex gate=new Mutex(false,name)) {
+            bool acquired=false;
+            try {
+                try {acquired=gate.WaitOne(5000);}catch(AbandonedMutexException) {acquired=true;}
+                if(!acquired) throw new IOException("settings busy / try again");
+                work();
+            }finally {if(acquired) gate.ReleaseMutex();}
+        }
     }
 }
 }

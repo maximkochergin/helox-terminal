@@ -17,6 +17,9 @@
 - calibration timeout rejects incomplete captures; comma/dot distances both parse correctly.
 - numeric menu navigation, cancellation, invalid number recovery and a compact home screen pass redirected-input checks.
 - negative wheel values are rejected unless the explicit `page` keyword is used.
+- incomplete profiles and noninteger setting fields are rejected before native writes; atomic overwrite leaves no temporary files.
+- short event bursts and invalid timestamps cannot produce a saved frequency estimate; off-axis zigzag strokes are rejected.
+- cancelled numeric prompts redraw the main menu; unsupported json commands return a json error, and command casing is handled consistently.
 
 ## manual pass
 

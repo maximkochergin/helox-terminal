@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.2.0
+  helox / 0.2.1
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -39,6 +39,8 @@ hardware dpi/polling writes, current sensor dpi, configured polling, battery and
 `4` asks for a measured distance in cm. mark that distance on the pad, place the mouse at the first mark, press enter, move once straight to the second mark, then press enter. do not lift or return. comma and dot decimal separators work. unfinished captures time out without saving. repeat to compare estimates.
 
 `5` saves/loads windows profiles or restores the original snapshot. data stays in `%localappdata%\helox-terminal`. history is labeled as history, never current hardware values. there is no telemetry.
+
+profiles must contain a complete, valid settings snapshot. a damaged original backup blocks new changes so recovery is not silently lost. simultaneous cli instances serialize settings changes and read current values after acquiring the lock.
 
 ## advanced commands
 
@@ -73,12 +75,10 @@ powershell.exe -noprofile -executionpolicy bypass -file .\build.ps1
 powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
-tests temporarily change native settings and always restore them. regressions cover acceleration preservation, queued input timing, calibration timeout, decimal parsing, menu navigation and input recovery. physical motion/ruler measurements still need manual verification.
+tests temporarily change native settings and always restore them. regressions cover acceleration preservation, queued input timing, calibration timeout, decimal parsing, menu navigation, profile validation and input recovery. physical motion/ruler measurements still need manual verification.
 
 [hardware findings](docs/hardware.md) / [verification](docs/verification.md) / [windows raw input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
 
-inspired by [wallhack terminal](https://terminal.wallhack.com/); independent of trust and wallhack.
-
 ## license
 
-mit.
+released under the [mit license](LICENSE). you may use, modify and distribute this software, including for commercial projects, provided you retain the copyright notice and license text. the software is provided as is, without warranty. see [LICENSE](LICENSE) for the full terms.

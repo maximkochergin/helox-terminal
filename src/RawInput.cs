@@ -82,13 +82,17 @@ public static class Analysis {
     }
     public static RateResult Rate(List<Sample> samples) {
         List<double> times=new List<double>(); int gaps=0; double total=0;
+        foreach(Sample sample in samples)
+            if(sample==null || double.IsNaN(sample.Ms) || double.IsInfinity(sample.Ms))
+                throw new InvalidOperationException("invalid capture timestamps / repeat test");
         for(int i=1;i<samples.Count;i++) {
             double delta=samples[i].Ms-samples[i-1].Ms;
             if(delta>50) {gaps++;continue;}
-            if(delta<=0) continue;
+            if(delta<0) throw new InvalidOperationException("capture timestamps out of order / repeat test");
+            if(delta==0) continue;
             times.Add(delta); total+=delta;
         }
-        if(times.Count<100) throw new InvalidOperationException("not enough motion reports; move continuously and retry");
+        if(times.Count<100 || total<250) throw new InvalidOperationException("not enough sustained motion / repeat test");
         times.Sort(); double median=Percentile(times,.5);
         double medianHz=1000/median, activeHz=1000*times.Count/total;
         return new RateResult { Reports=samples.Count, Intervals=times.Count, IdleGaps=gaps, MedianIntervalMs=median,
@@ -103,7 +107,8 @@ public static class Analysis {
         long dominant=Math.Max(Math.Abs(x),Math.Abs(y)), transverse=Math.Min(Math.Abs(x),Math.Abs(y));
         long path=Math.Abs(x)>=Math.Abs(y) ? pathX : pathY;
         if(dominant<100) throw new InvalidOperationException("not enough motion; calibration was not saved");
-        if(transverse>dominant*.2 || path>dominant*1.15) throw new InvalidOperationException("use one straight stroke without returning or lifting; calibration was not saved");
+        long offAxis=Math.Abs(x)>=Math.Abs(y) ? pathY : pathX;
+        if(transverse>dominant*.2 || offAxis>path*.25 || path>dominant*1.15) throw new InvalidOperationException("use one straight stroke without returning or lifting; calibration was not saved");
         return new DpiResult { EstimatedDpi=dominant*2.54/cm, DistanceCm=cm, Counts=dominant,
             Source="distance calibration estimate; not hardware readback", MeasuredUtc=DateTime.UtcNow.ToString("o") };
     }

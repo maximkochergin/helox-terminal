@@ -5,14 +5,16 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.2.0";
+    internal const string Version="0.2.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
         try {
             if(args.Length>0) {
-                List<string> words=new List<string>(args);
+                List<string> words=new List<string>();
+                foreach(string arg in args) words.Add(arg.ToLowerInvariant());
                 json=words.Remove("--json");
+                if(words.Contains("--json")) throw new ArgumentException("use --json once");
                 if(words.Count==0) throw new ArgumentException("choose a command");
                 Run(words.ToArray());return 0;
             }
@@ -23,11 +25,12 @@ internal static class Program {
                 string[] words=line.Trim().ToLowerInvariant().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
                 if(words.Length==0) continue;
                 if(words[0]=="exit" || words[0]=="quit" || (words.Length==1 && words[0]=="0")) break;
+                bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='6';
                 try {
-                    if(words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='6') Menu(words[0]);
+                    if(menuChoice) Menu(words[0]);
                     else Run(words);
-                } catch(OperationCanceledException) {Console.WriteLine("  cancelled");}
-                catch(Exception e) {Console.WriteLine("  "+Error(e));}
+                } catch(OperationCanceledException) {if(menuChoice) Home();Console.WriteLine("  cancelled");}
+                catch(Exception e) {if(menuChoice) Home();Console.WriteLine("  "+Error(e));}
             }
             return 0;
         } catch(Exception e) {
@@ -129,7 +132,10 @@ internal static class Program {
     private static int Toggle(string value) {if(value=="on") return 1;if(value=="off") return 0;throw new ArgumentException("use on or off");}
     private static void Apply(Settings s) {
         if(s==null) throw new ArgumentException("empty settings file");
-        s.Validate();Store.Backup();s.Apply();
+        s.Validate();Store.Apply(s,true);
+        Applied();
+    }
+    private static void Applied() {
         if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=Settings.Read()}));else Console.WriteLine("  applied / verified");
     }
     private static void Measure(string[] words) {
@@ -170,6 +176,8 @@ internal static class Program {
         Console.WriteLine("\n  game acceleration?\n  windows accel does not affect raw input games. game-wide accel\n  needs a separate input driver; helox does not install one.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  test hz measures delivered input; dpi uses a ruler estimate.\n\n  undo settings?\n  profiles > restore original. profiles store windows settings.\n\n  receiver detected but no input?\n  receiver presence does not confirm mouse power. check the switch.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
+        if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest"))
+            throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
             case "status":if(words.Length!=1) break;Status();return;
             case "devices":if(words.Length!=1) break;Devices();return;
@@ -178,9 +186,10 @@ internal static class Program {
                 if(index<0 || index>=devices.Count) throw new ArgumentException("mouse number out of range");
                 selectedPath=devices[index].Path;
                 if(json) Console.WriteLine(Store.Json.Serialize(new {selected=devices[index]}));else Console.WriteLine("  selected / "+index);return;
-            case "setup":if(words.Length!=1) break;Settings setup=Settings.Read();setup.Setup();Apply(setup);return;
+            case "setup":if(words.Length!=1) break;Store.Update(delegate(Settings current) {current.Setup();});Applied();return;
             case "set":
-                if(words.Length!=3) break;Settings s=Settings.Read();
+                if(words.Length!=3) break;
+                Store.Update(delegate(Settings s) {
                 switch(words[1]) {
                     case "speed":s.Speed=Integer(words[2]);if(s.Speed<1 || s.Speed>20) throw new ArgumentException("speed: 1..20");break;
                     case "acceleration":s.SetAcceleration(Toggle(words[2])!=0);break;
@@ -188,14 +197,14 @@ internal static class Program {
                     case "doubleclick":s.DoubleClickMs=Integer(words[2]);if(s.DoubleClickMs<200 || s.DoubleClickMs>900) throw new ArgumentException("doubleclick: 200..900 ms");break;
                     case "swap":s.SwapButtons=Toggle(words[2]);break;
                     default:throw new ArgumentException("unknown setting / use help");
-                }Apply(s);return;
+                }});Applied();return;
             case "measure":Measure(words);return;
             case "calibrate":Calibrate(words);return;
             case "profile":Profile(words);return;
             case "restore":
                 if(words.Length!=1) break;string path=Path.Combine(Store.Root,"original.json");
                 if(!File.Exists(path)) throw new InvalidOperationException("nothing to restore yet");
-                Settings original=Store.Load<Settings>(path);if(original==null) throw new ArgumentException("empty backup file");original.Apply();
+                Settings original=Store.Load<Settings>(path);if(original==null) throw new ArgumentException("empty backup file");Store.Apply(original,false);
                 if(json) Console.WriteLine(Store.Json.Serialize(new {restored=true,readback=Settings.Read()}));else Console.WriteLine("  restored / verified");return;
             case "faq":if(words.Length!=1) break;Faq();return;
             case "probe":
