@@ -6,7 +6,7 @@ using the official 1.7.1 bridge without activating the driver, conversion accept
 
 helox now checks the managed configuration before conversion: mandatory types, finite numbers, utf-16 name/id limits, embedded nul, unique profiles and device ids, valid references, time clamps and integer fields. lookup values must fit the native float representation. malformed data never reaches bridge conversion or activation. the official validator still checks its mathematical constraints afterward.
 
-fourteen malformed fixtures run in `check` and github actions. the valid fixture is generated from `DriverConfig.GetDefault().ToJSON()` in the official release; upstream is mit licensed. official native engine tests confirm compatibility with valid helox presets.
+sixteen malformed fixtures run in `check` and github actions. the valid fixture is generated from `DriverConfig.GetDefault().ToJSON()` in the official release; upstream is mit licensed. official native engine tests confirm compatibility with valid helox presets. lookup speeds must increase after conversion to native floats, preventing duplicate interpolation positions and float rounding collisions.
 
 ## additional fixes
 

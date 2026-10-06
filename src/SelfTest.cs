@@ -106,7 +106,9 @@ internal static class SelfTest {
             delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id",new string('x',200)},{"name","mouse"},{"profile","default"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev};},
             delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id","HID\\MOUSE"},{"name","mouse"},{"profile","missing"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev};},
             delegate(Dictionary<string,object> cfg) {Dictionary<string,object> dev=new Dictionary<string,object>{{"id","HID\\MOUSE"},{"name","mouse"},{"profile","default"},{"config",cfg["defaultDeviceConfig"]}};cfg["devices"]=new object[]{dev,dev};},
-            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"])["data"]=new object[]{1e100,1.0};}
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"])["data"]=new object[]{1e100,1.0};},
+            delegate(Dictionary<string,object> cfg) {Dictionary<string,object> args=Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"]);args["mode"]="lut";args["data"]=new object[]{0,1,0,1};},
+            delegate(Dictionary<string,object> cfg) {Dictionary<string,object> args=Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"]);args["mode"]="lut";args["data"]=new object[]{1.0,1,1.00000001,2};}
         };
         foreach(Action<Dictionary<string,object>> corrupt in bad) {
             Dictionary<string,object> cfg=Aim.Parse(template);corrupt(cfg);bool rejected=false;
@@ -114,6 +116,8 @@ internal static class SelfTest {
             try {Aim.Validate(cfg);}catch(ArgumentException) {rejected=true;}
             Expect(rejected,"unsafe driver configuration rejected before native conversion");
         }
+        Dictionary<string,object> validLut=Aim.Parse(template);Dictionary<string,object> validArgs=Aim.Map(Aim.Map(Aim.Items(validLut["profiles"])[0])["Whole or horizontal accel parameters"]);
+        validArgs["mode"]="lut";validArgs["data"]=new object[]{0,0,1,1,2,2};AimConfigGuard.Check(validLut);
     }
     private static void AimRegression() {
         Expect(Aim.EndpointMayExist(true,0),"loaded driver remains present without a service record");

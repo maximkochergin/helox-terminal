@@ -53,6 +53,16 @@ internal static class AimConfigGuard {
         Vector(Bag(args,"Cap / Jump"));object[] data=Array(args,"data");
         if(data.Length>514 || data.Length%2!=0) Fail("invalid lookup data length");
         foreach(object value in data) if(Math.Abs(Finite(value,"lookup data"))>Single.MaxValue) Fail("lookup data exceeds native float range");
+        if(mode=="lut") {
+            if(data.Length<4) Fail("lookup requires at least two points");
+            float previous=-1;
+            for(int i=0;i<data.Length;i+=2) {
+                // Native tables store floats: distinct doubles can collapse to the same float.
+                float speed=(float)Convert.ToDouble(data[i]);
+                if(speed<0 || speed<=previous) Fail("lookup speeds must increase after native float conversion");
+                previous=speed;
+            }
+        }
     }
     private static void Vector(Dictionary<string,object> vector) {Number(vector,"x");Number(vector,"y");}
     private static object Field(Dictionary<string,object> bag,string key) {object value;if(!bag.TryGetValue(key,out value)) Fail("missing "+key);return value;}
