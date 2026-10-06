@@ -93,19 +93,32 @@ public sealed class DpiResult {
 }
 public static class Analysis {
     private static bool Positive(double value) {return value>0 && !double.IsNaN(value) && !double.IsInfinity(value);}
+    private static bool Finite(double value) {return !double.IsNaN(value) && !double.IsInfinity(value);}
     private static bool Timestamp(string value) {
-        DateTime parsed;return DateTime.TryParse(value,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out parsed);
+        DateTime parsed;return ReadTimestamp(value,out parsed);
+    }
+    private static bool ReadTimestamp(string value,out DateTime parsed) {
+        return DateTime.TryParseExact(value,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out parsed) && parsed.Kind!=DateTimeKind.Unspecified;
     }
     internal static bool ValidHistory(RateResult result) {
         return result!=null && result.Reports>=101 && result.Intervals>=100 && result.Intervals<=result.Reports-1 && result.IdleGaps>=0 &&
-            Positive(result.ActiveHz) && Positive(result.MedianIntervalMs) && Positive(result.P95IntervalMs) && result.P95IntervalMs>=result.MedianIntervalMs && Timestamp(result.MeasuredUtc);
+            Positive(result.ActiveHz) && Positive(result.MedianIntervalMs) && Positive(result.P95IntervalMs) && result.P95IntervalMs>=result.MedianIntervalMs && Timestamp(result.MeasuredUtc) &&
+            (!result.P99IntervalMs.HasValue || (Positive(result.P99IntervalMs.Value) && result.P99IntervalMs.Value>=result.P95IntervalMs)) &&
+            (!result.MaxGapMs.HasValue || (Finite(result.MaxGapMs.Value) && result.MaxGapMs.Value>=0)) &&
+            (!result.SlowIntervals.HasValue || (result.SlowIntervals.Value>=0 && result.SlowIntervals.Value<=result.Intervals)) &&
+            (!result.SameTimestampReports.HasValue || (result.SameTimestampReports.Value>=0 && result.SameTimestampReports.Value<=result.Intervals)) &&
+            (result.Comparison==null || (Timestamp(result.Comparison.PreviousMeasuredUtc) && Finite(result.Comparison.ActiveHzDifference) && Finite(result.Comparison.P95IntervalDifferenceMs)));
     }
     internal static bool ValidHistory(DpiResult result) {
-        return result!=null && Positive(result.EstimatedDpi) && result.Counts>=100 && result.DistanceCm>=2 && result.DistanceCm<=100 && result.Trials>=1 && Timestamp(result.MeasuredUtc);
+        return result!=null && Positive(result.EstimatedDpi) && result.Counts>=100 && result.DistanceCm>=2 && result.DistanceCm<=100 && result.Trials>=1 && Timestamp(result.MeasuredUtc) &&
+            (!result.SpreadPercent.HasValue || (Finite(result.SpreadPercent.Value) && result.SpreadPercent.Value>=0 && result.SpreadPercent.Value<=15)) &&
+            (result.TrialDpi==null || (result.TrialDpi.Count==result.Trials && result.TrialDpi.TrueForAll(Positive)));
     }
     internal static RateComparison CompareRates(RateResult previous,RateResult current) {
         if(!ValidHistory(previous) || !ValidHistory(current) || String.IsNullOrEmpty(current.DevicePath) ||
             !String.Equals(previous.DevicePath,current.DevicePath,StringComparison.OrdinalIgnoreCase)) return null;
+        DateTime before,after;ReadTimestamp(previous.MeasuredUtc,out before);ReadTimestamp(current.MeasuredUtc,out after);
+        if(before.ToUniversalTime()>after.ToUniversalTime()) return null;
         return new RateComparison {PreviousMeasuredUtc=previous.MeasuredUtc,ActiveHzDifference=current.ActiveHz-previous.ActiveHz,
             P95IntervalDifferenceMs=current.P95IntervalMs-previous.P95IntervalMs};
     }

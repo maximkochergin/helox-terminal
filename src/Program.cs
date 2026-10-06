@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.6.1";
+    internal const string Version="0.6.2";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {

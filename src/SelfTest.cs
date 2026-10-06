@@ -29,13 +29,31 @@ internal static class SelfTest {
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
         RateResult rate=Analysis.Rate(samples); Expect(Math.Abs(rate.ObservedHz-1000)<.01,"1000 hz analysis");
         rate.DevicePath="mouse";
-        RateResult previous=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));previous.ActiveHz=900;previous.P95IntervalMs=2;
+        RateResult previous=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));previous.ActiveHz=900;previous.P95IntervalMs=2;previous.P99IntervalMs=2;
         RateComparison compared=Analysis.CompareRates(previous,rate);
         Expect(compared!=null && compared.ActiveHzDifference==100 && compared.P95IntervalDifferenceMs==-1,"rate comparison reports signed same-device deltas");
         previous.DevicePath="other";Expect(Analysis.CompareRates(previous,rate)==null,"rate comparison rejects another device");
         previous.DevicePath="mouse";previous.ActiveHz=double.NaN;
         Expect(!Analysis.ValidHistory(previous) && Analysis.CompareRates(previous,rate)==null,"damaged rate history is not compared");
         Expect(!Analysis.ValidHistory(new DpiResult {EstimatedDpi=800,DevicePath="mouse"}),"partial dpi history rejected");
+        foreach(Action<RateResult> corrupt in new Action<RateResult>[] {
+            delegate(RateResult value) {value.MeasuredUtc="12:34";},
+            delegate(RateResult value) {value.MeasuredUtc="2026-10-06T12:34:00.0000000";},
+            delegate(RateResult value) {value.P99IntervalMs=double.NaN;},
+            delegate(RateResult value) {value.P99IntervalMs=.5;},
+            delegate(RateResult value) {value.SlowIntervals=-1;},
+            delegate(RateResult value) {value.SameTimestampReports=value.Intervals+1;},
+            delegate(RateResult value) {value.MaxGapMs=double.PositiveInfinity;},
+            delegate(RateResult value) {value.Comparison=new RateComparison {PreviousMeasuredUtc=value.MeasuredUtc,ActiveHzDifference=double.NaN};}
+        }) {
+            RateResult damaged=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));corrupt(damaged);
+            Expect(!Analysis.ValidHistory(damaged),"invalid optional rate metrics or timestamps rejected");
+        }
+        RateResult legacy=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));
+        legacy.P99IntervalMs=null;legacy.MaxGapMs=null;legacy.SlowIntervals=null;legacy.SameTimestampReports=null;
+        Expect(Analysis.ValidHistory(legacy),"legacy history without optional metrics remains valid");
+        legacy.MeasuredUtc=DateTime.UtcNow.AddDays(1).ToString("o");
+        Expect(Analysis.CompareRates(legacy,rate)==null,"future baseline is not compared with an older test");
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
         Expect(Math.Abs(Analysis.Rate(samples).ObservedHz-125)<.01,"125 hz analysis");
         samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1 && Analysis.Rate(samples).MaxGapMs==2000 && Analysis.Rate(samples).Quality.Contains("long gaps"),"long gaps remain visible");
@@ -57,6 +75,10 @@ internal static class SelfTest {
         rejected=false;try {Analysis.Rate(samples);}catch(InvalidOperationException) {rejected=true;}Expect(rejected,"nonfinite timestamps rejected");
         List<Sample> stroke=new List<Sample>{new Sample(0,3150,0)};
         Expect(Math.Abs(Analysis.Dpi(stroke,10).EstimatedDpi-800.1)<.01,"distance dpi analysis");
+        DpiResult dpiHistory=Analysis.Dpi(stroke,10);Expect(Analysis.ValidHistory(dpiHistory),"legacy dpi history without trial details remains valid");
+        dpiHistory.SpreadPercent=double.NaN;Expect(!Analysis.ValidHistory(dpiHistory),"nonfinite dpi spread rejected");
+        dpiHistory.SpreadPercent=null;dpiHistory.TrialDpi=new List<double>{double.PositiveInfinity};
+        Expect(!Analysis.ValidHistory(dpiHistory),"nonfinite dpi trial history rejected");
         List<DpiResult> passes=new List<DpiResult>{Analysis.Dpi(new List<Sample>{new Sample(0,3900,0)},12.5),
             Analysis.Dpi(new List<Sample>{new Sample(0,4000,0)},12.5),Analysis.Dpi(new List<Sample>{new Sample(0,3950,0)},12.5)};
         DpiResult combined=Analysis.CombineDpi(passes,"test");
@@ -67,6 +89,7 @@ internal static class SelfTest {
         stroke=new List<Sample>{new Sample(0,1600,3000),new Sample(1,1550,-3000)};
         rejected=false;try {Analysis.Dpi(stroke,10);}catch(InvalidOperationException){rejected=true;}Expect(rejected,"off-axis zigzag rejected");
         rejected=false;try {Store.Profile("../bad");}catch(ArgumentException){rejected=true;}Expect(rejected,"profile traversal rejection");
+        rejected=false;try {Store.Profile("valid\n");}catch(ArgumentException){rejected=true;}Expect(rejected,"profile names reject trailing line breaks");
         foreach(string reserved in new string[]{"con","prn","aux","nul","com1","lpt9"}) {
             rejected=false;try {Store.Profile(reserved);}catch(ArgumentException) {rejected=true;}Expect(rejected,"reserved windows profile name rejected");
         }

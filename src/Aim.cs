@@ -47,6 +47,7 @@ internal static class Aim {
         if(bridge!=null) return;
         if(!Environment.Is64BitProcess) throw new InvalidOperationException("aim tools require 64-bit windows");
         if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) throw new InvalidOperationException("aim backend missing / aim prepare, then aim install");
+        if(!File.Exists(Path.Combine(Root,"Newtonsoft.Json.dll"))) throw new InvalidOperationException("aim backend incomplete / run aim prepare and restart helox");
         Assembly.LoadFrom(Path.Combine(Root,"Newtonsoft.Json.dll"));
         bridge=Assembly.LoadFrom(Path.Combine(Root,"wrapper.dll"));
     }
