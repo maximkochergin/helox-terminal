@@ -81,6 +81,7 @@ internal static class Store {
     }
     internal static string Profile(string name) {
         if(!System.Text.RegularExpressions.Regex.IsMatch(name,@"^[a-z0-9][a-z0-9_-]{0,31}$")) throw new ArgumentException("profile name: 1..32 lowercase letters, numbers, underscores or hyphens");
+        if(System.Text.RegularExpressions.Regex.IsMatch(name,@"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$")) throw new ArgumentException("profile name is reserved by windows / choose another name");
         return Path.Combine(Root,"profiles",name+".json");
     }
     internal static List<string> Profiles() {

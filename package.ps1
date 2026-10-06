@@ -10,6 +10,6 @@ foreach ($name in @('launch.bat', 'README.md', 'LICENSE', 'build.ps1', 'install-
 foreach ($folder in @('src', 'tests', 'docs')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $folder) -Destination $stage -Recurse -Force
 }
-$archive = Join-Path $dist 'helox-terminal-v0.4.0.zip'
+$archive = Join-Path $dist 'helox-terminal-v0.4.1.zip'
 Compress-Archive -Path $stage -DestinationPath $archive -Force
 Get-FileHash -LiteralPath $archive -Algorithm SHA256

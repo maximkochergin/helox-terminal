@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.4.0
+  helox / 0.4.1
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -31,9 +31,9 @@ open `8` > `5 install driver`, approve windows uac, close the official installer
 - `1 precision on`: natural gain curve, 1x for slow corrections, progressively approaching 1.4x for fast motions. input offset 3 counts/ms, decay 0.05, input smoothing 4 ms, sensitivity smoothing 2 ms. your physical dpi and game sensitivity determine where this curve feels useful; this is a starting preset.
 - `3 smooth on`: output magnitude smoothing with a 4 ms half-life. it reduces variation between reports while preserving direction. it adds input delay; 4 ms is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision.
 
-settings target the selected hardware id. identical receivers with the same id share the override. existing defaults, profiles and other device overrides are retained. activation is verified by reading the driver after its one-second write delay; no fake success when the backend is missing. `6 undo aim` restores the complete driver snapshot from before the first helox aim change, including other devices. windows settings have their own restore in `5`.
+settings target the selected hardware id. identical receivers with the same id share the override. existing defaults, profiles and other device overrides are retained; a profile used as the default or shared by another device is cloned before editing. activation is verified by reading the driver after its one-second write delay; no fake success when the backend is missing. failures report whether rollback succeeded. `6 undo aim` restores the complete driver snapshot from before the first helox aim change, including other devices. windows settings have their own restore in `5`.
 
-driver settings reset on reboot: enable the desired features again. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts.
+driver settings reset on reboot: enable the desired features again. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
 
 the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. uninstall using `%localappdata%\helox-terminal\rawaccel-1.7.1\RawAccel\uninstaller.exe` as administrator, then restart. [mechanics, research and verification](docs/aim.md).
 

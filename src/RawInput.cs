@@ -126,8 +126,8 @@ public static class Analysis {
         if(times.Count<100 || total<250) throw new InvalidOperationException("not enough sustained motion / repeat test");
         times.Sort(); double median=Percentile(times,.5);
         int slow=times.FindAll(delegate(double time){return time>Math.Max(12,median*3);}).Count;
-        double medianHz=1000/median, activeHz=1000*times.Count/total;
-        return new RateResult { Reports=samples.Count, Intervals=times.Count, IdleGaps=gaps, MedianIntervalMs=median,
+        double medianHz=1000/median, activeHz=1000*(times.Count+batched)/total;
+        return new RateResult { Reports=samples.Count, Intervals=times.Count+batched, IdleGaps=gaps, MedianIntervalMs=median,
             P95IntervalMs=Percentile(times,.95),P99IntervalMs=Percentile(times,.99),MaxGapMs=maxGap,SlowIntervals=slow,SameTimestampReports=batched,
             ObservedHz=activeHz, ActiveHz=activeHz, MedianHz=medianHz,
             Quality=gaps>0 ? "long gaps / pauses or delivery interruption; repeat with continuous motion" : slow>0 || batched>0 || Math.Abs(medianHz-activeHz)/activeHz>.2 ? "uneven delivery / repeat test" : "consistent delivery",

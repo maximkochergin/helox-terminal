@@ -6,6 +6,7 @@ namespace Helox {
 internal static class SelfTest {
     private static void Expect(bool ok,string name) {if(!ok) throw new Exception("selftest failed: "+name);}
     internal static void Run() {
+        AimRegression();
         Aim.TestEngine();
         List<Sample> samples=new List<Sample>();
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
@@ -18,6 +19,10 @@ internal static class SelfTest {
         RateResult batch=Analysis.Rate(batched);
         Expect(Math.Abs(batch.ObservedHz-1000)<.01 && batch.MedianHz>90000,"batched input must not inflate headline hz");
         Expect(batch.Quality.Contains("uneven"),"batched delivery quality warning");
+        List<Sample> equalTimes=new List<Sample>();
+        for(int i=0;i<=1000;i++) equalTimes.Add(new Sample((i/2)*2,1,0));
+        RateResult simultaneous=Analysis.Rate(equalTimes);
+        Expect(Math.Abs(simultaneous.ActiveHz-1000)<.01 && simultaneous.Intervals==1000 && simultaneous.SameTimestampReports==500,"same timestamp reports count towards delivered hz");
         Expect(Analysis.Distance("10,5")==10.5 && Analysis.Distance("10.5")==10.5,"distance decimal separators");
         bool rejected=false;try {Analysis.Rate(new List<Sample>());} catch(InvalidOperationException){rejected=true;}Expect(rejected,"empty rate rejection");
         List<Sample> shortBurst=new List<Sample>();
@@ -37,6 +42,9 @@ internal static class SelfTest {
         stroke=new List<Sample>{new Sample(0,1600,3000),new Sample(1,1550,-3000)};
         rejected=false;try {Analysis.Dpi(stroke,10);}catch(InvalidOperationException){rejected=true;}Expect(rejected,"off-axis zigzag rejected");
         rejected=false;try {Store.Profile("../bad");}catch(ArgumentException){rejected=true;}Expect(rejected,"profile traversal rejection");
+        foreach(string reserved in new string[]{"con","prn","aux","nul","com1","lpt9"}) {
+            rejected=false;try {Store.Profile(reserved);}catch(ArgumentException) {rejected=true;}Expect(rejected,"reserved windows profile name rejected");
+        }
         Settings before=Settings.Read();
         Settings clone=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));Expect(before.Same(clone),"profile roundtrip");
         string tempDir=Path.Combine(Path.GetTempPath(),"helox-test-"+Guid.NewGuid().ToString("n"));
@@ -78,6 +86,20 @@ internal static class SelfTest {
             Expect(rejected,"unfinished calibration timeout rejected");
         }
         Console.WriteLine("  passed / analysis, profiles, native settings readback, restore, raw input registration\n  physical mouse movement measurements require a manual pass");
+    }
+    private static void AimRegression() {
+        Expect(Aim.SameValue(Aim.Parse("{\"a\":1,\"b\":[2,3]}"),Aim.Parse("{\"b\":[2.0,3],\"a\":1.0}")),"aim readback ignores key order and numeric representation");
+        Expect(!Aim.SameValue(Aim.Parse("{\"a\":1}"),Aim.Parse("{\"a\":2}")),"aim readback detects changed values");
+        Expect(!Aim.SameValue(Aim.Parse("{\"a\":[1,2]}"),Aim.Parse("{\"a\":[2,1]}")),"aim readback preserves array order");
+        Dictionary<string,object> before=Aim.Parse("{\"value\":1}"),after=Aim.Parse("{\"value\":2}");
+        int writes=0;bool caught=false;
+        try {Aim.Transaction(before,after,delegate(Dictionary<string,object> cfg) {writes++;if(writes==1) throw new IOException("write rejected");Expect(Object.ReferenceEquals(cfg,before),"aim rollback targets original snapshot");return cfg;});}
+        catch(IOException e) {caught=e.Message.Contains("previous driver settings restored") && e.Message.Contains("write rejected");}
+        Expect(caught && writes==2,"aim apply failure reports verified rollback");
+        writes=0;caught=false;
+        try {Aim.Transaction(before,after,delegate(Dictionary<string,object> cfg) {writes++;throw new IOException(writes==1 ? "first error" : "second error");});}
+        catch(IOException e) {caught=e.Message.Contains("first error") && e.Message.Contains("rollback failed") && e.Message.Contains("second error");}
+        Expect(caught && writes==2,"aim failed rollback preserves both errors");
     }
 }
 }

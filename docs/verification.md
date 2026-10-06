@@ -26,6 +26,13 @@
 - official aim engine tests execute after `aim prepare`: slow 1x, capped fast-motion gain, reduced magnitude variation, direction preservation and unrelated device/profile retention.
 - aim status returns a backend state; activation without an installed driver fails without claiming an applied preset.
 - long gaps remain visible in diagnostics even when excluded from active hz.
+- equal-timestamp reports count towards delivered frequency; batched delivery remains flagged.
+- default/shared aim profiles are preserved, and repeat updates retain profile order.
+- driver readback compares values independently of object key order; changed values and array order are detected.
+- simulated apply/rollback failures preserve the original failure and report recovery success or failure.
+- input speed caps are recognized as count transforms; windows reserved profile filenames are rejected.
+- installer preparation recovers a corrupt cached zip, removes temporary downloads and rejects a parallel setup before extraction; no kernel installation is required for these checks.
+- preparation also succeeds while the cli's native bridge and json assembly are loaded: verified identical files are retained instead of overwriting locked dlls.
 
 ## manual pass
 

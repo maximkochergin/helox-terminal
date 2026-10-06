@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.4.0";
+    internal const string Version="0.4.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -116,7 +116,7 @@ internal static class Program {
         if(words.Length==2 && (words[1]=="install" || words[1]=="prepare")) {
             if(json) throw new ArgumentException("backend setup does not support json");
             string script=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"install-aim.ps1");
-            if(!File.Exists(script)) throw new FileNotFoundException("install-aim.ps1 missing");
+            if(!File.Exists(script)) throw new InvalidOperationException("install-aim.ps1 missing / extract the complete release archive");
             System.Diagnostics.ProcessStartInfo start=new System.Diagnostics.ProcessStartInfo("powershell.exe","-noprofile -executionpolicy bypass -file \""+script+"\""+(words[1]=="prepare" ? " -PrepareOnly" : ""));
             start.UseShellExecute=false;
             using(System.Diagnostics.Process process=System.Diagnostics.Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new InvalidOperationException("aim backend setup failed / see message above");}
@@ -214,7 +214,7 @@ internal static class Program {
     private static void DpiCheck() {
         if(json || Console.IsInputRedirected) throw new ArgumentException("dpi check requires an interactive terminal");
         Device device=Selected();ModelFacts facts=ModelFacts.For(device);
-        if(Aim.Read(device).InputTransformed) throw new InvalidOperationException("aim filter changes counts / aim restore before checking dpi");
+        if(Aim.Read(device).InputTransformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before checking dpi");
         if(facts==null) throw new ArgumentException("mouse-body dpi check supports gxt 929 only / use calibrate <cm>");
         Console.WriteLine("\n  dpi check / no ruler or marks / approximate\n  keep one fingertip beside the mouse front edge\n  slide forward until the rear edge reaches that finger\n  keep the finger still; do not rotate or lift\n  repeat 3 times / mouse length 125 mm");
         List<DpiResult> trials=new List<DpiResult>();
@@ -262,7 +262,7 @@ internal static class Program {
     private static void Calibrate(string[] words) {
         if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("use calibrate <cm> in a terminal");
         double cm=Analysis.Distance(words[1]);Device d=Selected();
-        if(Aim.Read(d).InputTransformed) throw new InvalidOperationException("aim filter changes counts / aim restore before calibrating dpi");
+        if(Aim.Read(d).InputTransformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before calibrating dpi");
         Console.WriteLine("\n  mark "+F(cm)+" cm on pad; place mouse at first mark\n  press enter, move straight to second mark, press enter\n  do not lift or return / esc cancels");
         StartPass("ready");
         using(RawCapture capture=new RawCapture(d)) {
