@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.5.1
+  helox / 0.5.2
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -21,6 +21,8 @@ download the zip from [releases](https://github.com/maximkochergin/helox-termina
 ```
 
 type a number and press enter. empty answers, `0` or `back` cancel a prompt. result screens return to the menu with enter or escape. launching alone never changes settings.
+
+`6` > `1` lists mice starting at `1`; `0` goes back. the advanced `devices` / `select <index>` commands use zero-based indices. saving or applying settings keeps the confirmation visible until enter or escape. aim tools remain accessible without a selected mouse for installation and undo; enabling effects still requires a connected selection.
 
 `1` controls windows acceleration; raw input games bypass it. `8` offers game-wide acceleration and smoothing through the official signed raw accel driver. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
 

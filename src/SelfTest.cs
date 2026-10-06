@@ -8,6 +8,16 @@ internal static class SelfTest {
     internal static void Run(bool native=true) {
         ConfigGuardRegression();
         AimRegression();
+        Device first=new Device {Path="first"},second=new Device {Path="second"};
+        List<Device> displayed=new List<Device>{first,second};
+        Expect(Program.ResolveChoice(displayed,1,new List<Device>{second,first})==first,"first mouse remains selectable after enumeration reorder");
+        bool choiceRejected=false;
+        try {Program.ResolveChoice(displayed,1,new List<Device>{second});}catch(InvalidOperationException) {choiceRejected=true;}
+        Expect(choiceRejected,"disconnected menu mouse must not select a replacement");
+        foreach(int number in new int[]{0,3}) {
+            choiceRejected=false;try {Program.ResolveChoice(displayed,number,displayed);}catch(ArgumentException) {choiceRejected=true;}
+            Expect(choiceRejected,"mouse menu range validation");
+        }
         if(native) Aim.TestEngine();
         List<Sample> samples=new List<Sample>();
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
@@ -48,6 +58,8 @@ internal static class SelfTest {
         }
         if(!native) {Console.WriteLine("  passed / analysis, aim recovery and profile validation / no settings changed");return;}
         Settings before=Settings.Read();
+        AimStatus unselectedAim=Aim.Read(null);
+        Expect(unselectedAim.State!="ready" && !String.IsNullOrEmpty(unselectedAim.Note),"aim status remains readable without a selected mouse");
         Settings clone=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));Expect(before.Same(clone),"profile roundtrip");
         string tempDir=Path.Combine(Path.GetTempPath(),"helox-test-"+Guid.NewGuid().ToString("n"));
         string testProfile=Path.Combine(tempDir,"settings.json");

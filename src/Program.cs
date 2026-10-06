@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.5.1";
+    internal const string Version="0.5.2";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -60,8 +60,8 @@ internal static class Program {
                 Console.WriteLine("\n  windows acceleration / raw input games bypass it\n  1  on     2  off     0  back");
                 string accel=Ask("choose");if(accel=="0") {Home();return;}
                 if(accel!="1" && accel!="2") throw new ArgumentException("choose 1, 2 or 0");
-                Run(new string[]{"set","acceleration",accel=="1" ? "on" : "off"});Home();return;
-            case "2":Run(new string[]{"set","speed",Ask("speed 1..20 / current "+Settings.Read().Speed)});Home();return;
+                Run(new string[]{"set","acceleration",accel=="1" ? "on" : "off"});Finish();return;
+            case "2":Run(new string[]{"set","speed",Ask("speed 1..20 / current "+Settings.Read().Speed)});Finish();return;
             case "3":Measure(new string[]{"measure"});Finish();return;
             case "4":DpiCheck();Finish();return;
             case "7":Status();Finish();return;
@@ -80,19 +80,19 @@ internal static class Program {
                     Profile(new string[]{"profile","apply",names[saved-1]});
                 }
                 else throw new ArgumentException("choose 1, 2, 3 or 0");
-                Home();return;
+                Finish();return;
             case "6":
                 Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq     0  back");
                 string more=Ask("choose");
                 if(more=="0") Home();
-                else if(more=="1") {Devices();Run(new string[]{"select",Ask("mouse number")});Home();}
+                else if(more=="1") {ChooseMouse();Finish();}
                 else if(more=="2") {Help();Finish();}
                 else if(more=="3") {Faq();Finish();}
                 else throw new ArgumentException("choose 1, 2, 3 or 0");return;
         }
     }
     private static void AimMenu() {
-        AimStatus status=Aim.Read(Selected());PrintAim(status);
+        AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
         Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  0  back");
         string choice=Ask("choose");
         if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
@@ -116,7 +116,7 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),"resume",false);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  saved aim resumed / driver readback verified");PrintAim(state);}return;
         }
-        if(words.Length==2 && words[1]=="status") {AimStatus state=Aim.Read(Selected());if(json) Console.WriteLine(Store.Json.Serialize(state));else PrintAim(state);return;}
+        if(words.Length==2 && words[1]=="status") {AimStatus state=Aim.Read(OptionalSelected());if(json) Console.WriteLine(Store.Json.Serialize(state));else PrintAim(state);return;}
         if(words.Length==2 && words[1]=="restore") {Aim.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  aim restored / driver readback verified");return;}
         if(words.Length==2 && (words[1]=="install" || words[1]=="prepare")) {
             if(json) throw new ArgumentException("backend setup does not support json");
@@ -152,6 +152,23 @@ internal static class Program {
         List<Device> candidates=devices.FindAll(delegate(Device d){return d.TrustCandidate;});
         if(candidates.Count==1) return candidates[0];
         throw new InvalidOperationException(candidates.Count==0 ? "trust receiver not found; choose mouse in more" : "multiple receivers; choose mouse in more");
+    }
+    private static Device OptionalSelected() {
+        try {return Selected();}catch(InvalidOperationException) {return null;}
+    }
+    internal static Device ResolveChoice(List<Device> displayed,int number,List<Device> connected) {
+        if(number<1 || number>displayed.Count) throw new ArgumentException("mouse number out of range");
+        string path=displayed[number-1].Path;
+        foreach(Device device in connected) if(String.Equals(device.Path,path,StringComparison.OrdinalIgnoreCase)) return device;
+        throw new InvalidOperationException("mouse disconnected; choose mouse again");
+    }
+    private static void ChooseMouse() {
+        List<Device> devices=Device.List();
+        if(devices.Count==0) throw new InvalidOperationException("no mice detected");
+        for(int i=0;i<devices.Count;i++) Console.WriteLine("  "+(i+1)+"  "+(devices[i].Product ?? "mouse device").ToLowerInvariant()+(devices[i].TrustCandidate ? " / trust" : ""));
+        Device chosen=ResolveChoice(devices,Integer(Ask("mouse number / 0 back")),Device.List());
+        selectedPath=chosen.Path;
+        Console.WriteLine("  selected / "+(chosen.Product ?? "mouse device").ToLowerInvariant());
     }
     private static void Devices() {
         List<Device> devices=Device.List();

@@ -45,4 +45,13 @@ if ($aimStatus.State -ne 'ready') {
 }
 $aimMenu = "8`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
+$devices = & $executable devices --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'device list failed' }
+if ($devices.Count -gt 0) {
+    $selectFirst = "6`n1`n1`nstatus`n0" | & $executable
+    $firstName = if ($devices[0].Product) { $devices[0].Product.ToLowerInvariant() } else { 'mouse device' }
+    if ($LASTEXITCODE -ne 0 -or ($selectFirst -join "`n") -notmatch ('selected / ' + [regex]::Escape($firstName))) { throw 'first mouse menu selection failed' }
+    $cancelMouse = "6`n1`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($cancelMouse -join "`n") -match 'selected / ') { throw 'mouse menu cancel changed selection' }
+}
 Write-Host 'passed / command status contract and validation'
