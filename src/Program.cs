@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
 namespace Helox {
 internal static class Program {
+    internal const string Version="0.2.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -12,189 +13,202 @@ internal static class Program {
             if(args.Length>0) {
                 List<string> words=new List<string>(args);
                 json=words.Remove("--json");
-                if(words.Count==0) throw new ArgumentException("provide a command before --json");
-                Run(words.ToArray()); return 0;
+                if(words.Count==0) throw new ArgumentException("choose a command");
+                Run(words.ToArray());return 0;
             }
-            if(!Console.IsOutputRedirected) { Console.ForegroundColor=ConsoleColor.White; Console.Title="helox terminal"; }
-            Status();
-            Console.WriteLine("\n  performance / setup | set | profile | restore\n  diagnostics / devices | select | probe | measure | calibrate\n  reference   / help | faq | exit");
+            if(!Console.IsOutputRedirected) {Console.ForegroundColor=ConsoleColor.White;Console.Title="helox terminal";}
+            Home();
             while(true) {
-                Console.Write("\n  helox / "); string line=Console.ReadLine(); if(line==null) break;
-                string[] words=line.Trim().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
+                Console.Write("\n  > ");string line=Console.ReadLine();if(line==null) break;
+                string[] words=line.Trim().ToLowerInvariant().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
                 if(words.Length==0) continue;
-                if(words[0]=="exit" || words[0]=="quit") break;
-                try {Run(words);} catch(Exception e) {Console.WriteLine("\n  error / "+e.Message.ToLowerInvariant());}
+                if(words[0]=="exit" || words[0]=="quit" || (words.Length==1 && words[0]=="0")) break;
+                try {
+                    if(words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='6') Menu(words[0]);
+                    else Run(words);
+                } catch(OperationCanceledException) {Console.WriteLine("  cancelled");}
+                catch(Exception e) {Console.WriteLine("  "+Error(e));}
             }
             return 0;
         } catch(Exception e) {
-            if(json) Console.WriteLine(Store.Json.Serialize(new {error=e.Message.ToLowerInvariant()}));
-            else Console.Error.WriteLine("  error / "+e.Message.ToLowerInvariant());
+            if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.Error.WriteLine("  "+Error(e));
             return 1;
         }
     }
-    private static void Header() {
-        Console.WriteLine("\n  helox terminal                         v0.1.0\n  trust gxt 929 / windows mouse utility\n  ------------------------------------------------");
+    private static string Error(Exception e) {
+        if(e is FileNotFoundException) return "file not found; save a profile or change a setting first";
+        if(e is FormatException || e is OverflowException) return "enter a valid number";
+        return e.Message.ToLowerInvariant();
+    }
+    private static void Header() {Console.WriteLine("\n  helox / "+Version+"\n  ----------------------------------------");}
+    private static void Home() {
+        if(!Console.IsOutputRedirected) Console.Clear();
+        Status();
+        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz          4  estimate dpi\n  5  profiles         6  more\n  0  exit");
+    }
+    private static string Ask(string prompt) {
+        Console.Write("\n  "+prompt+" > ");string value=Console.ReadLine();
+        if(String.IsNullOrWhiteSpace(value)) throw new OperationCanceledException();
+        return value.Trim().ToLowerInvariant();
+    }
+    private static void Menu(string choice) {
+        switch(choice) {
+            case "1":
+                Console.WriteLine("\n  windows acceleration / raw input games bypass it\n  1  on     2  off     0  back");
+                string accel=Ask("choose");if(accel=="0") {Home();return;}
+                if(accel!="1" && accel!="2") throw new ArgumentException("choose 1, 2 or 0");
+                Run(new string[]{"set","acceleration",accel=="1" ? "on" : "off"});Home();return;
+            case "2":Run(new string[]{"set","speed",Ask("speed 1..20 / current "+Settings.Read().Speed)});Home();return;
+            case "3":Measure(new string[]{"measure"});return;
+            case "4":Calibrate(new string[]{"calibrate",Ask("measured distance in cm / e.g. 10")});return;
+            case "5":
+                Profile(new string[]{"profile","list"});
+                Console.WriteLine("\n  1  save     2  load     3  restore original     0  back");
+                string profile=Ask("choose");
+                if(profile=="0") {Home();return;}
+                if(profile=="3") Run(new string[]{"restore"});
+                else if(profile=="1" || profile=="2") Profile(new string[]{"profile",profile=="1" ? "save" : "apply",Ask("profile name")});
+                else throw new ArgumentException("choose 1, 2, 3 or 0");
+                Home();return;
+            case "6":
+                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq     0  back");
+                string more=Ask("choose");
+                if(more=="0") Home();
+                else if(more=="1") {Devices();Run(new string[]{"select",Ask("mouse number")});Home();}
+                else if(more=="2") Help();
+                else if(more=="3") Faq();
+                else throw new ArgumentException("choose 1, 2, 3 or 0");return;
+        }
     }
     private static void Help() {
-        Console.WriteLine("\n  status                 device + live windows settings\n  devices                list raw input mouse devices\n  select <index>         choose a device for measurements\n  probe                  read trust hid capabilities\n  setup                  speed 10/20, acceleration off\n  set speed <1..20>       windows pointer speed\n  set acceleration <on|off>\n  set wheel <0..100|page>\n  set doubleclick <200..900>\n  set swap <on|off>\n  measure [3..30]        observed input hz; move continuously\n  calibrate <cm>         dpi estimate from one straight stroke\n  profile save <name>    save windows settings\n  profile apply <name>   apply and verify windows settings\n  profile list           saved profiles\n  restore                restore settings before first change\n  faq                    capabilities and limits\n  help / clear / exit\n\n  command mode: launch.bat status --json\n  settings affect all windows pointers; hardware dpi/hz are separate");
+        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  calibrate <cm>         distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
         if(selectedPath!=null) {
-            foreach(Device d in devices) if(d.Path==selectedPath) return d;
-            throw new InvalidOperationException("selected receiver disconnected; run devices and select again");
+            foreach(Device d in devices) if(String.Equals(d.Path,selectedPath,StringComparison.OrdinalIgnoreCase)) return d;
+            throw new InvalidOperationException("selected mouse disconnected; choose mouse again");
         }
         List<Device> candidates=devices.FindAll(delegate(Device d){return d.TrustCandidate;});
         if(candidates.Count==1) return candidates[0];
-        throw new InvalidOperationException(candidates.Count==0 ? "no matching trust receiver; run devices and select <index>" : "multiple matching receivers; run devices and select <index>");
+        throw new InvalidOperationException(candidates.Count==0 ? "trust receiver not found; choose mouse in more" : "multiple receivers; choose mouse in more");
     }
     private static void Devices() {
         List<Device> devices=Device.List();
         if(json) {Console.WriteLine(Store.Json.Serialize(devices));return;}
-        for(int i=0;i<devices.Count;i++) {
-            Device d=devices[i];
-            Console.WriteLine("\n  "+i+" / "+(d.Product ?? "mouse device").ToLowerInvariant()+(d.TrustCandidate ? " / trust receiver candidate" : ""));
-            Console.WriteLine("      "+d.Path.ToLowerInvariant());
-        }
-        if(devices.Count==0) Console.WriteLine("  no raw input mouse devices");
+        for(int i=0;i<devices.Count;i++) Console.WriteLine("  "+i+"  "+(devices[i].Product ?? "mouse device").ToLowerInvariant()+(devices[i].TrustCandidate ? " / trust" : ""));
+        if(devices.Count==0) Console.WriteLine("  no mice detected");
     }
     private static object StatusData() {
-        Device d=null; string note=null;
-        try {d=Selected();} catch(Exception e) {note=e.Message.ToLowerInvariant();}
-        return new {version="0.1.0",receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
+        Device d=null;string note=null;try {d=Selected();}catch(Exception e) {note=Error(e);}
+        return new {version=Version,receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
             selectionNote=note,windows=Settings.Read(),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
-            hardwareControl="unsupported: no verified vendor protocol",lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
+            hardwareControl="unsupported: no verified vendor protocol",gameAcceleration="not managed; windows acceleration is bypassed by raw input",
+            lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
     }
     private static T Last<T>(string filename,Device d) where T:class {
-        string path=Path.Combine(Store.Root,filename); if(!File.Exists(path) || d==null) return null;
+        string path=Path.Combine(Store.Root,filename);if(!File.Exists(path) || d==null) return null;
         try {
-            T result=Store.Load<T>(path);
-            DpiResult dpi=result as DpiResult; RateResult rate=result as RateResult;
+            T result=Store.Load<T>(path);DpiResult dpi=result as DpiResult;RateResult rate=result as RateResult;
             string device=dpi!=null ? dpi.DevicePath : rate!=null ? rate.DevicePath : null;
-            return device==d.Path ? result : null;
-        } catch {return null;}
+            return String.Equals(device,d.Path,StringComparison.OrdinalIgnoreCase) ? result : null;
+        }catch {return null;}
     }
     private static void Status() {
         if(json) {Console.WriteLine(Store.Json.Serialize(StatusData()));return;}
-        Header();
-        Device d=null;
-        try {
-            d=Selected();
-            Console.WriteLine("\n  receiver      enumerated / "+(d.Product ?? "trust candidate").ToLowerInvariant());
-            bool confirmed=d.Product!=null && d.Product.IndexOf("gxt 929",StringComparison.OrdinalIgnoreCase)>=0;
-            Console.WriteLine("  model         "+(confirmed ? "gxt 929 helox / usb product string" : d.TrustCandidate ? "145f:0326 / model unverified" : "manually selected"));
-            Console.WriteLine("  mouse link    not reported; move mouse to verify input");
-        } catch(Exception e) {Console.WriteLine("\n  receiver      "+e.Message.ToLowerInvariant());}
-        Console.WriteLine("  hardware dpi  unavailable / use physical dpi button\n  hardware hz   unavailable / measure observed input\n  battery       unavailable");
+        Header();Device d=null;
+        try {d=Selected();Console.WriteLine("  receiver  "+(d.Product ?? "mouse device").ToLowerInvariant());}
+        catch {Console.WriteLine("  receiver  not selected / use more");}
         Settings s=Settings.Read();
-        Console.WriteLine("\n  windows / live readback\n  speed         "+s.Speed+" / 20\n  acceleration  "+(s.Acceleration==0 ? "off" : "on / mode "+s.Acceleration)+
-            "\n  thresholds    "+s.Threshold1+" / "+s.Threshold2+"\n  wheel         "+(s.WheelLines==-1 ? "page" : s.WheelLines+" lines")+
-            "\n  doubleclick   "+s.DoubleClickMs+" ms\n  buttons       "+(s.SwapButtons==0 ? "normal" : "swapped"));
-        DpiResult dpi=Last<DpiResult>("dpi.json",d); RateResult rate=Last<RateResult>("rate.json",d);
-        if(dpi!=null) Console.WriteLine("\n  last dpi      ~"+F(dpi.EstimatedDpi)+" / distance estimate / "+dpi.MeasuredUtc.ToLowerInvariant());
-        if(rate!=null) Console.WriteLine("  last input    ~"+F(rate.ObservedHz)+" hz / observed delivery / "+rate.MeasuredUtc.ToLowerInvariant());
-        if(dpi!=null || rate!=null) Console.WriteLine("  history       previous measurement; current hardware values unknown");
-        Console.WriteLine("\n  hardware writes / unsupported\n  windows settings / supported + verified\n  raw input measurement / supported\n  backup / "+(File.Exists(Path.Combine(Store.Root,"original.json")) ? "available" : "created before first change"));
+        Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+"\n  hardware  dpi ? / hz ?");
+        DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
+        if(dpi!=null || rate!=null) Console.WriteLine("  last test "+(dpi!=null ? "~"+F(dpi.EstimatedDpi)+" dpi" : "")+(dpi!=null && rate!=null ? " / " : "")+(rate!=null ? "~"+F(rate.ActiveHz)+" hz" : "")+" / history");
     }
     private static string F(double n) {return n.ToString("0.0",CultureInfo.InvariantCulture);}
     private static int Integer(string value) {return int.Parse(value,NumberStyles.Integer,CultureInfo.InvariantCulture);}
     private static int Toggle(string value) {if(value=="on") return 1;if(value=="off") return 0;throw new ArgumentException("use on or off");}
     private static void Apply(Settings s) {
-        s.Validate(); Store.Backup(); s.Apply();
-        if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=Settings.Read()}));
-        else Console.WriteLine("  applied / verified with windows readback / restore is available");
+        if(s==null) throw new ArgumentException("empty settings file");
+        s.Validate();Store.Backup();s.Apply();
+        if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=Settings.Read()}));else Console.WriteLine("  applied / verified");
     }
     private static void Measure(string[] words) {
-        if(words.Length>2) throw new ArgumentException("usage: measure [seconds]");
+        if(words.Length>2) throw new ArgumentException("use measure [seconds]");
         int seconds=words.Length==2 ? Integer(words[1]) : 10;
-        if(seconds<3 || seconds>30) throw new ArgumentException("measurement duration: 3..30 seconds");
-        Device d=Selected();
-        if(!json) Console.WriteLine("  move selected mouse continuously for "+seconds+" seconds; escape cancels");
+        if(seconds<3 || seconds>30) throw new ArgumentException("duration: 3..30 seconds");
+        Device d=Selected();if(!json) Console.WriteLine("\n  move mouse in circles / "+seconds+"s / esc cancels");
         using(RawCapture capture=new RawCapture(d)) {
-            capture.Collect(seconds,false); RateResult result=Analysis.Rate(capture.Samples); result.DevicePath=d.Path;
+            capture.Collect(seconds,false);RateResult result=Analysis.Rate(capture.Samples);result.DevicePath=d.Path;
             Store.Save(Path.Combine(Store.Root,"rate.json"),result);
             if(json) Console.WriteLine(Store.Json.Serialize(result));
-            else Console.WriteLine("\n  observed      ~"+F(result.ObservedHz)+" hz / median delivery interval\n  active mean   "+F(result.ActiveHz)+" hz\n  interval      median "+F(result.MedianIntervalMs)+" ms / p95 "+F(result.P95IntervalMs)+" ms\n  reports       "+result.Reports+" / idle gaps "+result.IdleGaps+"\n  quality       "+result.Quality+"\n  source        raw input arrival times; includes windows scheduling\n  hardware hz   cannot infer configured usb rate exactly");
+            else Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  "+result.Quality+"\n  home / return to menu");
         }
     }
     private static void Calibrate(string[] words) {
-        if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("interactive usage: calibrate <distance in cm>");
-        double cm=double.Parse(words[1],CultureInfo.InvariantCulture); Analysis.Dpi(new List<Sample>{new Sample(0,100,0)},cm);
-        Device d=Selected();
-        Console.WriteLine("  mark two points "+F(cm)+" cm apart; align the mouse horizontally\n  place mouse at the first mark; press enter to start\n  then move to second mark in one straight stroke, without lifting\n  stop at the mark and press enter; escape cancels");
-        Console.ReadLine();
+        if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("use calibrate <cm> in a terminal");
+        double cm=Analysis.Distance(words[1]);Device d=Selected();
+        Console.WriteLine("\n  mark "+F(cm)+" cm on pad; place mouse at first mark\n  press enter, move straight to second mark, press enter\n  do not lift or return / esc cancels");
+        if(Console.ReadLine()==null) throw new OperationCanceledException();
         using(RawCapture capture=new RawCapture(d)) {
-            capture.Collect(60,true); DpiResult result=Analysis.Dpi(capture.Samples,cm); result.DevicePath=d.Path;
+            capture.Collect(60,true);DpiResult result=Analysis.Dpi(capture.Samples,cm);result.DevicePath=d.Path;
             Store.Save(Path.Combine(Store.Root,"dpi.json"),result);
-            Console.WriteLine("\n  estimated dpi ~"+F(result.EstimatedDpi)+" / "+result.Counts+" counts over "+F(cm)+" cm\n  repeat 3 times to compare; depends on distance and alignment\n  this is an estimate, not sensor dpi readback");
+            Console.WriteLine("  ~"+F(result.EstimatedDpi)+" dpi / estimate\n  home / return to menu");
         }
     }
     private static void Profile(string[] words) {
         if(words.Length==2 && words[1]=="list") {
-            string dir=Path.Combine(Store.Root,"profiles"); List<string> names=new List<string>();
+            string dir=Path.Combine(Store.Root,"profiles");List<string> names=new List<string>();
             if(Directory.Exists(dir)) foreach(string path in Directory.GetFiles(dir,"*.json")) names.Add(Path.GetFileNameWithoutExtension(path));
             names.Sort(StringComparer.Ordinal);
-            if(json) Console.WriteLine(Store.Json.Serialize(names)); else Console.WriteLine("  profiles / "+(names.Count==0 ? "none" : String.Join(" / ",names.ToArray())));
-        } else if(words.Length==3 && words[1]=="save") {
-            Store.Save(Store.Profile(words[2]),Settings.Read());
-            if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]})); else Console.WriteLine("  saved / "+words[2]+" / windows settings only");
-        } else if(words.Length==3 && words[1]=="apply") Apply(Store.Load<Settings>(Store.Profile(words[2])));
-        else throw new ArgumentException("usage: profile list | profile save <name> | profile apply <name>");
+            if(json) Console.WriteLine(Store.Json.Serialize(names));else Console.WriteLine("  profiles / "+(names.Count==0 ? "none yet" : String.Join(" / ",names.ToArray())));
+        }else if(words.Length==3 && words[1]=="save") {
+            Store.Save(Store.Profile(words[2]),Settings.Read());if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]}));else Console.WriteLine("  saved / "+words[2]);
+        }else if(words.Length==3 && words[1]=="apply") Apply(Store.Load<Settings>(Store.Profile(words[2])));
+        else throw new ArgumentException("use profile save|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  what changes for real?\n  pointer speed, windows acceleration, scrolling, double-click timing\n  and primary button swap. every apply is checked by reading windows.\n\n  does setup change gaming sensitivity?\n  setup sets speed 10/20 and disables windows pointer acceleration.\n  games using raw input bypass these settings; adjust in-game sens.\n\n  why no dpi or hz slider?\n  standard mouse hid does not define a universal dpi/polling command.\n  no verified protocol exists in this project for the trust receiver.\n  use the physical dpi button. no arbitrary usb writes are sent.\n\n  is measured hz the configured polling rate?\n  no. it measures motion report arrival at this app for one device.\n  windows scheduling, message queues, movement and usb delivery affect it.\n  median and mean can differ. slow movement underestimates reporting.\n\n  can dpi be measured?\n  calibrate 10 counts raw motion across 10 measured cm. repeat 3 times.\n  it estimates counts per inch; pressing dpi later makes it stale.\n\n  does connected mean mouse is on?\n  no. the receiver can remain enumerated while the mouse is off.\n  use measure to confirm that this device sends motion.\n\n  battery, rgb, macros, lod, debounce?\n  unavailable until their vendor protocol is independently verified.\n\n  is this a kernel driver?\n  no. it uses the existing windows hid driver; no service or startup task.\n  close the terminal after applying settings; windows retains them.\n\n  how do i undo changes?\n  restore loads the first pre-change snapshot. profiles save windows settings.\n  local data lives in %localappdata%\\helox-terminal.\n\n  why the wallhack inspiration?\n  concise sections, monochrome text and direct controls.\n  this project is independent of trust and wallhack.");
+        Console.WriteLine("\n  game acceleration?\n  windows accel does not affect raw input games. game-wide accel\n  needs a separate input driver; helox does not install one.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  test hz measures delivered input; dpi uses a ruler estimate.\n\n  undo settings?\n  profiles > restore original. profiles store windows settings.\n\n  receiver detected but no input?\n  receiver presence does not confirm mouse power. check the switch.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
-        switch(words[0]) {
-            case "status": if(words.Length!=1) break; Status();return;
-            case "devices": if(words.Length!=1) break; Devices();return;
+        switch(words[0].ToLowerInvariant()) {
+            case "status":if(words.Length!=1) break;Status();return;
+            case "devices":if(words.Length!=1) break;Devices();return;
             case "select":
-                if(words.Length!=2) break;
-                List<Device> devices=Device.List(); int index=Integer(words[1]);
-                if(index<0 || index>=devices.Count) throw new ArgumentException("device index out of range");
+                if(words.Length!=2) break;List<Device> devices=Device.List();int index=Integer(words[1]);
+                if(index<0 || index>=devices.Count) throw new ArgumentException("mouse number out of range");
                 selectedPath=devices[index].Path;
-                if(json) Console.WriteLine(Store.Json.Serialize(new {selected=devices[index]})); else Console.WriteLine("  selected / "+index);return;
-            case "setup":
-                if(words.Length!=1) break;
-                Settings setup=Settings.Read(); setup.Speed=10;setup.Acceleration=0; Apply(setup);return;
+                if(json) Console.WriteLine(Store.Json.Serialize(new {selected=devices[index]}));else Console.WriteLine("  selected / "+index);return;
+            case "setup":if(words.Length!=1) break;Settings setup=Settings.Read();setup.Setup();Apply(setup);return;
             case "set":
-                if(words.Length!=3) break;
-                Settings s=Settings.Read();
+                if(words.Length!=3) break;Settings s=Settings.Read();
                 switch(words[1]) {
-                    case "speed": s.Speed=Integer(words[2]);break;
-                    case "acceleration": s.Acceleration=Toggle(words[2]); if(s.Acceleration!=0){s.Threshold1=6;s.Threshold2=10;} break;
-                    case "wheel": s.WheelLines=words[2]=="page" ? -1 : Integer(words[2]);if(s.WheelLines<-1 || s.WheelLines>100) throw new ArgumentException("wheel: 0..100 or page");break;
-                    case "doubleclick": s.DoubleClickMs=Integer(words[2]);if(s.DoubleClickMs<200 || s.DoubleClickMs>900) throw new ArgumentException("doubleclick: 200..900 ms");break;
-                    case "swap": s.SwapButtons=Toggle(words[2]);break;
-                    default:throw new ArgumentException("unknown setting; use help");
-                }
-                Apply(s);return;
-            case "measure": Measure(words);return;
-            case "calibrate": Calibrate(words);return;
-            case "profile": Profile(words);return;
+                    case "speed":s.Speed=Integer(words[2]);if(s.Speed<1 || s.Speed>20) throw new ArgumentException("speed: 1..20");break;
+                    case "acceleration":s.SetAcceleration(Toggle(words[2])!=0);break;
+                    case "wheel":s.WheelLines=words[2]=="page" ? -1 : Integer(words[2]);if((s.WheelLines<0 && words[2]!="page") || s.WheelLines>100) throw new ArgumentException("wheel: 0..100 or page");break;
+                    case "doubleclick":s.DoubleClickMs=Integer(words[2]);if(s.DoubleClickMs<200 || s.DoubleClickMs>900) throw new ArgumentException("doubleclick: 200..900 ms");break;
+                    case "swap":s.SwapButtons=Toggle(words[2]);break;
+                    default:throw new ArgumentException("unknown setting / use help");
+                }Apply(s);return;
+            case "measure":Measure(words);return;
+            case "calibrate":Calibrate(words);return;
+            case "profile":Profile(words);return;
             case "restore":
-                if(words.Length!=1) break;
-                Settings original=Store.Load<Settings>(Path.Combine(Store.Root,"original.json"));original.Apply();
-                if(json) Console.WriteLine(Store.Json.Serialize(new {restored=true,readback=Settings.Read()})); else Console.WriteLine("  restored / verified with windows readback");return;
+                if(words.Length!=1) break;string path=Path.Combine(Store.Root,"original.json");
+                if(!File.Exists(path)) throw new InvalidOperationException("nothing to restore yet");
+                Settings original=Store.Load<Settings>(path);if(original==null) throw new ArgumentException("empty backup file");original.Apply();
+                if(json) Console.WriteLine(Store.Json.Serialize(new {restored=true,readback=Settings.Read()}));else Console.WriteLine("  restored / verified");return;
             case "faq":if(words.Length!=1) break;Faq();return;
             case "probe":
-                if(words.Length!=1) break;
-                List<HidCapability> caps=HidProbe.Read();
+                if(words.Length!=1) break;List<HidCapability> caps=HidProbe.Read();
                 if(json) Console.WriteLine(Store.Json.Serialize(caps));
                 else {
-                    foreach(HidCapability cap in caps) {
-                        Console.WriteLine("\n  hid / "+(cap.Product ?? "trust candidate").ToLowerInvariant()+" / "+cap.UsagePage+":"+cap.Usage);
-                        Console.WriteLine("  reports / input "+cap.InputReportBytes+" b / output "+cap.OutputReportBytes+" b / feature "+cap.FeatureReportBytes+" b");
-                        if(cap.Error!=null) Console.WriteLine("  error / "+cap.Error);
-                    }
-                    if(caps.Count==0) Console.WriteLine("  no matching trust hid interfaces");
-                    Console.WriteLine("\n  descriptor capabilities only; no feature queries or writes sent\n  report lengths do not establish a dpi/hz protocol");
-                } return;
+                    foreach(HidCapability cap in caps) Console.WriteLine("  hid "+cap.UsagePage+":"+cap.Usage+" / in "+cap.InputReportBytes+" / out "+cap.OutputReportBytes+" / feature "+cap.FeatureReportBytes+(cap.Error!=null ? " / "+cap.Error : ""));
+                    if(caps.Count==0) Console.WriteLine("  trust receiver not found");
+                }return;
             case "help":if(words.Length!=1) break;Help();return;
-            case "clear":if(words.Length!=1) break;if(!Console.IsOutputRedirected) Console.Clear();Header();return;
+            case "home":case "clear":if(words.Length!=1 || json) break;Home();return;
             case "selftest":if(words.Length!=1) break;SelfTest.Run();return;
-        }
-        throw new ArgumentException("unknown command or arguments; use help");
+        }throw new ArgumentException("unknown choice / type home or help");
     }
 }
 }

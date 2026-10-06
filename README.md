@@ -1,112 +1,80 @@
-# helox terminal
+﻿# helox terminal
 
-minimal windows cli for the trust gxt 929 helox. white text, lowercase controls, launch from a batch file. inspired by the direct controls and sections of [wallhack terminal](https://terminal.wallhack.com/). independent of trust and wallhack.
-
-**working windows settings and device diagnostics. hardware dpi/polling control is not implemented.** this is a user-mode utility using the installed windows hid driver, not a replacement kernel driver.
+minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, numbered menu, batch launcher.
 
 ## start
 
-download the portable zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it, and double-click `launch.bat`. windows 10/11 with .net framework 4.x; no administrator account, python, npm, installer, service, or startup task required.
-
-from source, double-click `launch.bat`: it compiles the small executable with the windows .net framework compiler on first launch. subsequent launches execute the cached binary directly. run `build.ps1` again after editing source files.
+download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-helox / status
-helox / setup
-helox / set speed 8
-helox / measure 10
-helox / calibrate 10
-helox / profile save daily
-helox / restore
+  helox / 0.2.0
+  ----------------------------------------
+  receiver  gxt 929 helox
+  windows   speed 10/20 / accel on
+  hardware  dpi ? / hz ?
+
+  1  acceleration     2  pointer speed
+  3  test hz          4  estimate dpi
+  5  profiles         6  more
+  0  exit
 ```
 
-launching the app only reads settings. `setup` saves an original snapshot, sets windows pointer speed to 10/20, disables windows pointer acceleration, and reads the settings back to verify them. it preserves scrolling, double-click timing, thresholds and button order. windows settings apply to all pointing devices in the current user session and persist after exit. raw input applications bypass windows pointer speed/acceleration.
+type a number and press enter. empty answers cancel a prompt. `home` returns to the menu. launching alone never changes settings.
 
-## capabilities
+**acceleration here is windows acceleration. raw input games bypass it.** helox does not install a game-wide acceleration driver. `setup` now enables windows acceleration and sets pointer speed to 10/20; an already active acceleration mode and its thresholds are preserved.
 
-| operation | support | evidence |
-| --- | --- | --- |
-| detect receiver and usb product name | yes | real raw input enumeration and hid product string |
-| windows speed, acceleration, wheel, double-click, swap | yes | native setters followed by native readback |
-| save/apply profiles and restore original settings | yes | local json snapshots and verified native apply |
-| observed motion report frequency | yes | selected-device raw input delivery timestamps |
-| estimate dpi using measured distance | yes | raw counts divided by physical travel in inches |
-| current sensor dpi / configured usb polling | unavailable | no verified hardware read command |
-| hardware dpi / polling changes | unavailable | no verified vendor command protocol |
-| battery, rgb, lod, debounce, button remapping | unavailable | no verified vendor command protocol |
+## what works
 
-no fake dpi values, timer-resolution tricks, usb overclocking, or claims of improved game latency. `setup` changes desktop cursor behavior; it cannot change sensor sensitivity in a raw input game.
+- actual receiver detection and live windows setting readback.
+- windows pointer speed, acceleration, scrolling, double-click interval and primary button swap.
+- profiles and original-setting restore; writes are checked and rolled back on failure.
+- observed input frequency for one selected mouse, and distance-based dpi estimates.
 
-## commands
+hardware dpi/polling writes, current sensor dpi, configured polling, battery and rgb remain unavailable. `?` means unknown. use the physical dpi button. receiver presence does not confirm mouse power or wireless link.
 
-| command | action |
-| --- | --- |
-| `status` | live windows readback, receiver identity, explicit unavailable hardware fields |
-| `devices` | enumerate all raw input mice |
-| `select <index>` | choose one listed device for this interactive session |
-| `probe` | read the matching trust hid descriptor capabilities; no device writes |
-| `setup` | windows speed 10/20, acceleration off |
-| `set speed <1..20>` | change windows pointer speed |
-| `set acceleration <on\|off>` | disable acceleration or enable mode 1 with thresholds 6/10 |
-| `set wheel <0..100\|page>` | scroll lines or one page per wheel notch |
-| `set doubleclick <200..900>` | maximum interval in milliseconds; not click latency |
-| `set swap <on\|off>` | swap primary and secondary buttons |
-| `measure [3..30]` | capture motion reports; default 10 seconds; escape cancels |
-| `calibrate <2..100>` | estimate dpi from a measured straight stroke in cm |
-| `profile save <name>` | snapshot current windows settings; overwrites this profile |
-| `profile apply <name>` | apply and verify a saved snapshot |
-| `profile list` | list saved names |
-| `restore` | restore and verify the first pre-change snapshot |
-| `faq`, `help`, `clear`, `exit` | reference and navigation |
+## tests and recovery
 
-profile names use 1..32 lowercase letters, digits, underscores or hyphens. the receiver is auto-selected only when exactly one `145f:0326` mouse is present. other devices require explicit interactive selection. enumeration confirms a receiver exists, not that its wireless mouse is powered on.
+`3` captures 10 seconds of continuous mouse movement. reported hz uses average active report delivery, which avoids enormous median-based values caused by queued batches. uneven delivery is flagged. this is an input measurement, not configured usb polling or click latency.
 
-command mode uses the same batch launcher:
+`4` asks for a measured distance in cm. mark that distance on the pad, place the mouse at the first mark, press enter, move once straight to the second mark, then press enter. do not lift or return. comma and dot decimal separators work. unfinished captures time out without saving. repeat to compare estimates.
 
-```bat
-launch.bat status --json
-launch.bat devices --json
-launch.bat probe --json
-launch.bat setup --json
-launch.bat measure 10 --json
+`5` saves/loads windows profiles or restores the original snapshot. data stays in `%localappdata%\helox-terminal`. history is labeled as history, never current hardware values. there is no telemetry.
+
+## advanced commands
+
+```text
+setup
+set acceleration on|off
+set speed 1..20
+set wheel 0..100|page
+set doubleclick 200..900
+set swap on|off
+measure 3..30
+calibrate <cm>
+profile save|apply <name>
+profile list
+restore
+devices
+select <index>
+probe
+status
+faq
+home
 ```
 
-exit code 0 means success; 1 means invalid arguments, unavailable operation, insufficient measurement data or a native api failure. unsupported hardware fields are `null` in status json. json preserves native device names and paths, including their original casing; the authored console interface is lowercase. calibration requires interactive input and does not support `--json`.
+command mode: `launch.bat status --json`, `launch.bat probe --json`, `launch.bat measure 10 --json`. exit code 0 means success; 1 means failure. unsupported hardware values are null. diagnostics include machine-specific device paths; review before sharing.
 
-## measurements
+## build
 
-for frequency, move the selected mouse continuously in circles for the full capture. timestamps come from a monotonic stopwatch at message processing. the capture loop waits for windows input messages instead of sampling cursor positions on a sleep timer. results show median interval, p95, active mean, report count and idle gaps; a quality message flags median/mean disagreement above 20 percent. gaps above 50 ms are excluded from interval statistics; fewer than 100 usable intervals rejects a result. timing includes usb delivery, windows scheduling and message queue batching. it does **not** read configured usb polling or measure click latency. compare runs during sustained movement under similar system load.
-
-for dpi, mark a distance of 10 cm on your pad. align the mouse axes with that line. start at the first mark, run `calibrate 10`, press enter, move once to the second mark without lifting or returning, then press enter. repeat three times to compare estimates. the calculation uses the dominant net motion axis; obvious diagonal strokes, backtracking and insufficient motion are rejected. it cannot detect every physical measuring mistake or lift. a hardware dpi-button press invalidates the estimate.
-
-status labels saved measurements as history with timestamps, never as current hardware settings. measurements are tied to the selected device path and stored separately from windows profiles.
-
-## recovery and data
-
-the first change creates `%localappdata%\helox-terminal\original.json`. later changes preserve that snapshot. `restore` rolls back to it. each apply also captures its immediate previous settings and attempts rollback if any write or readback fails. a rollback failure is reported explicitly. the original snapshot is retained after restore.
-
-profiles and measurement history stay under `%localappdata%\helox-terminal`. there is no telemetry or network activity in the executable. `devices --json`, `probe --json` and status json include machine-specific device paths; review these before posting diagnostics publicly.
-
-## build and validation
+windows 10/11 with .net framework 4.x. no administrator account, python, npm, service or startup task required. from source, `launch.bat` compiles on first use. after source edits or pulling updates, rebuild with `build.ps1`.
 
 ```powershell
 powershell.exe -noprofile -executionpolicy bypass -file .\build.ps1
 powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
-the selftest checks synthetic timing/distance analysis, idle gap rejection, backtracking rejection, profile path validation, serialization, real raw input registration, and real native setting mutations with readback. it restores all original settings in a `finally` block. running it briefly changes system-wide mouse settings. physical dpi calibration and sustained-motion frequency checks still need a person moving the actual mouse; they cannot be validated with injected cursor movement.
+tests temporarily change native settings and always restore them. regressions cover acceleration preservation, queued input timing, calibration timeout, decimal parsing, menu navigation and input recovery. physical motion/ruler measurements still need manual verification.
 
-see [hardware findings](docs/hardware.md) and [manual verification](docs/verification.md).
+[hardware findings](docs/hardware.md) / [verification](docs/verification.md) / [windows raw input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
 
-## references
-
-- [trust product and adjustable sensor specification](https://www.trust.com/en/product/25307-gxt-929-helox-ultra-lightweight-wireless-gaming-mouse)
-- [trust support downloads](https://support.trust.com/en/support/solutions/articles/9000240009-gxt-929-helox-ultra-lightweight-wireless-gaming-mouse-25307)
-- [wallhack m-001 configuration guide](https://wallhack.gorgias.help/en-US/wallhack-m-001-dpi-and-polling-rate-customization-guide-6230159)
-- [microsoft systemparametersinfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfow)
-- [microsoft rawmouse: raw input bypasses pointer speed](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
-- [microsoft raw input overview](https://learn.microsoft.com/en-us/windows/win32/inputdev/about-raw-input)
-
-## license
-
-mit. third-party brands and the wallhack interface are not bundled.
+inspired by [wallhack terminal](https://terminal.wallhack.com/); independent of trust and wallhack. mit license.

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'build.ps1')
 $dist = Join-Path $PSScriptRoot 'dist'
-$stage = Join-Path $dist 'helox-terminal'
+$stage = Join-Path (Join-Path $dist ([guid]::NewGuid().ToString('n'))) 'helox-terminal'
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'bin') | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'bin\helox.exe') -Destination (Join-Path $stage 'bin\helox.exe')
 foreach ($name in @('launch.bat', 'README.md', 'LICENSE', 'build.ps1')) {
@@ -10,6 +10,6 @@ foreach ($name in @('launch.bat', 'README.md', 'LICENSE', 'build.ps1')) {
 foreach ($folder in @('src', 'tests', 'docs')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $folder) -Destination $stage -Recurse -Force
 }
-$archive = Join-Path $dist 'helox-terminal-v0.1.0.zip'
+$archive = Join-Path $dist 'helox-terminal-v0.2.0.zip'
 Compress-Archive -Path $stage -DestinationPath $archive -Force
 Get-FileHash -LiteralPath $archive -Algorithm SHA256

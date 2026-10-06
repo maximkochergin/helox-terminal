@@ -8,4 +8,13 @@ if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status con
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
 & $executable set speed 0 --json | Out-Null
 if ($LASTEXITCODE -ne 1) { throw 'invalid argument exit code failed' }
+& $executable set wheel -1 --json | Out-Null
+if ($LASTEXITCODE -ne 1) { throw 'negative wheel must require the page keyword' }
+$menu = "0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($menu -join "`n") -notmatch '1  acceleration') { throw 'numeric menu failed' }
+if (@($menu).Count -gt 16) { throw 'home screen too long' }
+$navigation = "1`n0`n6`n3`nhome`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($navigation -join "`n") -notmatch 'game acceleration\?') { throw 'menu navigation failed' }
+$invalidInput = "2`nwrong`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($invalidInput -join "`n") -notmatch 'enter a valid number') { throw 'input recovery failed' }
 Write-Host 'passed / command status contract and validation'

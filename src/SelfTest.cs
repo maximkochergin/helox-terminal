@@ -11,6 +11,12 @@ internal static class SelfTest {
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
         Expect(Math.Abs(Analysis.Rate(samples).ObservedHz-125)<.01,"125 hz analysis");
         samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1,"idle gap exclusion");
+        List<Sample> batched=new List<Sample>();
+        for(int i=0;i<1001;i++) batched.Add(new Sample((i/8)*8+(i%8)*.01,1,0));
+        RateResult batch=Analysis.Rate(batched);
+        Expect(Math.Abs(batch.ObservedHz-1000)<.01 && batch.MedianHz>90000,"batched input must not inflate headline hz");
+        Expect(batch.Quality.Contains("uneven"),"batched delivery quality warning");
+        Expect(Analysis.Distance("10,5")==10.5 && Analysis.Distance("10.5")==10.5,"distance decimal separators");
         bool rejected=false;try {Analysis.Rate(new List<Sample>());} catch(InvalidOperationException){rejected=true;}Expect(rejected,"empty rate rejection");
         List<Sample> stroke=new List<Sample>{new Sample(0,3150,0)};
         Expect(Math.Abs(Analysis.Dpi(stroke,10).EstimatedDpi-800.1)<.01,"distance dpi analysis");
@@ -18,6 +24,11 @@ internal static class SelfTest {
         rejected=false;try {Store.Profile("../bad");}catch(ArgumentException){rejected=true;}Expect(rejected,"profile traversal rejection");
         Settings before=Settings.Read();
         Settings clone=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));Expect(before.Same(clone),"profile roundtrip");
+        Settings custom=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));
+        custom.Acceleration=2;custom.Threshold1=7;custom.Threshold2=13;
+        custom.Setup();Expect(custom.Acceleration==2 && custom.Threshold1==7 && custom.Threshold2==13,"setup preserves active acceleration");
+        custom.SetAcceleration(false);custom.Setup();
+        Expect(custom.Acceleration==1 && custom.Threshold1==7 && custom.Threshold2==13,"setup enables acceleration without resetting thresholds");
         // Actual read/write/read verification followed by unconditional restore.
         try {
             clone.Speed=before.Speed==10 ? 11 : 10;clone.Apply();Expect(Settings.Read().Speed==clone.Speed,"real speed readback");
@@ -29,6 +40,10 @@ internal static class SelfTest {
         } finally {before.Write();Expect(before.Same(Settings.Read()),"original settings restored");}
         List<Device> devices=Device.List();Expect(devices.Count>0,"real raw device enumeration");
         using(RawCapture capture=new RawCapture(devices[0])) {capture.Collect(0,false);}
+        using(RawCapture capture=new RawCapture(devices[0])) {
+            rejected=false;try {capture.Collect(0,true);}catch(InvalidOperationException) {rejected=true;}
+            Expect(rejected,"unfinished calibration timeout rejected");
+        }
         Console.WriteLine("  passed / analysis, profiles, native settings readback, restore, raw input registration\n  physical mouse movement measurements require a manual pass");
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -52,6 +53,7 @@ public sealed class RateResult {
     public double P95IntervalMs {get;set;}
     public double ObservedHz {get;set;}
     public double ActiveHz {get;set;}
+    public double MedianHz {get;set;}
     public string Source {get;set;}
     public string DevicePath {get;set;}
     public string MeasuredUtc {get;set;}
@@ -66,6 +68,13 @@ public sealed class DpiResult {
     public string Source {get;set;}
 }
 public static class Analysis {
+    public static double Distance(string value) {
+        double cm=double.Parse(value.Replace(',','.'),NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,CultureInfo.InvariantCulture);
+        ValidateDistance(cm);return cm;
+    }
+    private static void ValidateDistance(double cm) {
+        if(double.IsNaN(cm) || double.IsInfinity(cm) || cm<2 || cm>100) throw new ArgumentException("distance: 2..100 cm");
+    }
     public static double Percentile(List<double> sorted,double p) {
         if(sorted.Count==0) throw new ArgumentException("no samples");
         double index=(sorted.Count-1)*p; int lo=(int)index, hi=(int)Math.Ceiling(index);
@@ -83,12 +92,12 @@ public static class Analysis {
         times.Sort(); double median=Percentile(times,.5);
         double medianHz=1000/median, activeHz=1000*times.Count/total;
         return new RateResult { Reports=samples.Count, Intervals=times.Count, IdleGaps=gaps, MedianIntervalMs=median,
-            P95IntervalMs=Percentile(times,.95), ObservedHz=medianHz, ActiveHz=activeHz,
-            Quality=Math.Abs(medianHz-activeHz)/activeHz>.2 ? "delivery uneven or batched; repeat with sustained movement" : "median and mean delivery rates agree within 20 percent",
+            P95IntervalMs=Percentile(times,.95), ObservedHz=activeHz, ActiveHz=activeHz, MedianHz=medianHz,
+            Quality=Math.Abs(medianHz-activeHz)/activeHz>.2 ? "uneven delivery / repeat test" : "consistent delivery",
             Source="observed raw input delivery; not configured usb polling rate", MeasuredUtc=DateTime.UtcNow.ToString("o") };
     }
     public static DpiResult Dpi(List<Sample> samples,double cm) {
-        if(double.IsNaN(cm) || double.IsInfinity(cm) || cm<2 || cm>100) throw new ArgumentException("distance must be 2..100 cm");
+        ValidateDistance(cm);
         long x=0,y=0,pathX=0,pathY=0;
         foreach(Sample s in samples) { x+=s.X; y+=s.Y; pathX+=Math.Abs((long)s.X); pathY+=Math.Abs((long)s.Y); }
         long dominant=Math.Max(Math.Abs(x),Math.Abs(y)), transverse=Math.Min(Math.Abs(x),Math.Abs(y));
@@ -105,14 +114,17 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
     private IntPtr device;
     private Stopwatch watch=new Stopwatch();
     private Exception failure;
+    private bool disposed;
     internal RawCapture(Device selected) {
         device=selected.Handle;
         CreateParams cp=new CreateParams(); cp.Caption="helox raw input sink"; cp.Parent=new IntPtr(-3); CreateHandle(cp);
-        Native.RawRegistration r=new Native.RawRegistration {Page=1,Usage=2,Flags=0x100,Target=Handle};
+        Native.RawRegistration r=new Native.RawRegistration {Page=1,Usage=2,Flags=0x2100,Target=Handle};
         try { Native.Check(Native.RegisterRawInputDevices(new Native.RawRegistration[]{r},1,(uint)Marshal.SizeOf(typeof(Native.RawRegistration)))); watch.Start(); }
         catch { DestroyHandle(); throw; }
     }
     protected override void WndProc(ref Message message) {
+        if(message.Msg==0xfe && message.WParam==new IntPtr(2) && message.LParam==device)
+            failure=new InvalidOperationException("selected mouse disconnected");
         if(message.Msg==0xff && failure==null) {
             try {
                 uint size=0, header=(uint)(IntPtr.Size==8 ? 24 : 16);
@@ -136,21 +148,28 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
         base.WndProc(ref message);
     }
     internal void Collect(int seconds,bool enterStops) {
+        bool completed=!enterStops;
+        using(ConsoleCaptureMode mode=new ConsoleCaptureMode()) {
         while(watch.Elapsed.TotalSeconds<seconds) {
             Application.DoEvents();
-            if(failure!=null) throw new InvalidOperationException("raw input capture failed",failure);
+            if(failure!=null) throw failure;
             if(!Console.IsInputRedirected && Console.KeyAvailable) {
                 ConsoleKey key=Console.ReadKey(true).Key;
                 if(key==ConsoleKey.Escape) throw new OperationCanceledException("measurement cancelled");
-                if(enterStops && key==ConsoleKey.Enter) break;
+                if(enterStops && key==ConsoleKey.Enter) {completed=true;break;}
             }
             // Wake on real input instead of a sleep-based polling loop which batches reports.
             uint wait=Native.MsgWaitForMultipleObjectsEx(0,IntPtr.Zero,10,0x04ff,4);
             if(wait==uint.MaxValue) Native.Check(false);
         }
+        Application.DoEvents();
+        if(failure!=null) throw failure;
+        if(!completed) throw new InvalidOperationException("calibration timed out / nothing saved");
         if(AbsoluteReports>0) throw new InvalidOperationException("absolute pointer reports cannot be used for this measurement");
+        }
     }
     public void Dispose() {
+        if(disposed) return;disposed=true;
         Native.RawRegistration r=new Native.RawRegistration {Page=1,Usage=2,Flags=1,Target=IntPtr.Zero};
         Native.RegisterRawInputDevices(new Native.RawRegistration[]{r},1,(uint)Marshal.SizeOf(typeof(Native.RawRegistration)));
         DestroyHandle();

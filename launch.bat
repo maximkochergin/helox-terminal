@@ -1,10 +1,10 @@
 @echo off
 setlocal
 if not exist "%~dp0bin\helox.exe" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1" -Quiet
     if errorlevel 1 (
-        echo build failed / press any key to close
-        pause >nul
+        echo build failed 1>&2
+        if "%~1"=="" pause >nul
         exit /b 1
     )
 )

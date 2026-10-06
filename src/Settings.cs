@@ -11,6 +11,11 @@ public sealed class Settings {
     public int WheelLines {get;set;}
     public int DoubleClickMs {get;set;}
     public int SwapButtons {get;set;}
+    public void SetAcceleration(bool enabled) {
+        // Preserve an already enabled mode and custom thresholds.
+        if(enabled) {if(Acceleration==0) Acceleration=1;} else Acceleration=0;
+    }
+    public void Setup() {Speed=10;SetAcceleration(true);}
     public static Settings Read() {
         int[] m=Native.Read(3,3);
         return new Settings { Speed=Native.Read(0x70,1)[0], Threshold1=m[0], Threshold2=m[1], Acceleration=m[2],
@@ -47,10 +52,16 @@ internal static class Store {
     internal static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
     internal static void Save(string path, object value) {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
-        string temp=path+".tmp"; File.WriteAllText(temp,Json.Serialize(value));
-        if(File.Exists(path)) File.Replace(temp,path,null); else File.Move(temp,path);
+        string temp=path+"."+Guid.NewGuid().ToString("n")+".tmp";
+        try {
+            File.WriteAllText(temp,Json.Serialize(value));
+            if(File.Exists(path)) File.Replace(temp,path,null);else File.Move(temp,path);
+        }finally {if(File.Exists(temp)) File.Delete(temp);}
     }
-    internal static T Load<T>(string path) { return Json.Deserialize<T>(File.ReadAllText(path)); }
+    internal static T Load<T>(string path) {
+        string text=File.ReadAllText(path);
+        try {return Json.Deserialize<T>(text);}catch(ArgumentException) {throw new ArgumentException("invalid settings file");}
+    }
     internal static string Profile(string name) {
         if(!System.Text.RegularExpressions.Regex.IsMatch(name,@"^[a-z0-9][a-z0-9_-]{0,31}$")) throw new ArgumentException("profile name: 1..32 lowercase letters, numbers, underscores or hyphens");
         return Path.Combine(Root,"profiles",name+".json");
