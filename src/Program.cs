@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.3.0";
+    internal const string Version="0.4.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -25,7 +25,7 @@ internal static class Program {
                 string[] words=line.Trim().ToLowerInvariant().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
                 if(words.Length==0) continue;
                 if(words[0]=="exit" || words[0]=="quit" || (words.Length==1 && words[0]=="0")) break;
-                bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='7';
+                bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='8';
                 try {
                     if(menuChoice) Menu(words[0]);
                     else Run(words);
@@ -47,7 +47,7 @@ internal static class Program {
     private static void Home() {
         if(!Console.IsOutputRedirected) Console.Clear();
         CompactStatus();
-        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz          4  check dpi\n  5  profiles         6  more\n  7  mouse status     0  exit\n\n  choose a number / enter");
+        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz / gaps   4  check dpi\n  5  profiles         6  more\n  7  mouse status     8  aim tools\n  0  exit\n\n  choose a number / enter");
     }
     private static string Ask(string prompt) {
         Console.Write("\n  "+prompt+" > ");string value=Console.ReadLine();
@@ -65,6 +65,7 @@ internal static class Program {
             case "3":Measure(new string[]{"measure"});Finish();return;
             case "4":DpiCheck();Finish();return;
             case "7":Status();Finish();return;
+            case "8":AimMenu();return;
             case "5":
                 Profile(new string[]{"profile","list"});
                 Console.WriteLine("\n  1  save     2  load     3  restore original     0  back");
@@ -90,6 +91,43 @@ internal static class Program {
                 else throw new ArgumentException("choose 1, 2, 3 or 0");return;
         }
     }
+    private static void AimMenu() {
+        AimStatus status=Aim.Read(Selected());PrintAim(status);
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        0  back");
+        string choice=Ask("choose");
+        if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
+        else if(choice=="3" || choice=="4") {
+            if(choice=="3") Console.WriteLine("  smooth / 4 ms half-life / adds input lag; preserves direction");
+            AimCommand(new string[]{"aim","smooth",choice=="3" ? "on" : "off"});
+        } else if(choice=="5") AimCommand(new string[]{"aim","install"});
+        else if(choice=="6") AimCommand(new string[]{"aim","restore"});
+        else if(choice=="7") Measure(new string[]{"measure"});
+        else throw new ArgumentException("choose 1..7 or 0");
+        Finish();
+    }
+    private static void PrintAim(AimStatus status) {
+        Console.WriteLine("\n  aim / "+status.State);
+        if(status.State=="ready") Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+status.Mode+" / output half-life "+F(status.OutputHalfLifeMs.Value)+" ms");
+        else Console.WriteLine("  "+status.Note);
+    }
+    private static void AimCommand(string[] words) {
+        if(words.Length==2 && words[1]=="status") {AimStatus state=Aim.Read(Selected());if(json) Console.WriteLine(Store.Json.Serialize(state));else PrintAim(state);return;}
+        if(words.Length==2 && words[1]=="restore") {Aim.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  aim restored / driver readback verified");return;}
+        if(words.Length==2 && (words[1]=="install" || words[1]=="prepare")) {
+            if(json) throw new ArgumentException("backend setup does not support json");
+            string script=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"install-aim.ps1");
+            if(!File.Exists(script)) throw new FileNotFoundException("install-aim.ps1 missing");
+            System.Diagnostics.ProcessStartInfo start=new System.Diagnostics.ProcessStartInfo("powershell.exe","-noprofile -executionpolicy bypass -file \""+script+"\""+(words[1]=="prepare" ? " -PrepareOnly" : ""));
+            start.UseShellExecute=false;
+            using(System.Diagnostics.Process process=System.Diagnostics.Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new InvalidOperationException("aim backend setup failed / see message above");}
+            return;
+        }
+        if(words.Length==3 && (words[1]=="precision" || words[1]=="smooth")) {
+            AimStatus state=Aim.Set(Selected(),words[1],Toggle(words[2])!=0);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
+        }
+        throw new ArgumentException("use aim status|prepare|install|restore or aim precision|smooth on|off");
+    }
     private static void Finish() {
         if(Console.IsInputRedirected || Console.IsOutputRedirected) return;
         Console.Write("\n  enter / back ");
@@ -97,6 +135,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
+        Console.WriteLine("\n  aim prepare / install / status / restore\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on|off      4 ms output half-life / adds lag");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
@@ -119,7 +158,7 @@ internal static class Program {
         Device d=null;string note=null;try {d=Selected();}catch(Exception e) {note=Error(e);}
         return new {version=Version,receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
             selectionNote=note,windows=Settings.Read(),dossier=MouseDossier.Read(d),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
-            hardwareControl="unsupported: no verified vendor protocol",gameAcceleration="not managed; windows acceleration is bypassed by raw input",
+            hardwareControl="unsupported: no verified vendor protocol",gameAcceleration=Aim.Read(d),
             lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
     }
     private static T Last<T>(string filename,Device d) where T:class {
@@ -157,6 +196,7 @@ internal static class Program {
             Console.WriteLine("  dpi range       800..4800 / 4 stages; active stage unknown\n  body            125 x 64 x 38 mm\n  connection      2.4 ghz wireless\n  listed buttons  5 / dpi button present");
         }
         Settings settings=Settings.Read();
+        PrintAim(Aim.Read(device));
         Console.WriteLine("\n  windows / live\n  wheel           "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms\n  buttons         "+(settings.SwapButtons==0 ? "normal" : "swapped"));
         DpiResult lastDpi=Last<DpiResult>("dpi.json",device);RateResult lastRate=Last<RateResult>("rate.json",device);
         if(lastDpi!=null) Console.WriteLine("\n  dpi history / "+lastDpi.MeasuredUtc+" / "+lastDpi.Trials+" pass(es)"+(lastDpi.SpreadPercent.HasValue ? " / spread "+F(lastDpi.SpreadPercent.Value)+"%" : ""));
@@ -174,6 +214,7 @@ internal static class Program {
     private static void DpiCheck() {
         if(json || Console.IsInputRedirected) throw new ArgumentException("dpi check requires an interactive terminal");
         Device device=Selected();ModelFacts facts=ModelFacts.For(device);
+        if(Aim.Read(device).InputTransformed) throw new InvalidOperationException("aim filter changes counts / aim restore before checking dpi");
         if(facts==null) throw new ArgumentException("mouse-body dpi check supports gxt 929 only / use calibrate <cm>");
         Console.WriteLine("\n  dpi check / no ruler or marks / approximate\n  keep one fingertip beside the mouse front edge\n  slide forward until the rear edge reaches that finger\n  keep the finger still; do not rotate or lift\n  repeat 3 times / mouse length 125 mm");
         List<DpiResult> trials=new List<DpiResult>();
@@ -211,12 +252,17 @@ internal static class Program {
             capture.Collect(seconds,false);RateResult result=Analysis.Rate(capture.Samples);result.DevicePath=d.Path;
             Store.Save(Path.Combine(Store.Root,"rate.json"),result);
             if(json) Console.WriteLine(Store.Json.Serialize(result));
-            else Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  "+result.Quality+"\n  home / return to menu");
+            else {
+                Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  p95 "+F(result.P95IntervalMs)+" ms / p99 "+F(result.P99IntervalMs.Value)+" ms\n  slow intervals "+result.SlowIntervals+" / long gaps "+result.IdleGaps+" / max "+F(result.MaxGapMs.Value)+" ms\n  "+result.Quality);
+                if(result.IdleGaps>0 || result.SlowIntervals>0) Console.WriteLine("  repeat without stopping / place receiver near mouse, away from usb 3 hubs\n  smooth reduces movement fluctuations; it cannot recover missing reports");
+                Console.WriteLine("  home / return to menu");
+            }
         }
     }
     private static void Calibrate(string[] words) {
         if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("use calibrate <cm> in a terminal");
         double cm=Analysis.Distance(words[1]);Device d=Selected();
+        if(Aim.Read(d).InputTransformed) throw new InvalidOperationException("aim filter changes counts / aim restore before calibrating dpi");
         Console.WriteLine("\n  mark "+F(cm)+" cm on pad; place mouse at first mark\n  press enter, move straight to second mark, press enter\n  do not lift or return / esc cancels");
         StartPass("ready");
         using(RawCapture capture=new RawCapture(d)) {
@@ -235,12 +281,13 @@ internal static class Program {
         else throw new ArgumentException("use profile save|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  windows accel does not affect raw input games. game-wide accel\n  needs a separate input driver; helox does not install one.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  test hz measures delivered input; dpi uses three mouse-body passes.\n\n  undo settings?\n  profiles > restore original. profiles store windows settings.\n\n  receiver detected but no input?\n  receiver presence does not confirm mouse power. check the switch.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > restore original restores windows settings.\n  aim resets on reboot; enable again when needed.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest"))
             throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
+            case "aim":AimCommand(words);return;
             case "status":if(words.Length!=1) break;Status();return;
             case "devices":if(words.Length!=1) break;Devices();return;
             case "select":

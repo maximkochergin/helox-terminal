@@ -28,4 +28,14 @@ if ($LASTEXITCODE -ne 1 -or !$dpiJson.error) { throw 'interactive dpi must rejec
 $dossierScreen = "7`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($dossierScreen -join "`n") -notmatch 'unavailable / sensor dpi') { throw 'status menu navigation failed' }
 if ($status.receiver.TrustCandidate -and ($null -eq $status.dossier.Model.LengthMm -or !$status.dossier.Hid)) { throw 'dossier device metadata missing' }
+$aimStatus = & $executable aim status --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
+$badAim = & $executable aim smooth maybe --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validation failed' }
+if ($aimStatus.State -ne 'ready') {
+    $missingDriver = & $executable aim precision on --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$missingDriver.error -or $missingDriver.applied) { throw 'absent backend must not claim applied' }
+}
+$aimMenu = "8`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
 Write-Host 'passed / command status contract and validation'

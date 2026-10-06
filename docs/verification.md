@@ -23,6 +23,9 @@
 - three body-length dpi passes produce the expected median/counts; a spread above 15 percent is rejected.
 - dossier reads metadata for the selected device family, excludes unrelated hid collections and exposes known-model source information.
 - detailed status opens from menu item 7; interactive dpi checks reject redirected/json use.
+- official aim engine tests execute after `aim prepare`: slow 1x, capped fast-motion gain, reduced magnitude variation, direction preservation and unrelated device/profile retention.
+- aim status returns a backend state; activation without an installed driver fails without claiming an applied preset.
+- long gaps remain visible in diagnostics even when excluded from active hz.
 
 ## manual pass
 
@@ -40,4 +43,4 @@
 
 physical movement and distance calibration are not covered by the automated tests.
 
-a live 15-second capture was attempted during development and rejected for insufficient motion reports. no frequency value was saved or claimed as a physical measurement. a successful sustained-motion run and ruler calibration remain unverified.
+a historical sustained-motion result exists for this receiver, but it does not establish its configured polling rate. physical dpi accuracy and the new driver's effect on this mouse remain manual checks. see [aim verification](aim.md).

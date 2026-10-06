@@ -6,12 +6,13 @@ namespace Helox {
 internal static class SelfTest {
     private static void Expect(bool ok,string name) {if(!ok) throw new Exception("selftest failed: "+name);}
     internal static void Run() {
+        Aim.TestEngine();
         List<Sample> samples=new List<Sample>();
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
         RateResult rate=Analysis.Rate(samples); Expect(Math.Abs(rate.ObservedHz-1000)<.01,"1000 hz analysis");
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
         Expect(Math.Abs(Analysis.Rate(samples).ObservedHz-125)<.01,"125 hz analysis");
-        samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1,"idle gap exclusion");
+        samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1 && Analysis.Rate(samples).MaxGapMs==2000 && Analysis.Rate(samples).Quality.Contains("long gaps"),"long gaps remain visible");
         List<Sample> batched=new List<Sample>();
         for(int i=0;i<1001;i++) batched.Add(new Sample((i/8)*8+(i%8)*.01,1,0));
         RateResult batch=Analysis.Rate(batched);
