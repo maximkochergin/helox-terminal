@@ -28,6 +28,11 @@ $unsupportedJson = & $executable faq --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$unsupportedJson.error) { throw 'unsupported json command must return a json error' }
 $caseInsensitive = & $executable PROFILE LIST --JSON | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'command casing must be consistent' }
+$missingName = 'missing-' + [guid]::NewGuid().ToString('n').Substring(0,20)
+$missingProfile = & $executable profile apply $missingName --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 1 -or $missingProfile.error -ne 'profile not found / use profile list') { throw 'missing profile recovery message failed' }
+$exitArgs = "exit extra`nhelp`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($exitArgs -join "`n") -notmatch 'unknown choice' -or ($exitArgs -join "`n") -notmatch 'advanced|gradual fast-motion') { throw 'invalid exit arguments must not close the terminal' }
 $dpiJson = & $executable dpi --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$dpiJson.error) { throw 'interactive dpi must reject json mode' }
 $dossierScreen = "7`n0" | & $executable

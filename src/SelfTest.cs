@@ -71,6 +71,18 @@ internal static class SelfTest {
             string invalidType=Store.Json.Serialize(before).Replace("\"Acceleration\":"+before.Acceleration,"\"Acceleration\":true");
             File.WriteAllText(testProfile,invalidType);
             rejected=false;try {Store.Load<Settings>(testProfile);}catch(ArgumentException) {rejected=true;}Expect(rejected,"noninteger profile field rejected");
+            foreach(string invalid in new string[]{"[]","42","\"profile\"","null","{"}) {
+                File.WriteAllText(testProfile,invalid);
+                rejected=false;try {Store.Load<Settings>(testProfile);}catch(ArgumentException) {rejected=true;}
+                Expect(rejected,"nonobject or malformed profile rejected with a usable error");
+            }
+            string imported=Path.Combine(tempDir,"Imported.JSON"),unusable=Path.Combine(tempDir,"bad name.json");
+            try {
+                Store.Save(imported,before);File.WriteAllText(unusable,"{}");
+                List<string> listed=Store.Profiles(tempDir);
+                Expect(listed.Count==2 && listed[0]=="imported" && listed[1]=="settings","profile list normalizes imported names and excludes unusable names");
+                Expect(before.Same(Store.Load<Settings>(Path.Combine(tempDir,listed[0]+".json"))),"listed imported profile is loadable on windows");
+            }finally {if(File.Exists(imported)) File.Delete(imported);if(File.Exists(unusable)) File.Delete(unusable);}
             Expect(Directory.GetFiles(tempDir,"*.tmp").Length==0,"no leaked atomic save temporary files");
         }finally {if(File.Exists(testProfile)) File.Delete(testProfile);if(Directory.Exists(tempDir)) Directory.Delete(tempDir);}
         Settings custom=Store.Json.Deserialize<Settings>(Store.Json.Serialize(before));

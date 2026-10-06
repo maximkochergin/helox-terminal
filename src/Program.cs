@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.5.2";
+    internal const string Version="0.5.3";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -24,7 +24,7 @@ internal static class Program {
                 Console.Write("\n  > ");string line=Console.ReadLine();if(line==null) break;
                 string[] words=line.Trim().ToLowerInvariant().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
                 if(words.Length==0) continue;
-                if(words[0]=="exit" || words[0]=="quit" || (words.Length==1 && words[0]=="0")) break;
+                if(words.Length==1 && (words[0]=="exit" || words[0]=="quit" || words[0]=="0")) break;
                 bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='8';
                 try {
                     if(menuChoice) Menu(words[0]);
@@ -299,7 +299,13 @@ internal static class Program {
             if(json) Console.WriteLine(Store.Json.Serialize(names));else Console.WriteLine("  profiles / "+(names.Count==0 ? "none yet" : String.Join(" / ",names.ToArray())));
         }else if(words.Length==3 && words[1]=="save") {
             Store.Save(Store.Profile(words[2]),Settings.Read());if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]}));else Console.WriteLine("  saved / "+words[2]);
-        }else if(words.Length==3 && words[1]=="apply") Apply(Store.Load<Settings>(Store.Profile(words[2])));
+        }else if(words.Length==3 && words[1]=="apply") {
+            string path=Store.Profile(words[2]);Settings settings;
+            try {settings=Store.Load<Settings>(path);}
+            catch(FileNotFoundException) {throw new ArgumentException("profile not found / use profile list");}
+            catch(DirectoryNotFoundException) {throw new ArgumentException("profile not found / use profile list");}
+            Apply(settings);
+        }
         else throw new ArgumentException("use profile save|apply <name> or profile list");
     }
     private static void Faq() {

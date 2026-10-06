@@ -66,7 +66,7 @@ internal static class Store {
         string text=File.ReadAllText(path);
         try {
             if(typeof(T)==typeof(Settings)) {
-                Dictionary<string,object> fields=Json.Deserialize<Dictionary<string,object>>(text);
+                Dictionary<string,object> fields=Json.DeserializeObject(text) as Dictionary<string,object>;
                 if(fields==null) throw new ArgumentException();
                 foreach(string key in new string[]{"Speed","Threshold1","Threshold2","Acceleration","WheelLines","DoubleClickMs","SwapButtons"}) {
                     object value;
@@ -84,9 +84,13 @@ internal static class Store {
         if(System.Text.RegularExpressions.Regex.IsMatch(name,@"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$")) throw new ArgumentException("profile name is reserved by windows / choose another name");
         return Path.Combine(Root,"profiles",name+".json");
     }
-    internal static List<string> Profiles() {
-        List<string> names=new List<string>();string directory=Path.Combine(Root,"profiles");
-        if(Directory.Exists(directory)) foreach(string path in Directory.GetFiles(directory,"*.json")) names.Add(Path.GetFileNameWithoutExtension(path));
+    internal static List<string> Profiles(string directory=null) {
+        List<string> names=new List<string>();if(directory==null) directory=Path.Combine(Root,"profiles");
+        if(Directory.Exists(directory)) foreach(string path in Directory.GetFiles(directory,"*.json")) {
+            string name=Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+            try {Profile(name);}catch(ArgumentException) {continue;}
+            if(!names.Contains(name)) names.Add(name);
+        }
         names.Sort(StringComparer.Ordinal);return names;
     }
     internal static void Backup() {
