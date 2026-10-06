@@ -20,6 +20,9 @@
 - incomplete profiles and noninteger setting fields are rejected before native writes; atomic overwrite leaves no temporary files.
 - short event bursts and invalid timestamps cannot produce a saved frequency estimate; off-axis zigzag strokes are rejected.
 - cancelled numeric prompts redraw the main menu; unsupported json commands return a json error, and command casing is handled consistently.
+- three body-length dpi passes produce the expected median/counts; a spread above 15 percent is rejected.
+- dossier reads metadata for the selected device family, excludes unrelated hid collections and exposes known-model source information.
+- detailed status opens from menu item 7; interactive dpi checks reject redirected/json use.
 
 ## manual pass
 
@@ -32,6 +35,8 @@
 7. power the mouse off while leaving the receiver attached. status may still enumerate the receiver; a capture without motion should fail without saving a result.
 8. select the trust device and disconnect its receiver. measurements must report the missing selected device, without switching to the touchpad.
 9. in the legacy console, click/drag during a test. capture should keep running; the original quick-edit mode should return afterward.
+10. run menu item 4. use a fingertip beside the mouse nose, slide forward until the rear edge reaches it, and repeat three times. confirm the displayed value is labeled as an estimate with pass spread. escape must cancel without overwriting history.
+11. compare status for the trust receiver and another selected mouse. only matching hid collections should appear; trust model facts should not be attached to an unrelated device.
 
 physical movement and distance calibration are not covered by the automated tests.
 

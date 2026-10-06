@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.2.1";
+    internal const string Version="0.3.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -25,7 +25,7 @@ internal static class Program {
                 string[] words=line.Trim().ToLowerInvariant().Split(new char[]{' ','\t'},StringSplitOptions.RemoveEmptyEntries);
                 if(words.Length==0) continue;
                 if(words[0]=="exit" || words[0]=="quit" || (words.Length==1 && words[0]=="0")) break;
-                bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='6';
+                bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='7';
                 try {
                     if(menuChoice) Menu(words[0]);
                     else Run(words);
@@ -46,12 +46,12 @@ internal static class Program {
     private static void Header() {Console.WriteLine("\n  helox / "+Version+"\n  ----------------------------------------");}
     private static void Home() {
         if(!Console.IsOutputRedirected) Console.Clear();
-        Status();
-        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz          4  estimate dpi\n  5  profiles         6  more\n  0  exit");
+        CompactStatus();
+        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz          4  check dpi\n  5  profiles         6  more\n  7  mouse status     0  exit\n\n  choose a number / enter");
     }
     private static string Ask(string prompt) {
         Console.Write("\n  "+prompt+" > ");string value=Console.ReadLine();
-        if(String.IsNullOrWhiteSpace(value)) throw new OperationCanceledException();
+        if(String.IsNullOrWhiteSpace(value) || value.Trim()=="0" || value.Trim().Equals("back",StringComparison.OrdinalIgnoreCase)) throw new OperationCanceledException();
         return value.Trim().ToLowerInvariant();
     }
     private static void Menu(string choice) {
@@ -62,15 +62,22 @@ internal static class Program {
                 if(accel!="1" && accel!="2") throw new ArgumentException("choose 1, 2 or 0");
                 Run(new string[]{"set","acceleration",accel=="1" ? "on" : "off"});Home();return;
             case "2":Run(new string[]{"set","speed",Ask("speed 1..20 / current "+Settings.Read().Speed)});Home();return;
-            case "3":Measure(new string[]{"measure"});return;
-            case "4":Calibrate(new string[]{"calibrate",Ask("measured distance in cm / e.g. 10")});return;
+            case "3":Measure(new string[]{"measure"});Finish();return;
+            case "4":DpiCheck();Finish();return;
+            case "7":Status();Finish();return;
             case "5":
                 Profile(new string[]{"profile","list"});
                 Console.WriteLine("\n  1  save     2  load     3  restore original     0  back");
                 string profile=Ask("choose");
                 if(profile=="0") {Home();return;}
                 if(profile=="3") Run(new string[]{"restore"});
-                else if(profile=="1" || profile=="2") Profile(new string[]{"profile",profile=="1" ? "save" : "apply",Ask("profile name")});
+                else if(profile=="1") Profile(new string[]{"profile","save",Ask("profile name / 0 back")});
+                else if(profile=="2") {
+                    List<string> names=Store.Profiles();if(names.Count==0) throw new ArgumentException("no saved profiles yet");
+                    for(int i=0;i<names.Count;i++) Console.WriteLine("  "+(i+1)+"  "+names[i]);
+                    int saved=Integer(Ask("profile number / 0 back"));if(saved<1 || saved>names.Count) throw new ArgumentException("profile number out of range");
+                    Profile(new string[]{"profile","apply",names[saved-1]});
+                }
                 else throw new ArgumentException("choose 1, 2, 3 or 0");
                 Home();return;
             case "6":
@@ -78,13 +85,19 @@ internal static class Program {
                 string more=Ask("choose");
                 if(more=="0") Home();
                 else if(more=="1") {Devices();Run(new string[]{"select",Ask("mouse number")});Home();}
-                else if(more=="2") Help();
-                else if(more=="3") Faq();
+                else if(more=="2") {Help();Finish();}
+                else if(more=="3") {Faq();Finish();}
                 else throw new ArgumentException("choose 1, 2, 3 or 0");return;
         }
     }
+    private static void Finish() {
+        if(Console.IsInputRedirected || Console.IsOutputRedirected) return;
+        Console.Write("\n  enter / back ");
+        while(true) {ConsoleKey key=Console.ReadKey(true).Key;if(key==ConsoleKey.Enter || key==ConsoleKey.Escape) break;}
+        Home();
+    }
     private static void Help() {
-        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  calibrate <cm>         distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
+        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
@@ -105,7 +118,7 @@ internal static class Program {
     private static object StatusData() {
         Device d=null;string note=null;try {d=Selected();}catch(Exception e) {note=Error(e);}
         return new {version=Version,receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
-            selectionNote=note,windows=Settings.Read(),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
+            selectionNote=note,windows=Settings.Read(),dossier=MouseDossier.Read(d),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
             hardwareControl="unsupported: no verified vendor protocol",gameAcceleration="not managed; windows acceleration is bypassed by raw input",
             lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
     }
@@ -117,8 +130,7 @@ internal static class Program {
             return String.Equals(device,d.Path,StringComparison.OrdinalIgnoreCase) ? result : null;
         }catch {return null;}
     }
-    private static void Status() {
-        if(json) {Console.WriteLine(Store.Json.Serialize(StatusData()));return;}
+    private static void CompactStatus() {
         Header();Device d=null;
         try {d=Selected();Console.WriteLine("  receiver  "+(d.Product ?? "mouse device").ToLowerInvariant());}
         catch {Console.WriteLine("  receiver  not selected / use more");}
@@ -126,6 +138,58 @@ internal static class Program {
         Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+"\n  hardware  dpi ? / hz ?");
         DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
         if(dpi!=null || rate!=null) Console.WriteLine("  last test "+(dpi!=null ? "~"+F(dpi.EstimatedDpi)+" dpi" : "")+(dpi!=null && rate!=null ? " / " : "")+(rate!=null ? "~"+F(rate.ActiveHz)+" hz" : "")+" / history");
+    }
+    private static void Status() {
+        if(json) {Console.WriteLine(Store.Json.Serialize(StatusData()));return;}
+        CompactStatus();
+        Device device=null;try {device=Selected();}catch {}
+        MouseDossier dossier=MouseDossier.Read(device);
+        if(device!=null) {
+            Console.WriteLine("\n  device / read from windows");
+            Console.WriteLine("  driver buttons  "+(device.DriverButtonCount.HasValue ? device.DriverButtonCount.Value.ToString() : "unknown")+" / advertised, not physical count");
+            Console.WriteLine("  driver hz       "+(device.DriverSampleRate>0 ? device.DriverSampleRate+" / declared, not measured" : "not reported"));
+            if(dossier.Driver!=null) Console.WriteLine("  driver          "+(dossier.Driver.Provider ?? "unknown").ToLowerInvariant()+" / "+(dossier.Driver.Version ?? "unknown")+" / "+(dossier.Driver.Inf ?? "unknown"));
+            if(dossier.Hid!=null) foreach(HidCapability hid in dossier.Hid)
+                Console.WriteLine("  hid             "+(hid.VendorId ?? "?")+":"+(hid.ProductId ?? "?")+" / rev "+(hid.DeviceRevision ?? "?")+" / "+hid.UsagePage+":"+hid.Usage+" / in "+hid.InputReportBytes+"b / out "+hid.OutputReportBytes+"b");
+        }
+        if(dossier.Model!=null) {
+            Console.WriteLine("\n  model / manufacturer specifications");
+            Console.WriteLine("  dpi range       800..4800 / 4 stages; active stage unknown\n  body            125 x 64 x 38 mm\n  connection      2.4 ghz wireless\n  listed buttons  5 / dpi button present");
+        }
+        Settings settings=Settings.Read();
+        Console.WriteLine("\n  windows / live\n  wheel           "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms\n  buttons         "+(settings.SwapButtons==0 ? "normal" : "swapped"));
+        DpiResult lastDpi=Last<DpiResult>("dpi.json",device);RateResult lastRate=Last<RateResult>("rate.json",device);
+        if(lastDpi!=null) Console.WriteLine("\n  dpi history / "+lastDpi.MeasuredUtc+" / "+lastDpi.Trials+" pass(es)"+(lastDpi.SpreadPercent.HasValue ? " / spread "+F(lastDpi.SpreadPercent.Value)+"%" : ""));
+        if(lastRate!=null) Console.WriteLine("  hz history / "+lastRate.MeasuredUtc+" / "+lastRate.Reports+" reports / "+lastRate.Quality);
+        Console.WriteLine("\n  unavailable / sensor dpi, configured hz, battery, link power\n  dpi check / uses mouse body length; estimate, not readback");
+    }
+    private static void StartPass(string prompt) {
+        Console.WriteLine("  "+prompt+" / enter starts / esc cancels");
+        while(true) {
+            ConsoleKey key=Console.ReadKey(true).Key;
+            if(key==ConsoleKey.Escape) throw new OperationCanceledException();
+            if(key==ConsoleKey.Enter) return;
+        }
+    }
+    private static void DpiCheck() {
+        if(json || Console.IsInputRedirected) throw new ArgumentException("dpi check requires an interactive terminal");
+        Device device=Selected();ModelFacts facts=ModelFacts.For(device);
+        if(facts==null) throw new ArgumentException("mouse-body dpi check supports gxt 929 only / use calibrate <cm>");
+        Console.WriteLine("\n  dpi check / no ruler or marks / approximate\n  keep one fingertip beside the mouse front edge\n  slide forward until the rear edge reaches that finger\n  keep the finger still; do not rotate or lift\n  repeat 3 times / mouse length 125 mm");
+        List<DpiResult> trials=new List<DpiResult>();
+        for(int pass=1;pass<=3;pass++) {
+            StartPass("pass "+pass+"/3 / position mouse and finger");
+            Device fresh=Selected();
+            if(!String.Equals(fresh.Path,device.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / restart check");
+            using(RawCapture capture=new RawCapture(fresh)) {
+                Console.WriteLine("  slide one body length / enter finishes");capture.Collect(45,true);
+                DpiResult trial=Analysis.Dpi(capture.Samples,facts.LengthMm/10.0);trials.Add(trial);
+                Console.WriteLine("  pass "+pass+" / ~"+F(trial.EstimatedDpi)+" dpi");
+            }
+        }
+        DpiResult result=Analysis.CombineDpi(trials,"mouse-body-length estimate; distance set from manufacturer length; not hardware readback");result.DevicePath=device.Path;
+        Store.Save(Path.Combine(Store.Root,"dpi.json"),result);
+        Console.WriteLine("\n  ~"+F(result.EstimatedDpi)+" dpi / median of 3 passes\n  repeat spread "+F(result.SpreadPercent.Value)+"% / repeatability, not accuracy");
     }
     private static string F(double n) {return n.ToString("0.0",CultureInfo.InvariantCulture);}
     private static int Integer(string value) {return int.Parse(value,NumberStyles.Integer,CultureInfo.InvariantCulture);}
@@ -154,7 +218,7 @@ internal static class Program {
         if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("use calibrate <cm> in a terminal");
         double cm=Analysis.Distance(words[1]);Device d=Selected();
         Console.WriteLine("\n  mark "+F(cm)+" cm on pad; place mouse at first mark\n  press enter, move straight to second mark, press enter\n  do not lift or return / esc cancels");
-        if(Console.ReadLine()==null) throw new OperationCanceledException();
+        StartPass("ready");
         using(RawCapture capture=new RawCapture(d)) {
             capture.Collect(60,true);DpiResult result=Analysis.Dpi(capture.Samples,cm);result.DevicePath=d.Path;
             Store.Save(Path.Combine(Store.Root,"dpi.json"),result);
@@ -163,9 +227,7 @@ internal static class Program {
     }
     private static void Profile(string[] words) {
         if(words.Length==2 && words[1]=="list") {
-            string dir=Path.Combine(Store.Root,"profiles");List<string> names=new List<string>();
-            if(Directory.Exists(dir)) foreach(string path in Directory.GetFiles(dir,"*.json")) names.Add(Path.GetFileNameWithoutExtension(path));
-            names.Sort(StringComparer.Ordinal);
+            List<string> names=Store.Profiles();
             if(json) Console.WriteLine(Store.Json.Serialize(names));else Console.WriteLine("  profiles / "+(names.Count==0 ? "none yet" : String.Join(" / ",names.ToArray())));
         }else if(words.Length==3 && words[1]=="save") {
             Store.Save(Store.Profile(words[2]),Settings.Read());if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]}));else Console.WriteLine("  saved / "+words[2]);
@@ -173,7 +235,7 @@ internal static class Program {
         else throw new ArgumentException("use profile save|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  windows accel does not affect raw input games. game-wide accel\n  needs a separate input driver; helox does not install one.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  test hz measures delivered input; dpi uses a ruler estimate.\n\n  undo settings?\n  profiles > restore original. profiles store windows settings.\n\n  receiver detected but no input?\n  receiver presence does not confirm mouse power. check the switch.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  windows accel does not affect raw input games. game-wide accel\n  needs a separate input driver; helox does not install one.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  test hz measures delivered input; dpi uses three mouse-body passes.\n\n  undo settings?\n  profiles > restore original. profiles store windows settings.\n\n  receiver detected but no input?\n  receiver presence does not confirm mouse power. check the switch.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest"))
@@ -199,6 +261,7 @@ internal static class Program {
                     default:throw new ArgumentException("unknown setting / use help");
                 }});Applied();return;
             case "measure":Measure(words);return;
+            case "dpi":if(words.Length!=1) break;DpiCheck();return;
             case "calibrate":Calibrate(words);return;
             case "profile":Profile(words);return;
             case "restore":
@@ -208,7 +271,7 @@ internal static class Program {
                 if(json) Console.WriteLine(Store.Json.Serialize(new {restored=true,readback=Settings.Read()}));else Console.WriteLine("  restored / verified");return;
             case "faq":if(words.Length!=1) break;Faq();return;
             case "probe":
-                if(words.Length!=1) break;List<HidCapability> caps=HidProbe.Read();
+                if(words.Length!=1) break;List<HidCapability> caps=HidProbe.Read(Selected().Path);
                 if(json) Console.WriteLine(Store.Json.Serialize(caps));
                 else {
                     foreach(HidCapability cap in caps) Console.WriteLine("  hid "+cap.UsagePage+":"+cap.Usage+" / in "+cap.InputReportBytes+" / out "+cap.OutputReportBytes+" / feature "+cap.FeatureReportBytes+(cap.Error!=null ? " / "+cap.Error : ""));

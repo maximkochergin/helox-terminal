@@ -83,6 +83,11 @@ internal static class Store {
         if(!System.Text.RegularExpressions.Regex.IsMatch(name,@"^[a-z0-9][a-z0-9_-]{0,31}$")) throw new ArgumentException("profile name: 1..32 lowercase letters, numbers, underscores or hyphens");
         return Path.Combine(Root,"profiles",name+".json");
     }
+    internal static List<string> Profiles() {
+        List<string> names=new List<string>();string directory=Path.Combine(Root,"profiles");
+        if(Directory.Exists(directory)) foreach(string path in Directory.GetFiles(directory,"*.json")) names.Add(Path.GetFileNameWithoutExtension(path));
+        names.Sort(StringComparer.Ordinal);return names;
+    }
     internal static void Backup() {
         string path=Path.Combine(Root,"original.json");
         if(!File.Exists(path)) Save(path,Settings.Read());

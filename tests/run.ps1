@@ -12,7 +12,7 @@ if ($LASTEXITCODE -ne 1) { throw 'invalid argument exit code failed' }
 if ($LASTEXITCODE -ne 1) { throw 'negative wheel must require the page keyword' }
 $menu = "0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($menu -join "`n") -notmatch '1  acceleration') { throw 'numeric menu failed' }
-if (@($menu).Count -gt 16) { throw 'home screen too long' }
+if (@($menu).Count -gt 18) { throw 'home screen too long' }
 $navigation = "1`n0`n6`n3`nhome`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($navigation -join "`n") -notmatch 'game acceleration\?') { throw 'menu navigation failed' }
 $invalidInput = "2`nwrong`n0" | & $executable
@@ -23,4 +23,9 @@ $unsupportedJson = & $executable faq --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$unsupportedJson.error) { throw 'unsupported json command must return a json error' }
 $caseInsensitive = & $executable PROFILE LIST --JSON | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'command casing must be consistent' }
+$dpiJson = & $executable dpi --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 1 -or !$dpiJson.error) { throw 'interactive dpi must reject json mode' }
+$dossierScreen = "7`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($dossierScreen -join "`n") -notmatch 'unavailable / sensor dpi') { throw 'status menu navigation failed' }
+if ($status.receiver.TrustCandidate -and ($null -eq $status.dossier.Model.LengthMm -or !$status.dossier.Hid)) { throw 'dossier device metadata missing' }
 Write-Host 'passed / command status contract and validation'

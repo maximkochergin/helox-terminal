@@ -26,6 +26,12 @@ internal static class SelfTest {
         rejected=false;try {Analysis.Rate(samples);}catch(InvalidOperationException) {rejected=true;}Expect(rejected,"nonfinite timestamps rejected");
         List<Sample> stroke=new List<Sample>{new Sample(0,3150,0)};
         Expect(Math.Abs(Analysis.Dpi(stroke,10).EstimatedDpi-800.1)<.01,"distance dpi analysis");
+        List<DpiResult> passes=new List<DpiResult>{Analysis.Dpi(new List<Sample>{new Sample(0,3900,0)},12.5),
+            Analysis.Dpi(new List<Sample>{new Sample(0,4000,0)},12.5),Analysis.Dpi(new List<Sample>{new Sample(0,3950,0)},12.5)};
+        DpiResult combined=Analysis.CombineDpi(passes,"test");
+        Expect(combined.Trials==3 && combined.Counts==3950 && Math.Abs(combined.EstimatedDpi-802.64)<.01,"body-length three-pass median");
+        passes[2]=Analysis.Dpi(new List<Sample>{new Sample(0,7000,0)},12.5);
+        rejected=false;try {Analysis.CombineDpi(passes,"test");}catch(InvalidOperationException) {rejected=true;}Expect(rejected,"inconsistent dpi passes rejected");
         stroke.Add(new Sample(1,-2000,0));rejected=false;try {Analysis.Dpi(stroke,10);}catch(InvalidOperationException){rejected=true;}Expect(rejected,"backtrack rejection");
         stroke=new List<Sample>{new Sample(0,1600,3000),new Sample(1,1550,-3000)};
         rejected=false;try {Analysis.Dpi(stroke,10);}catch(InvalidOperationException){rejected=true;}Expect(rejected,"off-axis zigzag rejected");
@@ -59,6 +65,12 @@ internal static class SelfTest {
             clone.Speed=0;rejected=false;try {clone.Apply();}catch(ArgumentException){rejected=true;}Expect(rejected,"invalid write rejected");
         } finally {before.Write();Expect(before.Same(Settings.Read()),"original settings restored");}
         List<Device> devices=Device.List();Expect(devices.Count>0,"real raw device enumeration");
+        foreach(Device device in devices) if(device.TrustCandidate) {
+            MouseDossier dossier=MouseDossier.Read(device);
+            Expect(dossier.Model!=null && dossier.Model.LengthMm==125,"known model facts");
+            Expect(dossier.Hid!=null && dossier.Hid.Count>=1,"selected-device descriptor scope");
+            foreach(HidCapability hid in dossier.Hid) Expect(HidProbe.Family(hid.Path)==HidProbe.Family(device.Path),"no unrelated hid collections in dossier");
+        }
         using(RawCapture capture=new RawCapture(devices[0])) {capture.Collect(0,false);}
         using(RawCapture capture=new RawCapture(devices[0])) {
             rejected=false;try {capture.Collect(0,true);}catch(InvalidOperationException) {rejected=true;}

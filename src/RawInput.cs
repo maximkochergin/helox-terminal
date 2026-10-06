@@ -11,6 +11,9 @@ public sealed class Device {
     public string Product {get;set;}
     public string Manufacturer {get;set;}
     public bool TrustCandidate {get;set;}
+    public int? DriverButtonCount {get;set;}
+    public int? DriverSampleRate {get;set;}
+    public bool? HorizontalWheel {get;set;}
     internal IntPtr Handle;
     internal static List<Device> List() {
         uint count=0, size=(uint)Marshal.SizeOf(typeof(Native.DeviceEntry));
@@ -30,8 +33,16 @@ public sealed class Device {
                     try {
                         if(Native.GetRawInputDeviceInfo(entry.Handle,0x20000007,name,ref chars)==uint.MaxValue) continue;
                         string path=Marshal.PtrToStringUni(name);
-                        result.Add(new Device { Handle=entry.Handle, Path=path, Product=Native.HidString(path,true),
-                            Manufacturer=Native.HidString(path,false), TrustCandidate=path.IndexOf("vid_145f&pid_0326",StringComparison.OrdinalIgnoreCase)>=0 });
+                        Device mouse=new Device { Handle=entry.Handle, Path=path, Product=Native.HidString(path,true),
+                            Manufacturer=Native.HidString(path,false), TrustCandidate=path.IndexOf("vid_145f&pid_0326",StringComparison.OrdinalIgnoreCase)>=0 };
+                        uint infoSize=32;IntPtr info=Marshal.AllocHGlobal(32);
+                        try {
+                            Marshal.WriteInt32(info,32);
+                            if(Native.GetRawInputDeviceInfo(entry.Handle,0x2000000b,info,ref infoSize)!=uint.MaxValue && Marshal.ReadInt32(info,4)==0) {
+                                mouse.DriverButtonCount=Marshal.ReadInt32(info,12);mouse.DriverSampleRate=Marshal.ReadInt32(info,16);mouse.HorizontalWheel=Marshal.ReadInt32(info,20)!=0;
+                            }
+                        }finally {Marshal.FreeHGlobal(info);}
+                        result.Add(mouse);
                     } finally { Marshal.FreeHGlobal(name); }
                 }
                 result.Sort(delegate(Device a,Device b){return String.Compare(a.Path,b.Path,StringComparison.OrdinalIgnoreCase);});
@@ -66,8 +77,23 @@ public sealed class DpiResult {
     public string DevicePath {get;set;}
     public string MeasuredUtc {get;set;}
     public string Source {get;set;}
+    public int Trials {get;set;}
+    public double? SpreadPercent {get;set;}
+    public List<double> TrialDpi {get;set;}
 }
 public static class Analysis {
+    public static DpiResult CombineDpi(List<DpiResult> trials,string source) {
+        if(trials==null || trials.Count<3) throw new InvalidOperationException("complete all three passes / nothing saved");
+        List<double> values=new List<double>();
+        foreach(DpiResult trial in trials) {
+            if(trial==null || trial.EstimatedDpi<=0 || double.IsNaN(trial.EstimatedDpi) || double.IsInfinity(trial.EstimatedDpi)) throw new InvalidOperationException("invalid dpi pass");
+            values.Add(trial.EstimatedDpi);
+        }
+        values.Sort();double median=Percentile(values,.5),spread=(values[values.Count-1]-values[0])*100/median;
+        if(spread>15) throw new InvalidOperationException("passes differ by more than 15% / repeat check");
+        return new DpiResult {EstimatedDpi=median,DistanceCm=trials[0].DistanceCm,Counts=(long)Math.Round(median*trials[0].DistanceCm/2.54),Trials=trials.Count,
+            SpreadPercent=spread,TrialDpi=values,Source=source,MeasuredUtc=DateTime.UtcNow.ToString("o")};
+    }
     public static double Distance(string value) {
         double cm=double.Parse(value.Replace(',','.'),NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign,CultureInfo.InvariantCulture);
         ValidateDistance(cm);return cm;
@@ -110,7 +136,7 @@ public static class Analysis {
         long offAxis=Math.Abs(x)>=Math.Abs(y) ? pathY : pathX;
         if(transverse>dominant*.2 || offAxis>path*.25 || path>dominant*1.15) throw new InvalidOperationException("use one straight stroke without returning or lifting; calibration was not saved");
         return new DpiResult { EstimatedDpi=dominant*2.54/cm, DistanceCm=cm, Counts=dominant,
-            Source="distance calibration estimate; not hardware readback", MeasuredUtc=DateTime.UtcNow.ToString("o") };
+            Trials=1,Source="distance calibration estimate; not hardware readback", MeasuredUtc=DateTime.UtcNow.ToString("o") };
     }
 }
 internal sealed class RawCapture : NativeWindow, IDisposable {
@@ -120,6 +146,8 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
     private Stopwatch watch=new Stopwatch();
     private Exception failure;
     private bool disposed;
+    private bool collecting;
+    private double deadline;
     internal RawCapture(Device selected) {
         device=selected.Handle;
         CreateParams cp=new CreateParams(); cp.Caption="helox raw input sink"; cp.Parent=new IntPtr(-3); CreateHandle(cp);
@@ -130,7 +158,7 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
     protected override void WndProc(ref Message message) {
         if(message.Msg==0xfe && message.WParam==new IntPtr(2) && message.LParam==device)
             failure=new InvalidOperationException("selected mouse disconnected");
-        if(message.Msg==0xff && failure==null) {
+        if(message.Msg==0xff && failure==null && collecting && watch.Elapsed.TotalMilliseconds<=deadline) {
             try {
                 uint size=0, header=(uint)(IntPtr.Size==8 ? 24 : 16);
                 if(Native.GetRawInputData(message.LParam,0x10000003,IntPtr.Zero,ref size,header)==uint.MaxValue) Native.Check(false);
@@ -154,6 +182,9 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
     }
     internal void Collect(int seconds,bool enterStops) {
         bool completed=!enterStops;
+        Samples.Clear();AbsoluteReports=0;watch.Restart();
+        deadline=seconds*1000.0;collecting=true;
+        try {
         using(ConsoleCaptureMode mode=new ConsoleCaptureMode()) {
         while(watch.Elapsed.TotalSeconds<seconds) {
             Application.DoEvents();
@@ -167,11 +198,13 @@ internal sealed class RawCapture : NativeWindow, IDisposable {
             uint wait=Native.MsgWaitForMultipleObjectsEx(0,IntPtr.Zero,10,0x04ff,4);
             if(wait==uint.MaxValue) Native.Check(false);
         }
+        collecting=false;
         Application.DoEvents();
         if(failure!=null) throw failure;
         if(!completed) throw new InvalidOperationException("calibration timed out / nothing saved");
         if(AbsoluteReports>0) throw new InvalidOperationException("absolute pointer reports cannot be used for this measurement");
         }
+        }finally {collecting=false;}
     }
     public void Dispose() {
         if(disposed) return;disposed=true;
