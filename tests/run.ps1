@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'build.ps1')
 & (Join-Path (Split-Path $PSScriptRoot -Parent) 'build.ps1')
 $executable = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\helox.exe'
 & $executable selftest

@@ -21,6 +21,9 @@ jobs:
         run: |
           .\bin\helox.exe check
           if ($LASTEXITCODE -ne 0) { throw 'regression checks failed' }
+      - name: build recovery checks
+        shell: powershell
+        run: .\tests\build.ps1
       - name: package
         shell: powershell
         run: .\package.ps1

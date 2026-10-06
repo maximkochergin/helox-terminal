@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.6.2
+  helox / 0.6.3
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -118,6 +118,8 @@ powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
 tests temporarily change native settings and always restore them. regressions cover acceleration preservation, queued input timing, calibration timeout, three-pass dpi analysis, descriptor/device scoping, menu navigation, profile validation and input recovery. physical mouse-body/ruler measurements still need manual verification.
+
+source builds compile into a temporary directory and replace the executable only after successful compilation. compiler errors keep the previous executable. if replacement is blocked by a file lock, close helox and retry; the previous executable remains intact.
 
 [hardware findings](hardware.md) / [verification](verification.md) / [windows raw input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
 
