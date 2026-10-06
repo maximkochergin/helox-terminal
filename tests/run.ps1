@@ -59,4 +59,42 @@ if ($devices.Count -gt 0) {
     $cancelMouse = "6`n1`n0`n0" | & $executable
     if ($LASTEXITCODE -ne 0 -or ($cancelMouse -join "`n") -match 'selected / ') { throw 'mouse menu cancel changed selection' }
 }
-Write-Host 'passed / command status contract and validation'
+$dataRoot = Join-Path $env:LOCALAPPDATA 'helox-terminal'
+$recoveryFiles = @{}
+foreach ($file in @('original.json', 'undo.json')) {
+    $path = Join-Path $dataRoot $file
+    $recoveryFiles[$path] = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllBytes($path) } else { $null }
+}
+$profileName = 'test-' + [guid]::NewGuid().ToString('n').Substring(0,24)
+$profilePath = Join-Path $dataRoot ('profiles\' + $profileName + '.json')
+$beforeUndo = & $executable status --json | ConvertFrom-Json
+try {
+    & $executable profile save $profileName --json | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'locked profile save failed' }
+    $preview = & $executable profile show $profileName --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or ($preview | ConvertTo-Json -Compress) -ne ($beforeUndo.windows | ConvertTo-Json -Compress)) { throw 'profile preview contract failed' }
+    $afterPreview = & $executable status --json | ConvertFrom-Json
+    if (($afterPreview.windows | ConvertTo-Json -Compress) -ne ($beforeUndo.windows | ConvertTo-Json -Compress)) { throw 'profile preview changed settings' }
+    $profileNames = & $executable profile list --json | ConvertFrom-Json
+    $profileNumber = [array]::IndexOf(@($profileNames),$profileName) + 1
+    $menuPreview = "5`n5`n$profileNumber`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($menuPreview -join "`n") -notmatch ('profile / ' + $profileName) -or ($menuPreview -join "`n") -match 'applied /') { throw 'profile preview menu failed' }
+    $testSpeed = if ($beforeUndo.windows.Speed -eq 10) { 11 } else { 10 }
+    & $executable set speed $testSpeed --json | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'undo test change failed' }
+    $undone = & $executable undo --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or !$undone.undone -or ($undone.readback | ConvertTo-Json -Compress) -ne ($beforeUndo.windows | ConvertTo-Json -Compress)) { throw 'undo did not restore previous settings' }
+    & $executable set speed $beforeUndo.windows.Speed --json | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'undo no-op test failed' }
+    $redone = & $executable undo --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $redone.readback.Speed -ne $testSpeed) { throw 'no-op replaced undo or repeated undo failed' }
+} finally {
+    & $executable set speed $beforeUndo.windows.Speed --json | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'undo test settings restore failed' }
+    foreach ($path in $recoveryFiles.Keys) {
+        if ($null -eq $recoveryFiles[$path]) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path } }
+        else { [IO.File]::WriteAllBytes($path, [byte[]]$recoveryFiles[$path]) }
+    }
+    if (Test-Path -LiteralPath $profilePath) { Remove-Item -LiteralPath $profilePath }
+}
+Write-Host 'passed / command status contract, profile preview, undo and validation'

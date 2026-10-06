@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.5.3";
+    internal const string Version="0.6.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -68,18 +68,19 @@ internal static class Program {
             case "8":AimMenu();return;
             case "5":
                 Profile(new string[]{"profile","list"});
-                Console.WriteLine("\n  1  save     2  load     3  restore original     0  back");
+                Console.WriteLine("\n  1  save     2  load     3  restore original\n  4  undo last change    5  preview     0  back");
                 string profile=Ask("choose");
                 if(profile=="0") {Home();return;}
                 if(profile=="3") Run(new string[]{"restore"});
+                else if(profile=="4") Run(new string[]{"undo"});
                 else if(profile=="1") Profile(new string[]{"profile","save",Ask("profile name / 0 back")});
-                else if(profile=="2") {
+                else if(profile=="2" || profile=="5") {
                     List<string> names=Store.Profiles();if(names.Count==0) throw new ArgumentException("no saved profiles yet");
                     for(int i=0;i<names.Count;i++) Console.WriteLine("  "+(i+1)+"  "+names[i]);
                     int saved=Integer(Ask("profile number / 0 back"));if(saved<1 || saved>names.Count) throw new ArgumentException("profile number out of range");
-                    Profile(new string[]{"profile","apply",names[saved-1]});
+                    Profile(new string[]{"profile",profile=="5" ? "show" : "apply",names[saved-1]});
                 }
-                else throw new ArgumentException("choose 1, 2, 3 or 0");
+                else throw new ArgumentException("choose 1..5 or 0");
                 Finish();return;
             case "6":
                 Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq     0  back");
@@ -141,7 +142,7 @@ internal static class Program {
     }
     private static void Help() {
         Console.WriteLine("\n  aim prepare / install / status / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on|off      4 ms output half-life / adds lag\n  check                  analysis checks / no settings changes");
-        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|apply <name>\n  profile list / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
+        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
@@ -298,18 +299,22 @@ internal static class Program {
             List<string> names=Store.Profiles();
             if(json) Console.WriteLine(Store.Json.Serialize(names));else Console.WriteLine("  profiles / "+(names.Count==0 ? "none yet" : String.Join(" / ",names.ToArray())));
         }else if(words.Length==3 && words[1]=="save") {
-            Store.Save(Store.Profile(words[2]),Settings.Read());if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]}));else Console.WriteLine("  saved / "+words[2]);
-        }else if(words.Length==3 && words[1]=="apply") {
+            Store.SaveProfile(words[2]);if(json) Console.WriteLine(Store.Json.Serialize(new {saved=words[2]}));else Console.WriteLine("  saved / "+words[2]);
+        }else if(words.Length==3 && (words[1]=="apply" || words[1]=="show")) {
             string path=Store.Profile(words[2]);Settings settings;
             try {settings=Store.Load<Settings>(path);}
             catch(FileNotFoundException) {throw new ArgumentException("profile not found / use profile list");}
             catch(DirectoryNotFoundException) {throw new ArgumentException("profile not found / use profile list");}
-            Apply(settings);
+            if(words[1]=="show") {
+                if(json) Console.WriteLine(Store.Json.Serialize(settings));
+                else Console.WriteLine("  profile / "+words[2]+"\n  speed "+settings.Speed+"/20 / acceleration "+(settings.Acceleration==0 ? "off" : "on")+" / thresholds "+settings.Threshold1+", "+settings.Threshold2+
+                    "\n  wheel "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms / buttons "+(settings.SwapButtons==0 ? "normal" : "swapped"));
+            }else Apply(settings);
         }
-        else throw new ArgumentException("use profile save|apply <name> or profile list");
+        else throw new ArgumentException("use profile save|show|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > restore original restores windows settings.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest" || words[0]=="check"))
@@ -339,6 +344,9 @@ internal static class Program {
             case "dpi":if(words.Length!=1) break;DpiCheck();return;
             case "calibrate":Calibrate(words);return;
             case "profile":Profile(words);return;
+            case "undo":
+                if(words.Length!=1) break;Store.Undo();
+                if(json) Console.WriteLine(Store.Json.Serialize(new {undone=true,readback=Settings.Read()}));else Console.WriteLine("  last windows change undone / verified");return;
             case "restore":
                 if(words.Length!=1) break;string path=Path.Combine(Store.Root,"original.json");
                 if(!File.Exists(path)) throw new InvalidOperationException("nothing to restore yet");

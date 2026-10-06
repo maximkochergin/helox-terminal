@@ -102,12 +102,38 @@ internal static class Store {
         }
     }
     internal static void Apply(Settings settings,bool backup) {
-        Locked(delegate {if(backup) Backup();settings.Apply();});
+        Locked(delegate {settings.Validate();if(backup) Backup();Change(settings);});
     }
     internal static void Update(Action<Settings> edit) {
         Locked(delegate {
-            Settings current=Settings.Read();edit(current);current.Validate();Backup();current.Apply();
+            Settings current=Settings.Read();edit(current);current.Validate();Backup();Change(current);
         });
+    }
+    internal static void CommitChange(Settings before,Settings after,Action<Settings> apply,Action<Settings> saveUndo) {
+        before.Validate();after.Validate();
+        if(before.Same(after)) return;
+        apply(after);
+        try {saveUndo(before);}
+        catch(Exception error) {
+            try {apply(before);}
+            catch(Exception rollback) {throw new IOException("undo backup failed: "+error.Message+"; rollback failed: "+rollback.Message);}
+            throw new IOException("undo backup failed; previous windows settings restored: "+error.Message);
+        }
+    }
+    private static void Change(Settings settings) {
+        CommitChange(Settings.Read(),settings,delegate(Settings value) {value.Apply();},
+            delegate(Settings value) {Save(Path.Combine(Root,"undo.json"),value);});
+    }
+    internal static void Undo() {
+        Locked(delegate {
+            string path=Path.Combine(Root,"undo.json");
+            if(!File.Exists(path)) throw new InvalidOperationException("nothing to undo yet");
+            Settings previous=Load<Settings>(path);Change(previous);
+        });
+    }
+    internal static void SaveProfile(string name) {
+        string path=Profile(name);
+        Locked(delegate {Settings current=Settings.Read();current.Validate();Save(path,current);});
     }
     private static void Locked(Action work) {
         // One user's cli instances must not interleave backup, write and rollback.

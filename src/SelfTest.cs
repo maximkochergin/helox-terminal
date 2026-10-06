@@ -8,6 +8,7 @@ internal static class SelfTest {
     internal static void Run(bool native=true) {
         ConfigGuardRegression();
         AimRegression();
+        UndoRegression();
         Device first=new Device {Path="first"},second=new Device {Path="second"};
         List<Device> displayed=new List<Device>{first,second};
         Expect(Program.ResolveChoice(displayed,1,new List<Device>{second,first})==first,"first mouse remains selectable after enumeration reorder");
@@ -112,6 +113,28 @@ internal static class SelfTest {
             Expect(rejected,"unfinished calibration timeout rejected");
         }
         Console.WriteLine("  passed / analysis, profiles, native settings readback, restore, raw input registration\n  physical mouse movement measurements require a manual pass");
+    }
+    private static void UndoRegression() {
+        Settings before=new Settings {Speed=10,DoubleClickMs=500,WheelLines=3};
+        Settings after=new Settings {Speed=11,DoubleClickMs=500,WheelLines=3};
+        Settings live=before,saved=null;int writes=0;
+        Action<Settings> apply=delegate(Settings value) {live=value;writes++;};
+        Store.CommitChange(before,after,apply,delegate(Settings value) {saved=value;});
+        Expect(live==after && saved==before && writes==1,"last change saves previous snapshot");
+        Store.CommitChange(after,after,apply,delegate(Settings value) {throw new Exception("no-op must not replace undo");});
+        Expect(writes==1,"unchanged settings preserve undo and avoid writes");
+        bool rejected=false;
+        try {Store.CommitChange(before,after,apply,delegate(Settings value) {throw new IOException("disk full");});}
+        catch(IOException e) {rejected=e.Message.Contains("previous windows settings restored");}
+        Expect(rejected && live==before,"failed undo persistence restores windows settings");
+        rejected=false;
+        try {Store.CommitChange(before,after,delegate(Settings value) {if(value==before) throw new IOException("restore blocked");},delegate(Settings value) {throw new IOException("disk full");});}
+        catch(IOException e) {rejected=e.Message.Contains("disk full") && e.Message.Contains("rollback failed") && e.Message.Contains("restore blocked");}
+        Expect(rejected,"undo persistence and rollback failures both reported");
+        saved=null;rejected=false;
+        try {Store.CommitChange(before,after,delegate(Settings value) {throw new IOException("apply failed");},delegate(Settings value) {saved=value;});}
+        catch(IOException) {rejected=true;}
+        Expect(rejected && saved==null,"failed apply leaves previous undo untouched");
     }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");
