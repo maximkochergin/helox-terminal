@@ -11,6 +11,19 @@ if (($beforeCheck.windows | ConvertTo-Json -Compress) -ne ($afterCheck.windows |
 $status = & $executable status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status contract failed' }
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
+if ($status.receiver.Path) {
+    $historyPath = Join-Path $env:LOCALAPPDATA 'helox-terminal\rate.json'
+    $historyBytes = if (Test-Path -LiteralPath $historyPath) { [IO.File]::ReadAllBytes($historyPath) } else { $null }
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $historyPath -Parent) | Out-Null
+        [IO.File]::WriteAllText($historyPath,(@{DevicePath=$status.receiver.Path;ActiveHz=0;MeasuredUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Compress))
+        $damagedHistory = & $executable status --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $null -ne $damagedHistory.lastRate) { throw 'status accepted incomplete rate history' }
+    } finally {
+        if ($null -eq $historyBytes) { if (Test-Path -LiteralPath $historyPath) { Remove-Item -LiteralPath $historyPath } }
+        else { [IO.File]::WriteAllBytes($historyPath,[byte[]]$historyBytes) }
+    }
+}
 & $executable set speed 0 --json | Out-Null
 if ($LASTEXITCODE -ne 1) { throw 'invalid argument exit code failed' }
 & $executable set wheel -1 --json | Out-Null

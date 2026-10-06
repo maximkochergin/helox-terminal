@@ -26,15 +26,18 @@ internal static class Aim {
     private const string Scale="Time in ms after which scale is weighted at half its original value.";
     private const string X="Whole or horizontal accel parameters";
     internal static Dictionary<string,object> Saved(string path) {
-        if(!File.Exists(path)) return new Dictionary<string,object>();
+        if(!File.Exists(path)) return new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
         try {
             Dictionary<string,object> presets=Parse(File.ReadAllText(path));
             if(presets==null) throw new ArgumentException();
+            Dictionary<string,object> normalized=new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
             foreach(KeyValuePair<string,object> entry in presets) {
+                if(String.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length>199 || entry.Key.IndexOf('\0')>=0) throw new ArgumentException();
                 Dictionary<string,object> preset=Map(entry.Value);object precision,smooth;
                 if(preset==null || !preset.TryGetValue("precision",out precision) || !(precision is bool) || !preset.TryGetValue("smooth",out smooth) || !(smooth is bool)) throw new ArgumentException();
+                normalized.Add(entry.Key,entry.Value);
             }
-            return presets;
+            return normalized;
         }catch(Exception e) {
             if(e is IOException || e is UnauthorizedAccessException) throw;
             throw new ArgumentException("invalid saved aim preset / aim restore to reset it");

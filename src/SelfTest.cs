@@ -9,6 +9,11 @@ internal static class SelfTest {
         ConfigGuardRegression();
         AimRegression();
         UndoRegression();
+        Program.RequireDpiInput(false);
+        foreach(bool? transformed in new bool?[]{true,null}) {
+            bool blocked=false;try {Program.RequireDpiInput(transformed);}catch(InvalidOperationException) {blocked=true;}
+            Expect(blocked,"dpi refuses active and unknown filter states");
+        }
         Device first=new Device {Path="first"},second=new Device {Path="second"};
         List<Device> displayed=new List<Device>{first,second};
         Expect(Program.ResolveChoice(displayed,1,new List<Device>{second,first})==first,"first mouse remains selectable after enumeration reorder");
@@ -23,6 +28,14 @@ internal static class SelfTest {
         List<Sample> samples=new List<Sample>();
         for(int i=0;i<1001;i++) samples.Add(new Sample(i,1,0));
         RateResult rate=Analysis.Rate(samples); Expect(Math.Abs(rate.ObservedHz-1000)<.01,"1000 hz analysis");
+        rate.DevicePath="mouse";
+        RateResult previous=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));previous.ActiveHz=900;previous.P95IntervalMs=2;
+        RateComparison compared=Analysis.CompareRates(previous,rate);
+        Expect(compared!=null && compared.ActiveHzDifference==100 && compared.P95IntervalDifferenceMs==-1,"rate comparison reports signed same-device deltas");
+        previous.DevicePath="other";Expect(Analysis.CompareRates(previous,rate)==null,"rate comparison rejects another device");
+        previous.DevicePath="mouse";previous.ActiveHz=double.NaN;
+        Expect(!Analysis.ValidHistory(previous) && Analysis.CompareRates(previous,rate)==null,"damaged rate history is not compared");
+        Expect(!Analysis.ValidHistory(new DpiResult {EstimatedDpi=800,DevicePath="mouse"}),"partial dpi history rejected");
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
         Expect(Math.Abs(Analysis.Rate(samples).ObservedHz-125)<.01,"125 hz analysis");
         samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1 && Analysis.Rate(samples).MaxGapMs==2000 && Analysis.Rate(samples).Quality.Contains("long gaps"),"long gaps remain visible");
@@ -176,6 +189,14 @@ internal static class SelfTest {
             File.WriteAllText(presetPath,"{\"mouse\":{\"precision\":true,\"smooth\":false}}");
             Dictionary<string,object> saved=Aim.Saved(presetPath);
             Expect((bool)Aim.Map(saved["mouse"])["precision"] && !(bool)Aim.Map(saved["mouse"])["smooth"],"saved aim toggles roundtrip");
+            Expect(saved.ContainsKey("MOUSE"),"saved aim identity ignores case like driver identity");
+            saved["MOUSE"]=new Dictionary<string,object>{{"precision",false},{"smooth",true}};
+            Expect(saved.Count==1 && (bool)Aim.Map(saved["mouse"])["smooth"],"aim updates do not create case aliases");
+            foreach(string invalid in new string[]{"{\"mouse\":{\"precision\":true,\"smooth\":false},\"MOUSE\":{\"precision\":false,\"smooth\":true}}","{\"\":{\"precision\":true,\"smooth\":false}}"}) {
+                File.WriteAllText(presetPath,invalid);bool rejected=false;
+                try {Aim.Saved(presetPath);}catch(ArgumentException) {rejected=true;}
+                Expect(rejected,"ambiguous or empty aim identities rejected");
+            }
             foreach(string invalid in new string[]{"null","{\"mouse\":null}","{\"mouse\":{\"precision\":true}}","{\"mouse\":{\"precision\":\"true\",\"smooth\":false}}"}) {
                 File.WriteAllText(presetPath,invalid);bool rejected=false;
                 try {Aim.Saved(presetPath);}catch(ArgumentException) {rejected=true;}

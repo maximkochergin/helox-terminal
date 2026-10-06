@@ -57,6 +57,7 @@ public sealed class Sample {
     public Sample(double ms,int x,int y) {Ms=ms;X=x;Y=y;}
 }
 public sealed class RateResult {
+    public RateComparison Comparison {get;set;}
     public int Reports {get;set;}
     public int Intervals {get;set;}
     public int IdleGaps {get;set;}
@@ -74,6 +75,11 @@ public sealed class RateResult {
     public string MeasuredUtc {get;set;}
     public string Quality {get;set;}
 }
+public sealed class RateComparison {
+    public string PreviousMeasuredUtc {get;set;}
+    public double ActiveHzDifference {get;set;}
+    public double P95IntervalDifferenceMs {get;set;}
+}
 public sealed class DpiResult {
     public double EstimatedDpi {get;set;}
     public double DistanceCm {get;set;}
@@ -86,6 +92,23 @@ public sealed class DpiResult {
     public List<double> TrialDpi {get;set;}
 }
 public static class Analysis {
+    private static bool Positive(double value) {return value>0 && !double.IsNaN(value) && !double.IsInfinity(value);}
+    private static bool Timestamp(string value) {
+        DateTime parsed;return DateTime.TryParse(value,CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out parsed);
+    }
+    internal static bool ValidHistory(RateResult result) {
+        return result!=null && result.Reports>=101 && result.Intervals>=100 && result.Intervals<=result.Reports-1 && result.IdleGaps>=0 &&
+            Positive(result.ActiveHz) && Positive(result.MedianIntervalMs) && Positive(result.P95IntervalMs) && result.P95IntervalMs>=result.MedianIntervalMs && Timestamp(result.MeasuredUtc);
+    }
+    internal static bool ValidHistory(DpiResult result) {
+        return result!=null && Positive(result.EstimatedDpi) && result.Counts>=100 && result.DistanceCm>=2 && result.DistanceCm<=100 && result.Trials>=1 && Timestamp(result.MeasuredUtc);
+    }
+    internal static RateComparison CompareRates(RateResult previous,RateResult current) {
+        if(!ValidHistory(previous) || !ValidHistory(current) || String.IsNullOrEmpty(current.DevicePath) ||
+            !String.Equals(previous.DevicePath,current.DevicePath,StringComparison.OrdinalIgnoreCase)) return null;
+        return new RateComparison {PreviousMeasuredUtc=previous.MeasuredUtc,ActiveHzDifference=current.ActiveHz-previous.ActiveHz,
+            P95IntervalDifferenceMs=current.P95IntervalMs-previous.P95IntervalMs};
+    }
     public static DpiResult CombineDpi(List<DpiResult> trials,string source) {
         if(trials==null || trials.Count<3) throw new InvalidOperationException("complete all three passes / nothing saved");
         List<double> values=new List<double>();

@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.6.0";
+    internal const string Version="0.6.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -188,6 +188,7 @@ internal static class Program {
         string path=Path.Combine(Store.Root,filename);if(!File.Exists(path) || d==null) return null;
         try {
             T result=Store.Load<T>(path);DpiResult dpi=result as DpiResult;RateResult rate=result as RateResult;
+            if((dpi!=null && !Analysis.ValidHistory(dpi)) || (rate!=null && !Analysis.ValidHistory(rate))) return null;
             string device=dpi!=null ? dpi.DevicePath : rate!=null ? rate.DevicePath : null;
             return String.Equals(device,d.Path,StringComparison.OrdinalIgnoreCase) ? result : null;
         }catch {return null;}
@@ -237,7 +238,7 @@ internal static class Program {
     private static void DpiCheck() {
         if(json || Console.IsInputRedirected) throw new ArgumentException("dpi check requires an interactive terminal");
         Device device=Selected();ModelFacts facts=ModelFacts.For(device);
-        if(Aim.Read(device).InputTransformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before checking dpi");
+        CheckDpiInput(device);
         if(facts==null) throw new ArgumentException("mouse-body dpi check supports gxt 929 only / use calibrate <cm>");
         Console.WriteLine("\n  dpi check / no ruler or marks / approximate\n  keep one fingertip beside the mouse front edge\n  slide forward until the rear edge reaches that finger\n  keep the finger still; do not rotate or lift\n  repeat 3 times / mouse length 125 mm");
         List<DpiResult> trials=new List<DpiResult>();
@@ -245,8 +246,10 @@ internal static class Program {
             StartPass("pass "+pass+"/3 / position mouse and finger");
             Device fresh=Selected();
             if(!String.Equals(fresh.Path,device.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / restart check");
+            CheckDpiInput(fresh);
             using(RawCapture capture=new RawCapture(fresh)) {
                 Console.WriteLine("  slide one body length / enter finishes");capture.Collect(45,true);
+                CheckDpiInput(fresh);
                 DpiResult trial=Analysis.Dpi(capture.Samples,facts.LengthMm/10.0);trials.Add(trial);
                 Console.WriteLine("  pass "+pass+" / ~"+F(trial.EstimatedDpi)+" dpi");
             }
@@ -271,25 +274,35 @@ internal static class Program {
         int seconds=words.Length==2 ? Integer(words[1]) : 10;
         if(seconds<3 || seconds>30) throw new ArgumentException("duration: 3..30 seconds");
         Device d=Selected();if(!json) Console.WriteLine("\n  move mouse in circles / "+seconds+"s / esc cancels");
+        RateResult previous=Last<RateResult>("rate.json",d);
         using(RawCapture capture=new RawCapture(d)) {
             capture.Collect(seconds,false);RateResult result=Analysis.Rate(capture.Samples);result.DevicePath=d.Path;
+            result.Comparison=Analysis.CompareRates(previous,result);
             Store.Save(Path.Combine(Store.Root,"rate.json"),result);
             if(json) Console.WriteLine(Store.Json.Serialize(result));
             else {
                 Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  p95 "+F(result.P95IntervalMs)+" ms / p99 "+F(result.P99IntervalMs.Value)+" ms\n  slow intervals "+result.SlowIntervals+" / long gaps "+result.IdleGaps+" / max "+F(result.MaxGapMs.Value)+" ms\n  "+result.Quality);
+                if(result.Comparison!=null) Console.WriteLine("  vs previous test / hz "+Signed(result.Comparison.ActiveHzDifference)+" / p95 "+Signed(result.Comparison.P95IntervalDifferenceMs)+" ms");
                 if(result.IdleGaps>0 || result.SlowIntervals>0) Console.WriteLine("  repeat without stopping / place receiver near mouse, away from usb 3 hubs\n  smooth reduces movement fluctuations; it cannot recover missing reports");
                 Console.WriteLine("  home / return to menu");
             }
         }
     }
+    private static string Signed(double value) {return value.ToString("+0.0;-0.0;0.0",CultureInfo.InvariantCulture);}
+    private static void CheckDpiInput(Device device) {RequireDpiInput(Aim.Read(device).InputTransformed);}
+    internal static void RequireDpiInput(bool? transformed) {
+        if(transformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before checking dpi / nothing saved");
+    }
     private static void Calibrate(string[] words) {
         if(words.Length!=2 || json || Console.IsInputRedirected) throw new ArgumentException("use calibrate <cm> in a terminal");
         double cm=Analysis.Distance(words[1]);Device d=Selected();
-        if(Aim.Read(d).InputTransformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before calibrating dpi");
+        CheckDpiInput(d);
         Console.WriteLine("\n  mark "+F(cm)+" cm on pad; place mouse at first mark\n  press enter, move straight to second mark, press enter\n  do not lift or return / esc cancels");
         StartPass("ready");
+        CheckDpiInput(d);
         using(RawCapture capture=new RawCapture(d)) {
             capture.Collect(60,true);DpiResult result=Analysis.Dpi(capture.Samples,cm);result.DevicePath=d.Path;
+            CheckDpiInput(d);
             Store.Save(Path.Combine(Store.Root,"dpi.json"),result);
             Console.WriteLine("  ~"+F(result.EstimatedDpi)+" dpi / estimate\n  home / return to menu");
         }
