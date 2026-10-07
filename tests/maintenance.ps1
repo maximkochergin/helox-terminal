@@ -51,3 +51,6 @@ try {
     if (!$resolved.StartsWith($allowed,[StringComparison]::OrdinalIgnoreCase)) { throw 'invalid fixture cleanup path' }
     if (Test-Path -LiteralPath $resolved) { Remove-DataTree $resolved $resolved }
 }
+# The session-gate assertion deliberately launches a command that exits 1.
+# Do not propagate that expected exit code to a successful CI step/caller.
+$global:LASTEXITCODE=0
