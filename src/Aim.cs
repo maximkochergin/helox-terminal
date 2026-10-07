@@ -148,8 +148,11 @@ internal static class Aim {
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
         cfg["profiles"]=profiles.ToArray();
         Dictionary<string,object> devConfig=Parse(Store.Json.Serialize(defaults["defaultDeviceConfig"]));devConfig["disable"]=false;
-        List<object> devices=Items(cfg["devices"]);devices.RemoveAll(delegate(object d){return String.Equals((string)Map(d)["id"],id,StringComparison.OrdinalIgnoreCase);});
-        devices.Add(new Dictionary<string,object>{{"id",id},{"name","helox mouse"},{"profile",name},{"config",devConfig}});cfg["devices"]=devices.ToArray();return cfg;
+        List<object> devices=Items(cfg["devices"]);
+        int deviceIndex=devices.FindIndex(delegate(object d){return String.Equals((string)Map(d)["id"],id,StringComparison.OrdinalIgnoreCase);});
+        Dictionary<string,object> updated=new Dictionary<string,object>{{"id",id},{"name","helox mouse"},{"profile",name},{"config",devConfig}};
+        if(deviceIndex<0) devices.Add(updated);else devices[deviceIndex]=updated;
+        cfg["devices"]=devices.ToArray();return cfg;
     }
     internal static bool SameValue(object a,object b) {
         Dictionary<string,object> left=a as Dictionary<string,object>,right=b as Dictionary<string,object>;

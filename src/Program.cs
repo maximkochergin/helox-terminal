@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.7.0";
+    internal const string Version="0.7.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -293,13 +293,23 @@ internal static class Program {
             else {
                 Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  p95 "+F(result.P95IntervalMs)+" ms / p99 "+F(result.P99IntervalMs.Value)+" ms\n  slow intervals "+result.SlowIntervals+" / long gaps "+result.IdleGaps+" / max "+F(result.MaxGapMs.Value)+" ms\n  "+result.Quality);
                 Console.WriteLine("  including gaps ~"+F(result.DeliveredHz.Value)+" hz / gap time "+F(result.GapPercent.Value)+"%\n  slow threshold "+F(result.SlowThresholdMs.Value)+" ms / heuristic, not lost-packet count");
-                if(result.Comparison!=null) Console.WriteLine("  vs previous test / hz "+Signed(result.Comparison.ActiveHzDifference)+" / p95 "+Signed(result.Comparison.P95IntervalDifferenceMs)+" ms");
+                PrintComparison(result.Comparison);
                 if(result.IdleGaps>0 || result.SlowIntervals>0) Console.WriteLine("  repeat without stopping / place receiver near mouse, away from usb 3 hubs\n  smooth reduces movement fluctuations; it cannot recover missing reports");
                 Console.WriteLine("  home / return to menu");
             }
         }
     }
     private static string Signed(double value) {return value.ToString("+0.0;-0.0;0.0",CultureInfo.InvariantCulture);}
+    private static void PrintComparison(RateComparison comparison) {
+        if(comparison==null) return;
+        Console.WriteLine("  vs previous test / hz "+Signed(comparison.ActiveHzDifference)+" / p95 "+Signed(comparison.P95IntervalDifferenceMs)+" ms"+
+            (comparison.P99IntervalDifferenceMs.HasValue ? " / p99 "+Signed(comparison.P99IntervalDifferenceMs.Value)+" ms" : ""));
+        List<string> shares=new List<string>();
+        if(comparison.GapPercentDifference.HasValue) shares.Add("gap time "+Signed(comparison.GapPercentDifference.Value)+" pp");
+        if(comparison.SlowIntervalPercentDifference.HasValue) shares.Add("slow intervals "+Signed(comparison.SlowIntervalPercentDifference.Value)+" pp");
+        if(shares.Count>0) Console.WriteLine("  "+String.Join(" / ",shares.ToArray())+" / percentage points");
+        if(comparison.ContextNote!=null) Console.WriteLine("  "+comparison.ContextNote);
+    }
     private static void CheckDpiInput(Device device) {RequireDpiInput(Aim.Read(device).InputTransformed);}
     internal static void RequireDpiInput(bool? transformed) {
         if(transformed!=false) throw new InvalidOperationException("aim filter active or unreadable / verify aim status and restore before checking dpi / nothing saved");

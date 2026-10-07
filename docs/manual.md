@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.7.0
+  helox / 0.7.1
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -55,6 +55,8 @@ hardware dpi/polling writes, current sensor dpi, configured polling, battery and
 for wireless stutters, repeat the capture without stopping and compare with the receiver close to the mouse, away from active usb 3 devices/cables. [intel's measurements](https://www.benq.com/content/dam/newb2b/Support/FAQ/intel_white%20paper_usb3%20interference.pdf) document 2.4 ghz interference and receiver placement effects. smoothing cannot recreate missing packets or raise hardware polling rate.
 
 repeat tests show the change in active hz and p95 interval against the last valid test of the same mouse. positive p95 means longer intervals; negative means shorter. use similar motion for both tests. json exposes these deltas in `Comparison`; no baseline gives null. invalid history is excluded from status and comparisons.
+
+comparison also includes p99, gap-time share, and slow-interval share when both tests contain those metrics. shares are reported in percentage points (`pp`), so different report counts do not make raw outlier counts misleading. batching and pauses add a context note rather than an automatic better/worse verdict. json additionally exports span-frequency change as `DeliveredHzDifference`. missing older metrics stay null. slow shares use each run's own displayed threshold; compare similar motion and settings.
 
 the test also shows delivery frequency including long gaps and the percentage of the sampled span spent in gaps over 50 ms. this span starts at the first motion report and ends at the last; time before/after movement is excluded. a pause and interrupted wireless delivery remain indistinguishable. slow intervals use a displayed heuristic threshold of `max(1.75 * median, median + 0.25 ms)`, so a 16 ms interval among 8 ms reports is now detected. this is a timing outlier count, not proof of lost hardware packets. json adds `SpanMs`, `GapDurationMs`, `DeliveredHz`, `GapPercent`, and `SlowThresholdMs`; older history leaves them null.
 

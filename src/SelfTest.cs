@@ -32,6 +32,11 @@ internal static class SelfTest {
         RateResult previous=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));previous.ActiveHz=900;previous.P95IntervalMs=2;previous.P99IntervalMs=2;
         RateComparison compared=Analysis.CompareRates(previous,rate);
         Expect(compared!=null && compared.ActiveHzDifference==100 && compared.P95IntervalDifferenceMs==-1,"rate comparison reports signed same-device deltas");
+        RateResult longRun=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));
+        longRun.Reports=2001;longRun.Intervals=2000;longRun.SlowIntervals=40;longRun.SpanMs=2000;longRun.P99IntervalMs=2;
+        RateResult shortRun=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));shortRun.SlowIntervals=20;
+        RateComparison normalized=Analysis.CompareRates(longRun,shortRun);
+        Expect(normalized.SlowIntervalPercentDifference==0 && normalized.P99IntervalDifferenceMs==-1,"comparison normalizes slow intervals across different run sizes");
         previous.DevicePath="other";Expect(Analysis.CompareRates(previous,rate)==null,"rate comparison rejects another device");
         previous.DevicePath="mouse";previous.ActiveHz=double.NaN;
         Expect(!Analysis.ValidHistory(previous) && Analysis.CompareRates(previous,rate)==null,"damaged rate history is not compared");
@@ -53,6 +58,8 @@ internal static class SelfTest {
         legacy.P99IntervalMs=null;legacy.MaxGapMs=null;legacy.SlowIntervals=null;legacy.SameTimestampReports=null;
         legacy.SpanMs=null;legacy.GapDurationMs=null;legacy.DeliveredHz=null;legacy.GapPercent=null;legacy.SlowThresholdMs=null;
         Expect(Analysis.ValidHistory(legacy),"legacy history without optional metrics remains valid");
+        normalized=Analysis.CompareRates(legacy,rate);
+        Expect(normalized!=null && normalized.GapPercentDifference==null && normalized.SlowIntervalPercentDifference==null && normalized.P99IntervalDifferenceMs==null,"legacy comparison never invents missing metrics");
         legacy.MeasuredUtc=DateTime.UtcNow.AddDays(1).ToString("o");
         Expect(Analysis.CompareRates(legacy,rate)==null,"future baseline is not compared with an older test");
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
@@ -60,6 +67,9 @@ internal static class SelfTest {
         samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1 && Analysis.Rate(samples).MaxGapMs==2000 && Analysis.Rate(samples).Quality.Contains("long gaps"),"long gaps remain visible");
         RateResult paused=Analysis.Rate(samples);
         Expect(paused.GapDurationMs==2000 && paused.SpanMs==10000 && paused.GapPercent==20 && paused.DeliveredHz<paused.ActiveHz,"span frequency exposes gaps excluded from active hz");
+        paused.DevicePath="mouse";paused.MeasuredUtc=rate.MeasuredUtc;
+        normalized=Analysis.CompareRates(paused,rate);
+        Expect(normalized.GapPercentDifference==-20 && normalized.ContextNote!=null && normalized.DeliveredHzDifference>0,"comparison exposes pause changes and warns about context");
         List<Sample> delayed125=new List<Sample>();double elapsed=0;
         for(int i=0;i<=1000;i++) {delayed125.Add(new Sample(elapsed,1,0));elapsed+=i==500 ? 16 : 8;}
         RateResult delayed=Analysis.Rate(delayed125);
@@ -78,6 +88,8 @@ internal static class SelfTest {
         RateResult batch=Analysis.Rate(batched);
         Expect(Math.Abs(batch.ObservedHz-1000)<.01 && batch.MedianHz>90000,"batched input must not inflate headline hz");
         Expect(batch.Quality.Contains("uneven"),"batched delivery quality warning");
+        batch.DevicePath="mouse";batch.MeasuredUtc=rate.MeasuredUtc;
+        Expect(Analysis.CompareRates(batch,rate).ContextNote.Contains("batched"),"batched comparison includes a timing caveat");
         List<Sample> equalTimes=new List<Sample>();
         for(int i=0;i<=1000;i++) equalTimes.Add(new Sample((i/2)*2,1,0));
         RateResult simultaneous=Analysis.Rate(equalTimes);
@@ -219,6 +231,14 @@ internal static class SelfTest {
         validArgs["mode"]="lut";validArgs["data"]=new object[]{0,0,1,1,2,2};AimConfigGuard.Check(validLut);
     }
     private static void AimRegression() {
+        Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));
+        Dictionary<string,object> selected=Aim.Configure(defaults,defaults,"HID\\FIRST",true,true,8);
+        Dictionary<string,object> peers=Aim.Configure(selected,defaults,"HID\\SECOND",false,true,2);
+        Dictionary<string,object> repeated=Aim.Configure(peers,defaults,"HID\\FIRST",true,true,8);
+        Expect(Aim.SameValue(peers,repeated),"unchanged aim update preserves device ordering and smoothing strength");
+        Dictionary<string,object> changed=Aim.Configure(peers,defaults,"HID\\FIRST",false,true,8);
+        Expect(Aim.SameValue(Aim.Items(peers["devices"])[1],Aim.Items(changed["devices"])[1]) && Aim.Describe(changed,"HID\\FIRST").OutputHalfLifeMs==8,"aim toggle preserves peer entries and selected strength");
+        AimConfigGuard.Check(changed);
         Expect(Aim.EndpointMayExist(true,0),"loaded driver remains present without a service record");
         Expect(Aim.EndpointMayExist(false,5),"inaccessible driver is not treated as absent");
         Expect(!Aim.EndpointMayExist(false,2) && !Aim.EndpointMayExist(false,3),"only missing driver paths prove absence");

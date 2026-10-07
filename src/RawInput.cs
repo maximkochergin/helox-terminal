@@ -81,6 +81,11 @@ public sealed class RateResult {
     public string Quality {get;set;}
 }
 public sealed class RateComparison {
+    public double? P99IntervalDifferenceMs {get;set;}
+    public double? DeliveredHzDifference {get;set;}
+    public double? GapPercentDifference {get;set;}
+    public double? SlowIntervalPercentDifference {get;set;}
+    public string ContextNote {get;set;}
     public string PreviousMeasuredUtc {get;set;}
     public double ActiveHzDifference {get;set;}
     public double P95IntervalDifferenceMs {get;set;}
@@ -117,7 +122,8 @@ public static class Analysis {
             (!result.DeliveredHz.HasValue || Positive(result.DeliveredHz.Value)) &&
             (!result.GapPercent.HasValue || (Finite(result.GapPercent.Value) && result.GapPercent.Value>=0 && result.GapPercent.Value<=100)) &&
             (!result.SlowThresholdMs.HasValue || Positive(result.SlowThresholdMs.Value)) &&
-            (result.Comparison==null || (Timestamp(result.Comparison.PreviousMeasuredUtc) && Finite(result.Comparison.ActiveHzDifference) && Finite(result.Comparison.P95IntervalDifferenceMs)));
+            (result.Comparison==null || (Timestamp(result.Comparison.PreviousMeasuredUtc) && Finite(result.Comparison.ActiveHzDifference) && Finite(result.Comparison.P95IntervalDifferenceMs) &&
+                OptionalFinite(result.Comparison.P99IntervalDifferenceMs) && OptionalFinite(result.Comparison.DeliveredHzDifference) && OptionalFinite(result.Comparison.GapPercentDifference) && OptionalFinite(result.Comparison.SlowIntervalPercentDifference)));
     }
     internal static bool ValidHistory(DpiResult result) {
         return result!=null && Positive(result.EstimatedDpi) && result.Counts>=100 && result.DistanceCm>=2 && result.DistanceCm<=100 && result.Trials>=1 && Timestamp(result.MeasuredUtc) &&
@@ -130,8 +136,14 @@ public static class Analysis {
         DateTime before,after;ReadTimestamp(previous.MeasuredUtc,out before);ReadTimestamp(current.MeasuredUtc,out after);
         if(before.ToUniversalTime()>after.ToUniversalTime()) return null;
         return new RateComparison {PreviousMeasuredUtc=previous.MeasuredUtc,ActiveHzDifference=current.ActiveHz-previous.ActiveHz,
-            P95IntervalDifferenceMs=current.P95IntervalMs-previous.P95IntervalMs};
+            P95IntervalDifferenceMs=current.P95IntervalMs-previous.P95IntervalMs,P99IntervalDifferenceMs=current.P99IntervalMs-previous.P99IntervalMs,
+            DeliveredHzDifference=current.DeliveredHz-previous.DeliveredHz,GapPercentDifference=current.GapPercent-previous.GapPercent,
+            SlowIntervalPercentDifference=SlowShare(current)-SlowShare(previous),
+            ContextNote=Batched(previous) || Batched(current) ? "batched or uneven timing; compare cautiously" : previous.IdleGaps>0 || current.IdleGaps>0 ? "pauses or interruptions; repeat with similar motion" : null};
     }
+    private static bool OptionalFinite(double? value) {return !value.HasValue || Finite(value.Value);}
+    internal static double? SlowShare(RateResult result) {return result.SlowIntervals.HasValue && result.Intervals>0 ? (double?)result.SlowIntervals.Value*100/result.Intervals : null;}
+    private static bool Batched(RateResult result) {return result.SameTimestampReports>0 || Math.Abs(1000/result.MedianIntervalMs-result.ActiveHz)/result.ActiveHz>.2;}
     public static DpiResult CombineDpi(List<DpiResult> trials,string source) {
         if(trials==null || trials.Count<3) throw new InvalidOperationException("complete all three passes / nothing saved");
         List<double> values=new List<double>();

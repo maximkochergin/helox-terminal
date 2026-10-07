@@ -20,6 +20,8 @@ delivery tests now expose span frequency and gap time beside active frequency, b
 
 ## verification
 
+delivery comparison refinement on 2026-10-07 also reviewed [AleksMouseTester's comparison methodology](https://github.com/moneks1106-code/AleksMouseTester#what-it-does) and [ClickSync's measurement manual](https://github.com/Nuitfanee/ClickSyncMouseTester/blob/main/docs/ClickSyncMouseTester_User_Manual_EN.md). these are project descriptions, not independent validation of helox. helox now compares tail intervals and gap/slow shares, normalizes outlier counts by the number of delivered intervals, and flags batching or pauses. it does not rank runs or infer a better physical polling configuration from those deltas. unknown dpi and test conditions remain a reason to repeat similar movement.
+
 the official v1.7.1 zip sha256 is `770fe3ae0919ca3c4d412f58c985eb27f5434decad809f7e8206de4e8852eec4`. its wrapper reports protocol version 1.7.0; this is the upstream release content, not a helox version mismatch. driver authenticode status was valid, signer microsoft windows hardware compatibility publisher.
 
 run `aim prepare`, then `selftest`. tests execute the official native calculation engine without installing the driver: 1x slow motion, increased fast motion within the 1.4x bound, reduced alternating magnitude variation, preserved signs and direction, valid combined configuration and repeated-update scoping. no kernel write occurs in these tests.
