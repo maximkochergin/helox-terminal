@@ -305,6 +305,35 @@ internal static class SelfTest {
         Dictionary<string,object> changed=Aim.Configure(peers,defaults,"HID\\FIRST",false,true,8);
         Expect(Aim.SameValue(Aim.Items(peers["devices"])[1],Aim.Items(changed["devices"])[1]) && Aim.Describe(changed,"HID\\FIRST").OutputHalfLifeMs==8,"aim toggle preserves peer entries and selected strength");
         AimConfigGuard.Check(changed);
+        Dictionary<string,object> calibrated=Aim.Parse(Store.Json.Serialize(selected));
+        Dictionary<string,object> calibration=Aim.Map(Aim.Map(Aim.Items(calibrated["devices"])[0])["config"]);
+        calibration["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
+        calibration["Polling rate Hz (keep at 0 for automatic adjustment)"]=125;
+        calibration["Use constant time interval based on polling rate"]=true;
+        calibration["minimumTime"]=.5;calibration["maximumTime"]=40.0;calibration["setExtraInfo"]=true;
+        Dictionary<string,object> calibratedOff=Aim.Configure(calibrated,defaults,"HID\\FIRST",true,false,8);
+        Expect(Aim.SameValue(calibration,Aim.Map(Aim.Items(calibratedOff["devices"])[0])["config"]),"smooth off preserves active device normalization and timing");
+        calibration["disable"]=true;
+        string calibratedBefore=Store.Json.Serialize(calibrated);
+        Dictionary<string,object> bypassedOff=Aim.Configure(calibrated,defaults,"HID\\FIRST",false,true,8);
+        Expect(Aim.SameValue(calibration,Aim.Map(Aim.Items(bypassedOff["devices"])[0])["config"]) && Aim.Describe(bypassedOff,"HID\\FIRST").InputTransformed==false,"turning an effect off cannot activate a bypassed device");
+        Dictionary<string,object> inherited=Aim.Parse(Store.Json.Serialize(defaults));inherited["defaultDeviceConfig"]=calibration;
+        Dictionary<string,object> inheritedOff=Aim.Configure(inherited,defaults,"HID\\NEW",false,false);
+        Expect(Aim.SameValue(calibration,Aim.Map(Aim.Items(inheritedOff["devices"])[0])["config"]),"first override preserves effective default device settings");
+        foreach(string feature in new string[]{"precision","smooth","stability"}) {
+            AimPreset offPreset=Aim.Resolve(Aim.Describe(calibrated,"HID\\FIRST"),null,feature,false);
+            Dictionary<string,object> offChange=Aim.Configure(calibrated,defaults,"HID\\FIRST",offPreset.Precision,offPreset.Smooth,offPreset.SmoothMs,offPreset.GainLimit,offPreset.Stability,offPreset.StabilityMs,false);
+            Expect(Aim.Describe(offChange,"HID\\FIRST").Enabled==false,"each off switch preserves device bypass");
+        }
+        Dictionary<string,object> enabled=Aim.Configure(calibrated,defaults,"HID\\FIRST",true,false,8,1.4,false,8,true);
+        Dictionary<string,object> enabledConfig=Aim.Map(Aim.Map(Aim.Items(enabled["devices"])[0])["config"]);
+        Expect(Aim.Describe(enabled,"HID\\FIRST").Enabled==true,"explicit on or resume enables a bypassed device");
+        enabledConfig["disable"]=true;
+        Expect(Aim.SameValue(calibration,enabledConfig),"explicit enable preserves all other device options");
+        Expect(Aim.SameValue(calibrated,Aim.Parse(calibratedBefore)),"effect changes do not mutate the previous configuration");
+        AimConfigGuard.Check(calibratedOff);AimConfigGuard.Check(bypassedOff);AimConfigGuard.Check(inheritedOff);
+        Dictionary<string,object> caseAlias=Aim.Configure(defaults,defaults,"hid\\first",true,true,8);
+        Expect(Aim.Describe(caseAlias,"HID\\FIRST").Mode=="noaccel" && Aim.Describe(caseAlias,"HID\\FIRST").OutputHalfLifeMs==0,"readback uses the kernel's exact device id matching");
         Dictionary<string,object> tuned=Aim.Configure(peers,defaults,"HID\\FIRST",true,true,8,1.6,true,10);
         AimStatus live=Aim.Describe(tuned,"HID\\FIRST");
         Expect(live.GainLimit==1.6 && live.InputHalfLifeMs==10 && live.ScaleHalfLifeMs==5 && live.StabilityEnabled==true && live.OutputHalfLifeMs==8,"independent acceleration and output filters appear in readback");
@@ -375,7 +404,7 @@ internal static class SelfTest {
             File.WriteAllText(presetPath,"{\"mouse\":{\"precision\":true,\"smooth\":false}}");
             Dictionary<string,object> saved=Aim.Saved(presetPath);
             Expect((bool)Aim.Map(saved["mouse"])["precision"] && !(bool)Aim.Map(saved["mouse"])["smooth"],"saved aim toggles roundtrip");
-            Expect(saved.ContainsKey("MOUSE"),"saved aim identity ignores case like driver identity");
+            Expect(saved.ContainsKey("MOUSE"),"saved aim preferences retain case-insensitive lookup");
             Expect(Aim.SavedHalfLife(Aim.Map(saved["mouse"]))==4,"legacy smoothing presets keep 4 ms");
             AimPreset legacy=Aim.ReadPreset(Aim.Map(saved["mouse"]));
             Expect(legacy.GainLimit==1.4 && !legacy.Stability && legacy.StabilityMs==8,"legacy presets keep the original curve and filters");
@@ -430,6 +459,9 @@ internal static class SelfTest {
         try {Aim.Commit(before,identical,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {throw new IOException("preset save failed");});}
         catch(IOException e) {caught=e.Message=="preset save failed";}
         Expect(caught && writes==0,"unchanged aim save failure does not write or roll back driver");
+        bool choicesCleared=false;
+        Aim.Commit(before,identical,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {choicesCleared=true;});
+        Expect(choicesCleared && writes==0,"already restored aim clears saved choices without resetting the driver filters");
         writes=0;saves=0;caught=false;
         try {Aim.Commit(before,after,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {saves++;throw new IOException("disk full");});}
         catch(IOException e) {caught=e.Message.Contains("previous driver settings restored") && e.Message.Contains("disk full");}

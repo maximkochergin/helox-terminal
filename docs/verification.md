@@ -44,6 +44,9 @@
 - the released engine plus callback carry model reproduces an 8 ms output-averaging flick-to-micro transient: 72-count peak and four zero outputs. tracking produces a one-count peak and no zeros for the same example.
 - response simulation honors disabled and dpi-normalized devices, constant timing and callback clamp order. fractional counts are retained on both axes; invalid/overflowing outputs are rejected.
 - tracking retains the gain and remembered output strength through resume; response json/menu checks leave actual driver settings unchanged.
+- effect switches preserve per-device and inherited normalization/timing; off cannot activate a bypassed device, and explicit enable retains its other options.
+- status and response match the kernel's exact device ids, including default profile/timing fallback for a differently cased override.
+- repeated aim restore clears saved choices without activating an already matching snapshot or resetting filter state.
 - analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
 - malformed driver snapshots are rejected before loading the bridge: nonfinite/string numbers, overlong or nul-containing names, duplicate profiles/device ids, missing profile references, invalid clamps/integers and lookup float overflow.
 - driver presence considers its live control endpoint as well as the service registry; inaccessible endpoints fail closed rather than enabling dpi estimation.

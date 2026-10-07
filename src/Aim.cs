@@ -167,8 +167,9 @@ internal static class Aim {
         }
         throw new InvalidOperationException("mouse identity changed / reconnect and retry");
     }
-    private static Dictionary<string,object> DeviceEntry(Dictionary<string,object> cfg,string id) {
-        foreach(object entry in Items(cfg["devices"])) if(String.Equals((string)Map(entry)["id"],id,StringComparison.OrdinalIgnoreCase)) return Map(entry);
+    internal static Dictionary<string,object> DeviceEntry(Dictionary<string,object> cfg,string id) {
+        // The released callback uses wcsncmp, not Windows' usual insensitive id comparison.
+        foreach(object entry in Items(cfg["devices"])) if(String.Equals((string)Map(entry)["id"],id,StringComparison.Ordinal)) return Map(entry);
         return null;
     }
     private static Dictionary<string,object> Profile(Dictionary<string,object> cfg,string name) {
@@ -227,7 +228,7 @@ internal static class Aim {
                     Convert.ToDouble(profile["Degrees of rotation"])!=0 || Convert.ToDouble(profile["Degrees of angle snapping"])!=0 || Convert.ToDouble(profile["Input Speed Cap"])>0),Note="live driver readback; profile resets on reboot"};
     }
     // Preserve defaults and other devices; only replace our selected hardware-id override.
-    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4,double gainLimit=1.4,bool stability=false,double stabilityMs=8) {
+    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4,double gainLimit=1.4,bool stability=false,double stabilityMs=8,bool enable=false) {
         CheckHalfLife(smoothMs);CheckGain(gainLimit);CheckStability(stabilityMs);
         Dictionary<string,object> cfg=Parse(Store.Json.Serialize(current));
         string name="helox-"+id.ToLowerInvariant().Replace('\\','-');
@@ -242,7 +243,11 @@ internal static class Aim {
         int index=profiles.FindIndex(delegate(object p){return (string)Map(p)["name"]==name;});
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
         cfg["profiles"]=profiles.ToArray();
-        Dictionary<string,object> devConfig=Parse(Store.Json.Serialize(defaults["defaultDeviceConfig"]));devConfig["disable"]=false;
+        Dictionary<string,object> existing=DeviceEntry(cfg,id);
+        // Effect switches must retain the device's normalization and timing. Off
+        // also retains bypass; only an explicit on/resume request enables it.
+        Dictionary<string,object> devConfig=Parse(Store.Json.Serialize(existing==null ? cfg["defaultDeviceConfig"] : existing["config"]));
+        if(enable) devConfig["disable"]=false;
         List<object> devices=Items(cfg["devices"]);
         int deviceIndex=devices.FindIndex(delegate(object d){return String.Equals((string)Map(d)["id"],id,StringComparison.OrdinalIgnoreCase);});
         Dictionary<string,object> updated=new Dictionary<string,object>{{"id",id},{"name","helox mouse"},{"profile",name},{"config",devConfig}};
@@ -287,7 +292,7 @@ internal static class Aim {
                 object existing;Dictionary<string,object> saved=presets.TryGetValue(id,out existing) ? Map(existing) : null;
                 RateResult history=(feature=="stability" && on) || feature=="tracking" ? RecentRate(device) : null;
                 AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs));
-                Dictionary<string,object> after=Configure(before,Defaults(),id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs);Validate(after);
+                Dictionary<string,object> after=Configure(before,Defaults(),id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs,on || feature=="resume");Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=preset.ToMap();
@@ -313,11 +318,7 @@ internal static class Aim {
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
                 Dictionary<string,object> before=Active();
                 Dictionary<string,object> after=Parse(File.ReadAllText(path));Validate(after);
-                Transaction(before,after,delegate(Dictionary<string,object> requested) {
-                    Dictionary<string,object> readback=Write(requested);
-                    if(Object.ReferenceEquals(requested,after)) Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());
-                    return readback;
-                });
+                Commit(before,after,Write,delegate {Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());});
             }finally {if(held) mutex.ReleaseMutex();}
         }
     }
@@ -348,6 +349,19 @@ internal static class Aim {
         Map(Map(Items(normalized["devices"])[0])["config"])["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
         AimResponse scaled=AimResponseTest.Run(normalized,exampleId,8);
         if(Math.Abs(scaled.SmallMotionRatio-.625)>.000001 || Math.Abs(scaled.FastMotionRatio-.625)>.000001) throw new Exception("response missed configured dpi normalization");
+        Dictionary<string,object> normalizedToggle=Configure(normalized,defaults,exampleId,false,true,2);
+        AimResponse stillScaled=AimResponseTest.Run(normalizedToggle,exampleId,8);
+        if(Math.Abs(stillScaled.SmallMotionRatio-.625)>.000001 || Math.Abs(stillScaled.FastMotionRatio-.625)>.000001) throw new Exception("effect toggle changed configured dpi normalization");
+        Dictionary<string,object> disabledToggle=Configure(bypass,defaults,exampleId,false,true,8);
+        AimResponse stillBypassed=AimResponseTest.Run(disabledToggle,exampleId,8);
+        if(stillBypassed.Readback.Enabled!=false || stillBypassed.SmallMotionRatio!=1 || stillBypassed.FastMotionRatio!=1 || stillBypassed.AfterFlickPeakCounts!=1 || stillBypassed.AfterFlickZeroReports!=0) throw new Exception("effect off activated a bypassed device");
+        Dictionary<string,object> caseAlias=Configure(defaults,defaults,exampleId.ToLowerInvariant(),true,true,8);
+        Dictionary<string,object> aliasConfig=Map(Map(Items(caseAlias["devices"])[0])["config"]);
+        aliasConfig["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
+        aliasConfig["Polling rate Hz (keep at 0 for automatic adjustment)"]=250;
+        aliasConfig["Use constant time interval based on polling rate"]=true;
+        AimResponse exactId=AimResponseTest.Run(caseAlias,exampleId,8);
+        if(exactId.Readback.Profile!="default" || exactId.ProcessedIntervalMs!=8 || exactId.SmallMotionRatio!=1 || exactId.FastMotionRatio!=1 || exactId.AfterFlickPeakCounts!=1 || exactId.AfterFlickZeroReports!=0) throw new Exception("response simulated an override ignored by the kernel's exact id match");
         Console.WriteLine("  flick -> 1-count turn / smooth 8 ms peak "+averaged.AfterFlickPeakCounts+" counts, "+averaged.AfterFlickZeroReports+" zero outputs / tracking peak "+tracking.AfterFlickPeakCounts+" counts, "+tracking.AfterFlickZeroReports+" zero outputs / native engine + integer carry");
         double previousFast=1;
         foreach(double limit in new double[]{1.1,1.2,1.4,1.6,1.8}) {

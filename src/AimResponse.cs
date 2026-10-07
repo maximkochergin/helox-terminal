@@ -66,7 +66,7 @@ internal static class AimResponseTest {
     internal static AimResponse Run(Dictionary<string,object> cfg,string id,double exampleMs) {
         AimConfigGuard.Check(cfg);
         AimStatus status=Aim.Describe(cfg,id);Dictionary<string,object> device=Aim.Map(cfg["defaultDeviceConfig"]);
-        foreach(object entry in Aim.Items(cfg["devices"])) if(String.Equals((string)Aim.Map(entry)["id"],id,StringComparison.OrdinalIgnoreCase)) {device=Aim.Map(Aim.Map(entry)["config"]);break;}
+        Dictionary<string,object> entry=Aim.DeviceEntry(cfg,id);if(entry!=null) device=Aim.Map(entry["config"]);
         List<object> profiles=Aim.Items(cfg["profiles"]);int index=profiles.FindIndex(delegate(object p){return (string)Aim.Map(p)["name"]==status.Profile;});
         if(index<0) throw new InvalidOperationException("response profile not found");
         double dt=Time(device,exampleMs);

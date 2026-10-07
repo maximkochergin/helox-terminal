@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.10.0";
+    internal const string Version="0.10.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -139,6 +139,7 @@ internal static class Program {
         Console.WriteLine("\n  aim / "+status.State);
         if(status.State=="ready") {
             Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+status.Mode+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
+            if(status.Enabled!=true) Console.WriteLine("  effects bypassed / values below are configured only");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
         }
         else Console.WriteLine("  "+status.Note);

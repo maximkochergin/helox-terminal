@@ -1,5 +1,15 @@
 # configuration audits
 
+## 0.10.1 / active aim controls
+
+an effect switch rebuilt the selected device configuration from factory defaults. a synthetic bypassed mouse with dpi normalization 1600, constant 125 hz timing and custom interval bounds became enabled with normalization and timing reset after `smooth off`. preservation checks failed on the previous implementation. switches now copy the effective device configuration, including inherited defaults; off retains bypass, while an explicit on, tracking or resume enables the device. only the enable flag changes for that request. these are calculation settings, not sensor dpi or usb polling writes.
+
+status and response also matched device ids without regard to case, but the [released callback](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/driver/driver.cpp) matches them exactly with `wcsncmp`. an override named `hid\first` was therefore reported as active for `HID\FIRST` even though the kernel would use its default. a failing regression reproduced the lookup mismatch without activation. status and response now share the exact matcher; saved preference lookup remains case-insensitive, and applying a choice writes the currently enumerated id.
+
+repeated aim undo previously always activated the snapshot, including when it already matched. undo now uses the same verified no-change commit path as switches, clears saved choices and skips the write that would reset smoothing state. persistence failures still roll back a changed configuration; an unchanged save failure does not touch the driver.
+
+checks cover per-device and inherited calibration/timing, all off switches, explicit enable, source snapshot immutability, exact-id fallback and unchanged restore commits. native response cases verify preserved 0.625x normalization after a smoothing toggle, bypass after an off request, and default timing/profile when an id differs only in case. current live configuration is read and compared before/after the review; no aim settings are activated by these tests.
+
 ## 0.8.1 / maintenance review
 
 the 0.8.0 driver doctor reported failed backend verification but still attempted kernel readback, which loaded the bridge. readback now stays unknown when preparation/archive/backend verification fails. every first bridge load also checks integrity, so opening the aim menu cannot bypass the diagnostic guard. tests use a temporary app with a deliberately failed integrity report; no vendor binaries are changed.
