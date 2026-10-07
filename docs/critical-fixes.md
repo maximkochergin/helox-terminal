@@ -1,4 +1,14 @@
-# driver configuration audit / 0.5.1
+# configuration audits
+
+## 0.7.2 / ambiguous json fields
+
+two load paths checked case-sensitive dictionary keys, then passed the same input to a case-insensitive deserializer. a windows snapshot with `"Speed":10` and `"speed":"20"` passed integer checks and loaded speed 20. the official aim bridge accepted a profile with `"Output DPI":1000` and `"output dpi":2000`, producing output dpi 2000 after the guard had checked 1000. both mismatches were reproduced without applying settings or activating the driver.
+
+windows snapshots now reject case aliases for settings fields and construct the result directly from the validated integers. aim configuration rejects case-colliding keys at every nesting level, before bridge conversion. optional device fields must also use their canonical spelling, so aliases cannot bypass finite-number, boolean or interval checks when the canonical field is absent.
+
+regressions cover both snapshot field orders, root/profile/vector/acceleration aliases, optional device aliases and valid canonical optional values. these are configuration-validation bypasses; this audit does not claim a demonstrated kernel crash. ordinary saved snapshots and official default configurations remain compatible.
+
+## 0.5.1 / driver configuration
 
 ## reproduced
 

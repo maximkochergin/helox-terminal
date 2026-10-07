@@ -9,6 +9,7 @@ internal static class SelfTest {
         ConfigGuardRegression();
         AimRegression();
         UndoRegression();
+        SnapshotRegression();
         Program.RequireDpiInput(false);
         foreach(bool? transformed in new bool?[]{true,null}) {
             bool blocked=false;try {Program.RequireDpiInput(transformed);}catch(InvalidOperationException) {blocked=true;}
@@ -200,10 +201,32 @@ internal static class SelfTest {
         catch(IOException) {rejected=true;}
         Expect(rejected && saved==null,"failed apply leaves previous undo untouched");
     }
+    private static void SnapshotRegression() {
+        string path=Path.Combine(Path.GetTempPath(),"helox-snapshot-"+Guid.NewGuid().ToString("n")+".json");
+        Settings original=new Settings {Speed=10,Threshold1=6,Threshold2=10,Acceleration=1,WheelLines=3,DoubleClickMs=500,SwapButtons=0};
+        try {
+            Store.Save(path,original);Expect(original.Same(Store.Load<Settings>(path)),"validated snapshot roundtrip");
+            string valid=File.ReadAllText(path);
+            foreach(string alias in new string[]{"\"speed\":\"20\"","\"SWAPBUTTONS\":1","\"acceleration\":\"0\""})
+                foreach(bool first in new bool[]{true,false}) {
+                    File.WriteAllText(path,first ? "{"+alias+","+valid.Substring(1) : valid.Substring(0,valid.Length-1)+","+alias+"}");
+                    bool rejected=false;try {Store.Load<Settings>(path);}catch(ArgumentException) {rejected=true;}
+                    Expect(rejected,"ambiguous snapshot rejected regardless of field order");
+                }
+        } finally {if(File.Exists(path)) File.Delete(path);}
+    }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");
         string template=File.ReadAllText(path);AimConfigGuard.Check(Aim.Parse(template));
         List<Action<Dictionary<string,object>>> bad=new List<Action<Dictionary<string,object>>> {
+            delegate(Dictionary<string,object> cfg) {cfg["Profiles"]=cfg["profiles"];},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["output dpi"]=2000;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Whole or horizontal accel parameters"])["DATA"]=new object[]{1e100,1};},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Map(Aim.Items(cfg["profiles"])[0])["Stretches domain for horizontal vs vertical inputs"])["X"]=2;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["MINIMUMTIME"]=0;},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["MAXIMUMTIME"]="NaN";},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"])["SETEXTRAINFO"]="true";},
+            delegate(Dictionary<string,object> cfg) {Aim.Map(cfg["defaultDeviceConfig"]).Remove("Use constant time interval based on polling rate");Aim.Map(cfg["defaultDeviceConfig"])["use constant time interval based on polling rate"]="true";},
             delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Output DPI"]="NaN";},
             delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Output DPI"]=Double.NaN;},
             delegate(Dictionary<string,object> cfg) {Aim.Map(Aim.Items(cfg["profiles"])[0])["Degrees of rotation"]=Double.PositiveInfinity;},
@@ -229,6 +252,9 @@ internal static class SelfTest {
         }
         Dictionary<string,object> validLut=Aim.Parse(template);Dictionary<string,object> validArgs=Aim.Map(Aim.Map(Aim.Items(validLut["profiles"])[0])["Whole or horizontal accel parameters"]);
         validArgs["mode"]="lut";validArgs["data"]=new object[]{0,0,1,1,2,2};AimConfigGuard.Check(validLut);
+        Dictionary<string,object> optional=Aim.Parse(template),deviceConfig=Aim.Map(optional["defaultDeviceConfig"]);
+        deviceConfig["minimumTime"]=.0625;deviceConfig["maximumTime"]=100;deviceConfig["setExtraInfo"]=true;
+        AimConfigGuard.Check(optional);
     }
     private static void AimRegression() {
         Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));

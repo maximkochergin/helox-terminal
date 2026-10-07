@@ -71,7 +71,15 @@ internal static class Store {
                 foreach(string key in new string[]{"Speed","Threshold1","Threshold2","Acceleration","WheelLines","DoubleClickMs","SwapButtons"}) {
                     object value;
                     if(!fields.TryGetValue(key,out value) || !(value is int)) throw new ArgumentException();
+                    foreach(string supplied in fields.Keys)
+                        if(supplied!=key && String.Equals(supplied,key,StringComparison.OrdinalIgnoreCase)) throw new ArgumentException();
                 }
+                // Apply precisely the values checked above; typed deserialization coerces
+                // strings and matches property names without regard to case.
+                Settings snapshot=new Settings {Speed=(int)fields["Speed"],Threshold1=(int)fields["Threshold1"],
+                    Threshold2=(int)fields["Threshold2"],Acceleration=(int)fields["Acceleration"],
+                    WheelLines=(int)fields["WheelLines"],DoubleClickMs=(int)fields["DoubleClickMs"],SwapButtons=(int)fields["SwapButtons"]};
+                snapshot.Validate();return (T)(object)snapshot;
             }
             T result=Json.Deserialize<T>(text);
             Settings settings=result as Settings;

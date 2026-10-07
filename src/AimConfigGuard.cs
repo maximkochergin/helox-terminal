@@ -6,6 +6,7 @@ namespace Helox {
 internal static class AimConfigGuard {
     internal static void Check(Dictionary<string,object> cfg) {
         if(cfg==null) Fail("empty configuration");
+        CheckAliases(cfg);
         Text(cfg,"version",32,false);
         Device(Bag(cfg,"defaultDeviceConfig"));
         object[] profiles=Array(cfg,"profiles"),devices=Array(cfg,"devices");
@@ -35,6 +36,11 @@ internal static class AimConfigGuard {
         }
     }
     private static void Device(Dictionary<string,object> config) {
+        // Optional fields need canonical spelling too: otherwise the bridge can
+        // consume a value that our optional-field checks never inspected.
+        foreach(string canonical in new string[]{"setExtraInfo","Use constant time interval based on polling rate","minimumTime","maximumTime"})
+            foreach(string key in config.Keys)
+                if(key!=canonical && String.Equals(key,canonical,StringComparison.OrdinalIgnoreCase)) Fail("noncanonical device field "+key);
         Boolean(config,"disable");
         foreach(string key in new string[]{"setExtraInfo","Use constant time interval based on polling rate"}) if(config.ContainsKey(key)) Boolean(config,key);
         foreach(string key in new string[]{"DPI (normalizes input speed unit: counts/ms -> in/s)","Polling rate Hz (keep at 0 for automatic adjustment)"}) {
@@ -65,6 +71,19 @@ internal static class AimConfigGuard {
         }
     }
     private static void Vector(Dictionary<string,object> vector) {Number(vector,"x");Number(vector,"y");}
+    private static void CheckAliases(object value) {
+        Dictionary<string,object> bag=value as Dictionary<string,object>;
+        if(bag!=null) {
+            HashSet<string> keys=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach(KeyValuePair<string,object> field in bag) {
+                if(!keys.Add(field.Key)) Fail("ambiguous field "+field.Key);
+                CheckAliases(field.Value);
+            }
+        } else {
+            object[] array=value as object[];
+            if(array!=null) foreach(object item in array) CheckAliases(item);
+        }
+    }
     private static object Field(Dictionary<string,object> bag,string key) {object value;if(!bag.TryGetValue(key,out value)) Fail("missing "+key);return value;}
     private static Dictionary<string,object> Bag(Dictionary<string,object> bag,string key) {return ObjectBag(Field(bag,key),key);}
     private static Dictionary<string,object> ObjectBag(object value,string key) {Dictionary<string,object> bag=value as Dictionary<string,object>;if(bag==null) Fail("invalid "+key);return bag;}
