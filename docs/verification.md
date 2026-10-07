@@ -41,6 +41,9 @@
 - gain and stabilization survive off/on and resume; stability requires precision and never changes output strength, dpi/polling defaults or peer overrides.
 - delivery-based stabilization ignores invalid, stale, future or unrelated history and clamps its input half-life to 8..12 ms.
 - new aim field types/ranges and invalid command strengths are rejected; precision and smoothing menu cancellation leave live settings unchanged.
+- the released engine plus callback carry model reproduces an 8 ms output-averaging flick-to-micro transient: 72-count peak and four zero outputs. tracking produces a one-count peak and no zeros for the same example.
+- response simulation honors disabled and dpi-normalized devices, constant timing and callback clamp order. fractional counts are retained on both axes; invalid/overflowing outputs are rejected.
+- tracking retains the gain and remembered output strength through resume; response json/menu checks leave actual driver settings unchanged.
 - analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
 - malformed driver snapshots are rejected before loading the bridge: nonfinite/string numbers, overlong or nul-containing names, duplicate profiles/device ids, missing profile references, invalid clamps/integers and lookup float overflow.
 - driver presence considers its live control endpoint as well as the service registry; inaccessible endpoints fail closed rather than enabling dpi estimation.

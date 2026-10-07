@@ -83,20 +83,25 @@ internal static class Aim {
         if(saved.TryGetValue("stability",out stability)) {if(!(stability is bool)) throw new ArgumentException("invalid saved stability toggle");preset.Stability=(bool)stability;}
         preset.StabilityMs=SavedNumber(saved,"stabilityMs",8);CheckStability(preset.StabilityMs);return preset;
     }
-    internal static double StabilityHalfLife(RateResult history,string devicePath,DateTime now) {
+    internal static RateResult RecentRate(RateResult history,string devicePath,DateTime now) {
         DateTime measured;
         if(history==null || String.IsNullOrEmpty(devicePath) || !Analysis.ValidHistory(history) || !String.Equals(history.DevicePath,devicePath,StringComparison.OrdinalIgnoreCase) ||
             !DateTime.TryParseExact(history.MeasuredUtc,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out measured) ||
-            measured.ToUniversalTime()<now.ToUniversalTime().AddHours(-24) || measured.ToUniversalTime()>now.ToUniversalTime().AddMinutes(5)) return 8;
-        return Math.Max(8,Math.Min(12,history.MedianIntervalMs));
+            measured.ToUniversalTime()<now.ToUniversalTime().AddHours(-24) || measured.ToUniversalTime()>now.ToUniversalTime().AddMinutes(5)) return null;
+        return history;
     }
-    private static double StabilityHalfLife(Device device) {
+    internal static double StabilityHalfLife(RateResult history,string devicePath,DateTime now) {
+        RateResult recent=RecentRate(history,devicePath,now);return recent==null ? 8 : BoundedStability(recent.MedianIntervalMs);
+    }
+    private static double BoundedStability(double interval) {return Math.Round(Math.Max(8,Math.Min(12,interval))*2,MidpointRounding.AwayFromZero)/2;}
+    private static RateResult RecentRate(Device device) {
         RateResult history=null;
         try {history=Store.Load<RateResult>(Path.Combine(Store.Root,"rate.json"));}catch {} // Invalid or inaccessible optional history uses the explicit 8 ms fallback.
-        return StabilityHalfLife(history,device.Path,DateTime.UtcNow);
+        return RecentRate(history,device.Path,DateTime.UtcNow);
     }
     internal static void CheckChange(string feature,bool on,double? smoothMs,double? gainLimit) {
-        if(feature!="precision" && feature!="smooth" && feature!="stability" && feature!="resume") throw new ArgumentException("use aim precision|smooth|stability on|off or aim resume");
+        if(feature!="precision" && feature!="smooth" && feature!="stability" && feature!="resume" && feature!="tracking") throw new ArgumentException("use aim precision|smooth|stability on|off or aim resume|tracking");
+        if(feature=="tracking" && !on) throw new ArgumentException("use aim tracking / restore components with precision, stability and smooth");
         if(smoothMs.HasValue) {CheckHalfLife(smoothMs.Value);if(feature!="smooth" || !on) throw new ArgumentException("strength requires aim smooth on");}
         if(gainLimit.HasValue) {CheckGain(gainLimit.Value);if(feature!="precision" || !on) throw new ArgumentException("gain limit requires aim precision on");}
     }
@@ -114,6 +119,7 @@ internal static class Aim {
         }
         if(feature=="precision") preset.Precision=on;
         else if(feature=="smooth") preset.Smooth=on;
+        else if(feature=="tracking") {preset.Precision=true;preset.Smooth=false;preset.Stability=true;preset.StabilityMs=stabilityMs;}
         else {
             if(on && !preset.Precision) throw new InvalidOperationException("enable precision first / stability smooths acceleration only");
             preset.Stability=on;if(on) preset.StabilityMs=stabilityMs;
@@ -131,7 +137,7 @@ internal static class Aim {
         Assembly.LoadFrom(Path.Combine(Root,"Newtonsoft.Json.dll"));
         bridge=Assembly.LoadFrom(Path.Combine(Root,"wrapper.dll"));
     }
-    private static object Call(object target,string type,string method,params object[] args) {
+    internal static object Call(object target,string type,string method,params object[] args) {
         Load();
         try {return bridge.GetType(type,true).GetMethod(method).Invoke(target,args);}
         catch(TargetInvocationException e) {throw e.InnerException ?? e;}
@@ -199,6 +205,12 @@ internal static class Aim {
         }catch {return null;}
     }
     internal static string KernelVersion() {return (string)Active()["version"];}
+    internal static AimResponse Response(Device device) {
+        Dictionary<string,object> current=Active();string id=Id(device);RateResult history=RecentRate(device);
+        AimResponse response=AimResponseTest.Run(current,id,history==null ? 8 : history.MedianIntervalMs);
+        response.IntervalSource=history==null ? "8 ms example / no recent matching history" : "recent delivery median / not kernel timing readback";
+        return response;
+    }
     internal static AimStatus Describe(Dictionary<string,object> cfg,string id) {
             Dictionary<string,object> entry=DeviceEntry(cfg,id);
             string name=entry==null || String.IsNullOrEmpty((string)entry["profile"]) ? (string)Map(Items(cfg["profiles"])[0])["name"] : (string)entry["profile"];
@@ -273,7 +285,8 @@ internal static class Aim {
                 Dictionary<string,object> before=Active();string id=Id(device);AimStatus status=Describe(before,id);
                 string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
                 object existing;Dictionary<string,object> saved=presets.TryGetValue(id,out existing) ? Map(existing) : null;
-                AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,feature=="stability" && on ? StabilityHalfLife(device) : 8);
+                RateResult history=(feature=="stability" && on) || feature=="tracking" ? RecentRate(device) : null;
+                AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs));
                 Dictionary<string,object> after=Configure(before,Defaults(),id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs);Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
@@ -321,6 +334,21 @@ internal static class Aim {
         for(int i=0;i<100;i++) low=Axis(Call(engine,"ManagedAccel","Accelerate",8,0,1.0,8.0));
         for(int i=0;i<100;i++) high=Axis(Call(engine,"ManagedAccel","Accelerate",800,0,1.0,8.0));
         if(Math.Abs(low-8)>.001 || high<=800 || high>800*1.401) throw new Exception("precision engine response failed");
+        string exampleId="HID\\VID_145F&PID_0326";
+        AimResponse averaged=AimResponseTest.Run(Configure(defaults,Defaults(),exampleId,true,true,8),exampleId,8);
+        AimResponse tracking=AimResponseTest.Run(Configure(defaults,Defaults(),exampleId,true,false,8,1.4,true,8),exampleId,8);
+        if(averaged.AfterFlickPeakCounts<40 || averaged.AfterFlickZeroReports<1) throw new Exception("output smoothing transient was not reproduced");
+        if(tracking.AfterFlickPeakCounts>2 || tracking.AfterFlickPeakCounts<1 || tracking.AfterFlickZeroReports!=0 || tracking.FastMotionRatio<=1 || tracking.FastMotionRatio>1.401) throw new Exception("tracking recovery response failed");
+        if(tracking.AfterFlickX[0]!=0 || tracking.AfterFlickY[0]<1) throw new Exception("tracking one-count turn failed");
+        Dictionary<string,object> bypass=Configure(defaults,Defaults(),exampleId,true,true,8);
+        Map(Map(Items(bypass["devices"])[0])["config"])["disable"]=true;
+        AimResponse disabled=AimResponseTest.Run(bypass,exampleId,8);
+        if(disabled.SmallMotionRatio!=1 || disabled.FastMotionRatio!=1 || disabled.AfterFlickPeakCounts!=1 || disabled.AfterFlickZeroReports!=0) throw new Exception("disabled response was not bypassed");
+        Dictionary<string,object> normalized=Configure(defaults,Defaults(),exampleId,false,false);
+        Map(Map(Items(normalized["devices"])[0])["config"])["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
+        AimResponse scaled=AimResponseTest.Run(normalized,exampleId,8);
+        if(Math.Abs(scaled.SmallMotionRatio-.625)>.000001 || Math.Abs(scaled.FastMotionRatio-.625)>.000001) throw new Exception("response missed configured dpi normalization");
+        Console.WriteLine("  flick -> 1-count turn / smooth 8 ms peak "+averaged.AfterFlickPeakCounts+" counts, "+averaged.AfterFlickZeroReports+" zero outputs / tracking peak "+tracking.AfterFlickPeakCounts+" counts, "+tracking.AfterFlickZeroReports+" zero outputs / native engine + integer carry");
         double previousFast=1;
         foreach(double limit in new double[]{1.1,1.2,1.4,1.6,1.8}) {
             cfg=Validate(Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",true,false,4,limit));

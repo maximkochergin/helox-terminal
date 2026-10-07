@@ -2,6 +2,18 @@
 
 checked 2026-10-07. presets change mouse input, not game state or targets. no claim of guaranteed score improvement.
 
+## flick-to-micro recovery / 0.10.0
+
+user feedback distinguished reduced roughness in kovaaks from little perceived change in valorant, with intermittent micro jerks remaining. live readback showed natural 1.4x, output half-life 8 ms, input/scale half-lives 4/2 ms, stability off. delivery history had a median near 8 ms and a maximum gap near 64 ms. these observations do not prove which component caused the reported jerks.
+
+the [released magnitude smoothing path](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) retains prior output magnitude while applying it along the current direction. the [driver callback](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/driver/driver.cpp) then truncates each axis to integer counts and carries its fraction. previous tests checked floating-point alternating spread and direction, but omitted abrupt speed/direction transitions and integer output. that was a gap in helox's verification, not evidence that more smoothing is always better.
+
+the new example first runs 120 horizontal 8-count inputs, then eight horizontal 800-count inputs, then sixteen vertical 1-count inputs, all at 8 ms. with the current 8 ms output averaging, the official engine plus carry model emits a 72-count peak followed by four zero outputs. with natural 1.4x, stability 8/4 ms and output averaging off, the peak is one count and no zero outputs occur in this sequence. small steps after fast motion can therefore be distorted by the old output preset even when an alternating-magnitude test looks smoother. this is a synthetic reproduction, not a diagnosis of radio loss or proof of improved physical aim.
+
+`aim tracking` applies that component combination in one transaction, preserving the selected gain and remembered output strength. fresh stability tuning now uses 0.5 ms steps within 8..12 ms, avoiding parameter churn for medians such as 8.0007 ms; saved strengths remain compatible and resume retains them. `aim response` runs example motion through the live profile's calculation settings without activation, honors device disable/dpi/timing parameters, and exposes both simulated integer axes. recent valid matching delivery history supplies the example interval, otherwise it is explicitly 8 ms. results describe the profile model, not the game's received counts or kernel timing. the signed kernel binary is unchanged.
+
+riot documents raw input since launch in [3.07](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-3-07/) and raw input buffer permanently enabled from [11.06](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-11-06/). no hidden game-setting edits, buffer-toggle advice or claim of anti-cheat approval is added. assess the profile in the practice range with consistent sensitivity; input delivery and rendering interruptions remain separate possible causes.
+
 ## precision and stability / 0.9.0
 
 reviewed the released [natural curve](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/accel-natural.hpp) and [coalescion algorithm](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) alongside the [official explanation of the three filters](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md#coalescion). community discussions about [dpi and sensitivity scaling](https://www.reddit.com/r/MouseAccel/comments/1423fcw/high_dpi_with_sens_multiplier/) and [125 hz input](https://www.mouse-sensitivity.com/forums/topic/9220-the-effects-of-125-polling-rate/) supplied questions, not preset recommendations.
@@ -34,7 +46,7 @@ delivery comparison refinement on 2026-10-07 also reviewed [AleksMouseTester's c
 
 the official v1.7.1 zip sha256 is `770fe3ae0919ca3c4d412f58c985eb27f5434decad809f7e8206de4e8852eec4`. its wrapper reports protocol version 1.7.0; this is the upstream release content, not a helox version mismatch. driver authenticode status was valid, signer microsoft windows hardware compatibility publisher.
 
-run `aim prepare`, then `selftest`. tests execute the official native calculation engine without installing the driver: 1x slow motion, increased fast motion within the 1.4x bound, reduced alternating magnitude variation, preserved signs and direction, valid combined configuration and repeated-update scoping. no kernel write occurs in these tests.
+run `aim prepare`, then `selftest`. tests execute the official native calculation engine without installing the driver: settled 1x slow motion, increased fast motion within the selected bound, reduced alternating magnitude variation, preserved signs and direction, flick-to-micro recovery with integer carry, disabled/dpi-normalized cases, valid combined configuration and repeated-update scoping. no kernel write occurs in these tests.
 
 live application requires installation and restart. the current machine now reports a verified official backend and installed driver, open control endpoint and readable protocol 1.7.0. this review reads its state without applying new choices; kernel activation of these settings and physical before/after stutter reduction remain manual checks. absent-driver activation is tested to fail rather than claim success. apply reads back the full configuration and attempts rollback on a mismatch. the driver backup is validated before further changes.
 

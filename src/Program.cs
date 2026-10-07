@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.9.0";
+    internal const string Version="0.10.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -108,7 +108,7 @@ internal static class Program {
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n  0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n  0  back");
         string choice=Ask("choose");
         if(choice=="1") {
             Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
@@ -118,7 +118,7 @@ internal static class Program {
         }else if(choice=="2") AimCommand(new string[]{"aim","precision","off"});
         else if(choice=="3" || choice=="4") {
             if(choice=="3") {
-                Console.WriteLine("  smooth / more smoothing adds more delay\n  1  light 2 ms     2  balanced 4 ms     3  strong 8 ms     0  back");
+                Console.WriteLine("  smooth / averages magnitude / can overshoot after flicks\n  1  light 2 ms     2  balanced 4 ms     3  strong 8 ms     0  back");
                 string strength=Ask("choose");
                 if(strength!="1" && strength!="2" && strength!="3") throw new ArgumentException("choose 1..3 or 0");
                 AimCommand(new string[]{"aim","smooth","on",strength=="1" ? "2" : strength=="2" ? "4" : "8"});
@@ -130,7 +130,9 @@ internal static class Program {
         else if(choice=="9") AimCommand(new string[]{"aim","doctor"});
         else if(choice=="10") ConfirmUninstall();
         else if(choice=="11" || choice=="12") AimCommand(new string[]{"aim","stability",choice=="11" ? "on" : "off"});
-        else throw new ArgumentException("choose 1..12 or 0");
+        else if(choice=="13") AimCommand(new string[]{"aim","tracking"});
+        else if(choice=="14") AimCommand(new string[]{"aim","response"});
+        else throw new ArgumentException("choose 1..14 or 0");
         Finish();
     }
     private static void PrintAim(AimStatus status) {
@@ -142,6 +144,21 @@ internal static class Program {
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
+        if(words.Length==2 && words[1]=="response") {
+            AimResponse result=Aim.Response(Selected());
+            if(json) Console.WriteLine(Store.Json.Serialize(result));
+            else {
+                Console.WriteLine("\n  response / current profile / simulation / read only\n  example interval "+F(result.ExampleIntervalMs)+" ms / processed "+F(result.ProcessedIntervalMs)+" ms\n  "+result.IntervalSource);
+                Console.WriteLine("  after "+result.WarmupReports+" reports / 8-count "+result.SmallMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x / 800-count "+result.FastMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x\n  flick -> 1-count turn / peak "+result.AfterFlickPeakCounts+" counts / zero outputs "+result.AfterFlickZeroReports+" of 16");
+                if(result.Readback.Enabled!=true) Console.WriteLine("  selected device bypassed / no driver effect");
+                else if(result.Readback.OutputHalfLifeMs>0) Console.WriteLine("  output averaging active / tracking preset disables it");
+                Console.WriteLine("  example motion / not a test inside your game");
+            }return;
+        }
+        if(words.Length==2 && words[1]=="tracking") {
+            AimStatus state=Aim.Set(Selected(),"tracking",true);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  tracking preset applied / driver readback verified");PrintAim(state);}return;
+        }
         if(words.Length==2 && words[1]=="doctor") {
             Dictionary<string,object> report=Maintenance.Doctor();
             if(json) Console.WriteLine(Store.Json.Serialize(report));
@@ -184,7 +201,7 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),words[1],enabled,strength,gain);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|doctor|prepare|install|uninstall|restore|resume or aim precision|smooth|stability on|off");
+        throw new ArgumentException("use aim status|doctor|response|tracking|prepare|install|uninstall|restore|resume or aim precision|smooth|stability on|off");
     }
     private static string DoctorLabel(string key) {
         switch(key) {
@@ -208,7 +225,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
+        Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {

@@ -29,7 +29,7 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 
 **save** — named profiles, a `current -> saved` preview, undo for the last windows change and an original-settings backup.
 
-**aim** — optional raw accel integration. choose the acceleration limit, stabilize its response, and adjust output smoothing separately. [setup](docs/manual.md#aim-tools).
+**aim** — optional raw accel integration. choose the acceleration limit, use the tracking preset for flick-to-micro corrections, and test the live profile's response. [setup](docs/manual.md#aim-tools).
 
 **maintain** — check driver installation and live readback. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
 
@@ -48,6 +48,7 @@ launch.bat measure 10 --json
 launch.bat profile show training
 launch.bat undo
 launch.bat aim resume
+launch.bat aim response
 launch.bat check
 ```
 

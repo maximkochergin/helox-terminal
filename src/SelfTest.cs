@@ -326,6 +326,31 @@ internal static class SelfTest {
         Expect(steadyStatus.InputHalfLifeMs==4 && steadyStatus.ScaleHalfLifeMs==2 && steadyStatus.OutputHalfLifeMs==8,"stability off restores baseline acceleration filters only");
         options=Aim.Resolve(steadyStatus,null,"stability",true,null,null,12);
         Expect(options.Stability && options.StabilityMs==12 && options.GainLimit==1.6,"stability on keeps live gain and accepts bounded timing");
+        options=Aim.Resolve(live,null,"tracking",true,null,null,8);
+        Expect(options.Precision && options.Stability && !options.Smooth && options.GainLimit==1.6 && options.SmoothMs==8 && options.StabilityMs==8,"tracking preserves gain and remembered output strength while bypassing output averaging");
+        Dictionary<string,object> tracking=Aim.Configure(peers,defaults,"HID\\FIRST",options.Precision,options.Smooth,options.SmoothMs,options.GainLimit,options.Stability,options.StabilityMs);
+        AimConfigGuard.Check(tracking);
+        AimStatus trackingStatus=Aim.Describe(tracking,"HID\\FIRST");
+        Expect(trackingStatus.StabilityEnabled==true && trackingStatus.OutputHalfLifeMs==0 && Aim.SameValue(Aim.Items(peers["devices"])[1],Aim.Items(tracking["devices"])[1]),"tracking config isolates the selected device");
+        AimPreset trackingResume=Aim.Resolve(offStatus,options.ToMap(),"resume",false);
+        Expect(trackingResume.Precision && trackingResume.Stability && !trackingResume.Smooth && trackingResume.GainLimit==1.6 && trackingResume.SmoothMs==8,"resume retains all tracking components");
+        AimPreset smoothAgain=Aim.Resolve(trackingStatus,options.ToMap(),"smooth",true);
+        Expect(smoothAgain.Smooth && smoothAgain.SmoothMs==8 && smoothAgain.Stability && smoothAgain.GainLimit==1.6,"smooth on restores remembered strength after tracking");
+        Dictionary<string,object> timing=Aim.Parse(Store.Json.Serialize(defaults["defaultDeviceConfig"]));
+        Expect(AimResponseTest.Time(timing,.01)==.0625 && AimResponseTest.Time(timing,500)==100,"response model mirrors default kernel time clamps");
+        timing["Polling rate Hz (keep at 0 for automatic adjustment)"]=2;
+        Expect(AimResponseTest.Time(timing,8)==100,"response uses upstream clamp order with polling-derived minimum above maximum");
+        timing["Use constant time interval based on polling rate"]=true;
+        Expect(AimResponseTest.Time(timing,8)==500,"response honors the driver's constant interval when configured");
+        timing.Remove("Use constant time interval based on polling rate");
+        Expect(AimResponseTest.Time(timing,8)==100,"missing optional constant-time flag uses automatic timing");
+        AimCarry carry=new AimCarry();int sx=0,sy=0;
+        for(int i=0;i<12;i++) {int[] packet=carry.Emit(.25,-.5);sx+=packet[0];sy+=packet[1];}
+        Expect(sx==3 && sy==-6 && carry.X==0 && carry.Y==0,"response fractional carry retains small counts on both axes");
+        foreach(double invalid in new double[]{double.NaN,double.PositiveInfinity,Int32.MaxValue+1.0}) {
+            bool rejected=false;try {carry.Emit(invalid,0);}catch(InvalidOperationException) {rejected=true;}
+            Expect(rejected,"response model rejects nonfinite or overflowing packets");
+        }
         bool blocked=false;try {Aim.Resolve(offStatus,disabled.ToMap(),"stability",true);}catch(InvalidOperationException) {blocked=true;}
         Expect(blocked,"stability cannot claim an effect with precision off");
         blocked=false;try {Aim.Resolve(live,null,"resume",false);}catch(InvalidOperationException) {blocked=true;}
@@ -333,6 +358,8 @@ internal static class SelfTest {
         DateTime now=DateTime.UtcNow;
         RateResult history=new RateResult {Reports=1001,Intervals=1000,ActiveHz=100,MedianIntervalMs=10,P95IntervalMs=10,DevicePath="mouse",MeasuredUtc=now.ToString("o")};
         Expect(Aim.StabilityHalfLife(history,"MOUSE",now)==10,"stability uses matching valid median interval");
+        history.MedianIntervalMs=8.0007;Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"tiny delivery variation does not retune the driver");
+        history.P95IntervalMs=12;history.MedianIntervalMs=10.26;Expect(Aim.StabilityHalfLife(history,"mouse",now)==10.5,"stability tuning uses half-millisecond steps");
         history.MedianIntervalMs=1;Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"fast streams use the stability minimum");
         history.MedianIntervalMs=20;history.P95IntervalMs=20;Expect(Aim.StabilityHalfLife(history,"mouse",now)==12,"slow streams cannot exceed stability maximum");
         Expect(Aim.StabilityHalfLife(history,"other",now)==8 && Aim.StabilityHalfLife(null,"mouse",now)==8,"missing or unrelated history uses fallback");

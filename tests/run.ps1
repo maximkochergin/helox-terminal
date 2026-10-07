@@ -73,6 +73,15 @@ $aimStatus = & $executable aim status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
 $badAim = & $executable aim smooth maybe --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validation failed' }
+if ($aimStatus.State -eq 'ready') {
+    $response = & $executable aim response --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
+    $responseMenu = "8`n14`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($responseMenu -join "`n") -notmatch 'current profile / simulation / read only') { throw 'response menu failed' }
+} else {
+    $response = & $executable aim response --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$response.error -or $response.applied) { throw 'response requires an inspectable active profile' }
+}
 if ($aimStatus.State -ne 'ready') {
     $missingDriver = & $executable aim precision on --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$missingDriver.error -or $missingDriver.applied) { throw 'absent backend must not claim applied' }
@@ -85,8 +94,8 @@ $smoothChoice = "8`n3`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($smoothChoice -join "`n") -notmatch 'light 2 ms' -or ($smoothChoice -join "`n") -match 'applied /') { throw 'smoothing choice or cancellation failed' }
 $precisionChoice = "8`n1`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($precisionChoice -join "`n") -notmatch 'steady 1.2x' -or ($precisionChoice -join "`n") -match 'applied /') { throw 'precision choice or cancellation failed' }
-if (($aimMenu -join "`n") -notmatch '11  stability on') { throw 'stability menu missing' }
-foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'),@('aim','precision','on','1'),@('aim','precision','on','1.9'),@('aim','precision','on','NaN'),@('aim','precision','on','Infinity'),@('aim','precision','off','1.4'),@('aim','stability','on','8'),@('aim','stability','maybe'))) {
+if (($aimMenu -join "`n") -notmatch '11  stability on' -or ($aimMenu -join "`n") -notmatch '13  tracking preset') { throw 'aim refinement menus missing' }
+foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'),@('aim','precision','on','1'),@('aim','precision','on','1.9'),@('aim','precision','on','NaN'),@('aim','precision','on','Infinity'),@('aim','precision','off','1.4'),@('aim','stability','on','8'),@('aim','stability','maybe'),@('aim','tracking','off'),@('aim','response','extra'))) {
     $invalidStrength = & $executable @badStrength --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'aim command validation failed' }
 }
