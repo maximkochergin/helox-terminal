@@ -40,6 +40,10 @@ $cancel = "2`n`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or @($cancel | Select-String '1  acceleration').Count -ne 2) { throw 'cancel must redraw home menu' }
 $unsupportedJson = & $executable faq --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$unsupportedJson.error) { throw 'unsupported json command must return a json error' }
+$interactiveJson = "status --JSON`nfaq --json`nstatus --json --json`nhome`n0" | & $executable
+$jsonRecords = @($interactiveJson | ForEach-Object { if ($_ -match '(\{.*\})') { $matches[1] | ConvertFrom-Json } })
+if ($LASTEXITCODE -ne 0 -or $jsonRecords.Count -ne 3 -or !$jsonRecords[0].windows -or $jsonRecords[1].error -ne 'json is not supported for this command' -or $jsonRecords[2].error -ne 'use --json once') { throw 'interactive json commands and errors failed' }
+if (@($interactiveJson | Select-String '1  acceleration').Count -ne 2) { throw 'json format leaked into the next interactive command' }
 $caseInsensitive = & $executable PROFILE LIST --JSON | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'command casing must be consistent' }
 $missingName = 'missing-' + [guid]::NewGuid().ToString('n').Substring(0,20)

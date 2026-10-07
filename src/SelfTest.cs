@@ -238,6 +238,18 @@ internal static class SelfTest {
         try {Aim.Transaction(before,after,delegate(Dictionary<string,object> cfg) {writes++;throw new IOException(writes==1 ? "first error" : "second error");});}
         catch(IOException e) {caught=e.Message.Contains("first error") && e.Message.Contains("rollback failed") && e.Message.Contains("second error");}
         Expect(caught && writes==2,"aim failed rollback preserves both errors");
+        writes=0;int saves=0;
+        Dictionary<string,object> identical=Aim.Parse("{\"value\":1.0}");
+        Dictionary<string,object> same=Aim.Commit(before,identical,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {saves++;});
+        Expect(writes==0 && saves==1 && Object.ReferenceEquals(same,before),"unchanged aim settings save preferences without driver activation");
+        caught=false;
+        try {Aim.Commit(before,identical,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {throw new IOException("preset save failed");});}
+        catch(IOException e) {caught=e.Message=="preset save failed";}
+        Expect(caught && writes==0,"unchanged aim save failure does not write or roll back driver");
+        writes=0;saves=0;caught=false;
+        try {Aim.Commit(before,after,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {saves++;throw new IOException("disk full");});}
+        catch(IOException e) {caught=e.Message.Contains("previous driver settings restored") && e.Message.Contains("disk full");}
+        Expect(caught && writes==2 && saves==1,"aim persistence failure rolls back once without saving again");
     }
 }
 }

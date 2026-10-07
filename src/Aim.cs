@@ -185,13 +185,18 @@ internal static class Aim {
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=new Dictionary<string,object>{{"precision",precision},{"smooth",smooth}};
-                return Describe(Transaction(before,after,delegate(Dictionary<string,object> requested) {
-                    Dictionary<string,object> readback=Write(requested);
-                    if(Object.ReferenceEquals(requested,after)) Store.Save(preferences,presets);
-                    return readback;
-                }),id);
+                return Describe(Commit(before,after,Write,delegate {Store.Save(preferences,presets);}),id);
             }finally {if(held) mutex.ReleaseMutex();}
         }
+    }
+    internal static Dictionary<string,object> Commit(Dictionary<string,object> before,Dictionary<string,object> after,Func<Dictionary<string,object>,Dictionary<string,object>> write,Action save) {
+        // The active configuration already verifies an unchanged request; no activation delay needed.
+        if(SameValue(before,after)) {save();return before;}
+        return Transaction(before,after,delegate(Dictionary<string,object> requested) {
+            Dictionary<string,object> readback=write(requested);
+            if(Object.ReferenceEquals(requested,after)) save();
+            return readback;
+        });
     }
     internal static void Restore() {
         string path=Path.Combine(Store.Root,"aim-before.json");

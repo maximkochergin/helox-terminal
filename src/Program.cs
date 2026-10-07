@@ -5,18 +5,13 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.6.3";
+    internal const string Version="0.6.4";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
         try {
             if(args.Length>0) {
-                List<string> words=new List<string>();
-                foreach(string arg in args) words.Add(arg.ToLowerInvariant());
-                json=words.Remove("--json");
-                if(words.Contains("--json")) throw new ArgumentException("use --json once");
-                if(words.Count==0) throw new ArgumentException("choose a command");
-                Run(words.ToArray());return 0;
+                Run(Arguments(args));return 0;
             }
             if(!Console.IsOutputRedirected) {Console.ForegroundColor=ConsoleColor.White;Console.Title="helox terminal";}
             Home();
@@ -28,15 +23,24 @@ internal static class Program {
                 bool menuChoice=words.Length==1 && words[0].Length==1 && words[0][0]>='1' && words[0][0]<='8';
                 try {
                     if(menuChoice) Menu(words[0]);
-                    else Run(words);
-                } catch(OperationCanceledException) {if(menuChoice) Home();Console.WriteLine("  cancelled");}
-                catch(Exception e) {if(menuChoice) Home();Console.WriteLine("  "+Error(e));}
+                    else Run(Arguments(words));
+                } catch(OperationCanceledException e) {if(menuChoice) Home();if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.WriteLine("  cancelled");}
+                catch(Exception e) {if(menuChoice) Home();if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.WriteLine("  "+Error(e));}
+                finally {json=false;}
             }
             return 0;
         } catch(Exception e) {
             if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.Error.WriteLine("  "+Error(e));
             return 1;
         }
+    }
+    private static string[] Arguments(string[] args) {
+        List<string> words=new List<string>();
+        foreach(string arg in args) words.Add(arg.ToLowerInvariant());
+        json=words.Remove("--json");
+        if(words.Contains("--json")) throw new ArgumentException("use --json once");
+        if(words.Count==0) throw new ArgumentException("choose a command");
+        return words.ToArray();
     }
     private static string Error(Exception e) {
         if(e is FileNotFoundException) return "file not found; save a profile or change a setting first";
