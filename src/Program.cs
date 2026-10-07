@@ -5,15 +5,17 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.8.0";
+    internal const string Version="0.8.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
         try {
-            if(!(args.Length==1 && (args[0]=="maintenance-restore" || args[0]=="maintenance-aim-restore"))) Maintenance.CheckStartup();
             if(args.Length>0) {
-                Run(Arguments(args));return 0;
+                string[] words=Arguments(args);
+                if(!(words.Length==1 && (words[0]=="maintenance-validate" || words[0]=="maintenance-restore" || words[0]=="maintenance-aim-restore"))) Maintenance.CheckStartup();
+                Run(words);return 0;
             }
+            Maintenance.CheckStartup();
             if(!Console.IsOutputRedirected) {Console.ForegroundColor=ConsoleColor.White;Console.Title="helox terminal";}
             Home();
             while(true) {
@@ -408,6 +410,7 @@ internal static class Program {
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest" || words[0]=="check"))
             throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
+            case "maintenance-validate":if(words.Length!=1) break;Maintenance.ValidateReset();Console.WriteLine("  reset backups validated / no settings changed");return;
             case "maintenance-restore":if(words.Length!=1) break;Run(new string[]{"restore"});return;
             case "maintenance-aim-restore":
                 if(words.Length!=1) break;

@@ -10,6 +10,7 @@ internal static class SelfTest {
         AimRegression();
         UndoRegression();
         SnapshotRegression();
+        MaintenanceRegression();
         Program.RequireDpiInput(false);
         foreach(bool? transformed in new bool?[]{true,null}) {
             bool blocked=false;try {Program.RequireDpiInput(transformed);}catch(InvalidOperationException) {blocked=true;}
@@ -200,6 +201,37 @@ internal static class SelfTest {
         try {Store.CommitChange(before,after,delegate(Settings value) {throw new IOException("apply failed");},delegate(Settings value) {saved=value;});}
         catch(IOException) {rejected=true;}
         Expect(rejected && saved==null,"failed apply leaves previous undo untouched");
+    }
+    private static void MaintenanceRegression() {
+        foreach(string key in new string[]{"BackendPrepared","PackageVerified","BackendVerified"})
+            foreach(object unsafeValue in new object[]{false,null,"true"}) {
+                Dictionary<string,object> report=new Dictionary<string,object>{{"BackendPrepared",true},{"PackageVerified",true},{"BackendVerified",true}};
+                report[key]=unsafeValue;int reads=0;
+                Maintenance.AddKernelCheck(report,delegate {reads++;return "1.7.0";});
+                Expect(reads==0 && report["KernelReadable"]==null && report["KernelVersion"]==null,"unverified backend never reaches native readback");
+            }
+        Dictionary<string,object> good=new Dictionary<string,object>{{"BackendPrepared",true},{"PackageVerified",true},{"BackendVerified",true}};
+        Maintenance.AddKernelCheck(good,delegate {return "1.7.0";});
+        Expect(Object.Equals(good["KernelReadable"],true) && (string)good["KernelVersion"]=="1.7.0","verified backend records live protocol");
+        Maintenance.AddKernelCheck(good,delegate {throw new IOException("kernel unavailable");});
+        Expect(Object.Equals(good["KernelReadable"],false) && (string)good["KernelError"]=="kernel unavailable","kernel failure remains separate from unverified backend");
+        string root=Path.Combine(Path.GetTempPath(),"helox-reset-"+Guid.NewGuid().ToString("n"));Directory.CreateDirectory(root);
+        string original=Path.Combine(root,"original.json"),aim=Path.Combine(root,"aim-before.json");
+        try {
+            Store.Save(original,new Settings {Speed=10,WheelLines=3,DoubleClickMs=500});
+            File.WriteAllText(aim,"{\"version\":\"1.7.0\"}");
+            bool rejected=false;int validations=0;
+            try {Maintenance.ValidateResetBackups(root,true,delegate(Dictionary<string,object> cfg) {validations++;AimConfigGuard.Check(cfg);});}
+            catch(ArgumentException) {rejected=true;}
+            Expect(rejected && validations==1 && Store.Load<Settings>(original).Speed==10,"invalid aim backup rejected without modifying windows backup");
+            validations=0;Maintenance.ValidateResetBackups(root,false,delegate(Dictionary<string,object> cfg) {validations++;});
+            Expect(validations==0,"unloaded driver does not require unused aim backup");
+            rejected=false;try {Maintenance.ValidateResetBackups(root,null,delegate(Dictionary<string,object> cfg) {validations++;});}catch(InvalidOperationException) {rejected=true;}
+            Expect(rejected && validations==0,"unknown endpoint blocks reset before native conversion");
+            File.WriteAllText(original,"{\"Speed\":10}");
+            rejected=false;try {Maintenance.ValidateResetBackups(root,true,delegate(Dictionary<string,object> cfg) {validations++;});}catch(ArgumentException) {rejected=true;}
+            Expect(rejected && validations==0,"invalid windows backup blocks aim validation too");
+        }finally {if(File.Exists(original)) File.Delete(original);if(File.Exists(aim)) File.Delete(aim);Directory.Delete(root);}
     }
     private static void SnapshotRegression() {
         string path=Path.Combine(Path.GetTempPath(),"helox-snapshot-"+Guid.NewGuid().ToString("n")+".json");

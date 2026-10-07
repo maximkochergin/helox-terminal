@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.8.0
+  helox / 0.8.1
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -41,7 +41,7 @@ the optional installer downloads [raw accel 1.7.1 from its official release](htt
 
 ### driver checks and removal
 
-`8 > 9 check driver`, `6 > 4`, or `aim doctor` checks backend files against the pinned official archive, service registration, the mouse class filter, installed driver hash/signature, pending driver file, control endpoint and live protocol readback. no selected mouse is needed and no settings are applied. `aim doctor --json` exports the same checks. missing or inaccessible evidence remains unknown; a registered service alone does not establish that the driver is active. the upstream 1.7.1 package uses protocol 1.7.0.
+`8 > 9 check driver`, `6 > 4`, or `aim doctor` checks backend files against the pinned official archive, service registration, the mouse class filter, installed driver hash/signature, pending driver file, control endpoint and live protocol readback. no selected mouse is needed and no settings are applied. `aim doctor --json` exports the same checks. native readback runs only after backend preparation and both archive/backend verification succeed; otherwise `KernelReadable` is null and the endpoint check remains independent. every first aim bridge load also verifies its files, including menu/status paths. missing or inaccessible evidence remains unknown; a registered service alone does not establish that the driver is active. the upstream 1.7.1 package uses protocol 1.7.0.
 
 `8 > 10 uninstall driver` and `6 > 5` perform the same removal. type `uninstall` to continue, or `0` to cancel. advanced command: `aim uninstall`. this affects raw accel for all mice and other raw accel apps; helox profiles, backups and downloads stay available. the verified official uninstaller removes the filter and driver file. helox then removes the remaining service only if its type and image match the expected raw accel driver. windows uac and the official keypress window are required. the filter/file/service results are checked rather than trusting the upstream exit code alone.
 
@@ -53,7 +53,7 @@ restart windows after removal: a loaded driver and files queued for deletion can
 
 reset restores the original windows snapshot if present and the original aim snapshot if backed up and the driver is loaded. it then uninstalls the shared raw accel driver and deletes `%localappdata%\helox-terminal`: profiles, original/undo/aim backups, saved presets, dpi/hz history, downloaded backend and temporary cache files. a missing original windows snapshot leaves windows preferences unchanged; a failed restore stops cleanup. backups are permanently deleted after successful removal. extracted application files stay in their original folder and can be deleted after closing the cleanup window.
 
-cleanup refuses junctions/symlinks, other helox sessions, unexpected roots and locked/inaccessible files. it checks delete access for the complete tree before deleting backups. failure to restore or uninstall keeps the data; filesystem errors after deletion begins can leave a partial tree and are reported. new helox sessions are blocked while cleanup runs. restart if the driver was installed, then repeat the driver check if needed.
+cleanup refuses junctions/symlinks, other helox sessions, unexpected roots and locked/inaccessible files. it checks delete access for the complete tree and validates backups that will be restored before changing settings or uninstalling the driver, then repeats access checks before deletion. failure to restore or uninstall keeps the data; filesystem errors after deletion begins can leave a partial tree and are reported. new helox sessions are blocked while cleanup runs, including json commands, which return a json error. restart if the driver was installed, then repeat the driver check if needed.
 
 ## what works
 

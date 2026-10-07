@@ -23,7 +23,7 @@ function Get-DataTree([string]$Target,[string]$Expected) {
     }
     return $entries.ToArray()
 }
-function Remove-DataTree([string]$Target,[string]$Expected) {
+function Test-DataDeleteAccess([string]$Target,[string]$Expected) {
     $tree=@(Get-DataTree $Target $Expected)
     if (!('HeloxDeleteProbe' -as [type])) {
         Add-Type -TypeDefinition @'
@@ -43,6 +43,10 @@ public static class HeloxDeleteProbe {
     }
     # A loaded backend or denied file must stop before backups are deleted.
     foreach ($path in $tree) { [HeloxDeleteProbe]::Check($path) }
+    return $tree
+}
+function Remove-DataTree([string]$Target,[string]$Expected) {
+    $tree=@(Test-DataDeleteAccess $Target $Expected)
     foreach ($path in $tree | Sort-Object Length -Descending) {
         $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'data path changed / cleanup stopped' }
@@ -50,6 +54,15 @@ public static class HeloxDeleteProbe {
         else { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
     }
     if (Test-Path -LiteralPath $Target) { throw 'data cleanup incomplete' }
+}
+function Invoke-ResetPreparation([string]$Target,[string]$Expected,[scriptblock]$Validate,[scriptblock]$RestoreWindows,[scriptblock]$RestoreAim,[scriptblock]$Uninstall) {
+    # Finish nonmutating checks before either restoration or driver removal.
+    $null=Test-DataDeleteAccess $Target $Expected
+    & $Validate
+    if (Test-Path -LiteralPath (Join-Path $Target 'original.json')) { & $RestoreWindows }
+    else { Write-Host 'no original windows backup / current windows settings left unchanged' }
+    if (Test-Path -LiteralPath (Join-Path $Target 'aim-before.json')) { & $RestoreAim }
+    & $Uninstall
 }
 function Get-AimCheck {
     $report=[ordered]@{BackendPrepared=$false;PackageVerified=$false;BackendVerified=$null;ServiceRegistered=$null;ServiceImage=$null;ServiceDeletionPending=$null;FilterRegistered=$null;DriverFilePresent=$false;DriverSignature=$null;DriverMatchesPackage=$null;PendingFilePresent=$false;Errors=@()}
@@ -110,19 +123,20 @@ try {
     if ($null -ne $parent -and !$parent.WaitForExit(60000)) { throw 'helox did not close / data kept' }
     if (@(Get-Process -Name helox -ErrorAction SilentlyContinue).Count -gt 0) { throw 'close other helox sessions and retry / data kept' }
     $exe=Join-Path $PSScriptRoot 'bin\helox.exe'
-    # Stop before restoration or uninstall if the data tree is unsafe.
-    $null=Get-DataTree $dataRoot $dataRoot
-    if (Test-Path -LiteralPath (Join-Path $dataRoot 'original.json')) {
+    Invoke-ResetPreparation $dataRoot $dataRoot {
+        & $exe maintenance-validate
+        if ($LASTEXITCODE -ne 0) { throw 'reset backup validation failed / data kept' }
+    } {
         # The cleanup gate blocks normal starts. This private worker flag only
         # restores a validated snapshot; it cannot bypass deletion safeguards.
         & $exe maintenance-restore
         if ($LASTEXITCODE -ne 0) { throw 'original windows settings could not be restored / data kept' }
-    } else { Write-Host 'no original windows backup / current windows settings left unchanged' }
-    if (Test-Path -LiteralPath (Join-Path $dataRoot 'aim-before.json')) {
+    } {
         & $exe maintenance-aim-restore
         if ($LASTEXITCODE -ne 0) { throw 'original aim snapshot could not be restored / data kept' }
+    } {
+        & (Join-Path $PSScriptRoot 'install-aim.ps1') -Uninstall
     }
-    & (Join-Path $PSScriptRoot 'install-aim.ps1') -Uninstall
     $gates=@();$held=@()
     try {
         $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value

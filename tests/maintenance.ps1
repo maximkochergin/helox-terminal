@@ -21,8 +21,18 @@ try {
     if (!(Test-Path -LiteralPath (Join-Path $outside 'keep.txt'))) { throw 'outside file removed' }
     $lock=[IO.File]::Open($dll,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     Assert-Rejected { Remove-DataTree $root $root } 'loaded backend'
+    $script:resetCalls=0
+    Assert-Rejected { Invoke-ResetPreparation $root $root {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'locked reset preflight'
+    if ($script:resetCalls -ne 0) { throw 'locked reset mutated settings or uninstalled driver' }
     if ([IO.File]::ReadAllText((Join-Path $root 'original.json')) -ne 'backup') { throw 'backup removed before lock rejection' }
     $lock.Dispose();$lock=$null
+    $script:resetCalls=0
+    Assert-Rejected { Invoke-ResetPreparation $root $root {throw 'invalid aim backup'} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'invalid reset backup'
+    if ($script:resetCalls -ne 0) { throw 'invalid backup allowed reset side effects' }
+    $script:resetOrder=New-Object 'Collections.Generic.List[string]'
+    [IO.File]::WriteAllText((Join-Path $root 'aim-before.json'),'fixture')
+    Invoke-ResetPreparation $root $root {$script:resetOrder.Add('validate')} {$script:resetOrder.Add('windows')} {$script:resetOrder.Add('aim')} {$script:resetOrder.Add('uninstall')}
+    if (($script:resetOrder -join ',') -ne 'validate,windows,aim,uninstall') { throw 'reset operation order incorrect' }
     $junction=Join-Path $root 'linked'
     New-Item -ItemType Junction -Path $junction -Target $outside | Out-Null
     Assert-Rejected { Remove-DataTree $root $root } 'linked subtree'
@@ -41,7 +51,23 @@ try {
         try { $ErrorActionPreference='Continue';$message=& $exe check 2>&1 | Out-String }
         finally { $ErrorActionPreference=$previousPreference }
         if ($LASTEXITCODE -ne 1 -or $message -notmatch 'cleanup running') { throw 'new session bypassed cleanup gate' }
+        $blocked=& $exe status --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 1 -or $blocked.error -notmatch 'cleanup running') { throw 'blocked json session contract failed' }
     } finally { if ($held) { $gate.ReleaseMutex() };$gate.Dispose() }
+    # A diagnostic reporting a hash failure must not load the real backend,
+    # even if this machine already has a readable installed driver.
+    $fakeApp=Join-Path $fixture 'app'
+    New-Item -ItemType Directory -Path (Join-Path $fakeApp 'bin') -Force | Out-Null
+    $fakeExe=Join-Path $fakeApp 'bin\helox.exe'
+    Copy-Item -LiteralPath $exe -Destination $fakeExe
+    [IO.File]::WriteAllText((Join-Path $fakeApp 'maintenance.ps1'),'Write-Output ''{"BackendPrepared":true,"PackageVerified":true,"BackendVerified":false,"Errors":[]}''')
+    $unverified=& $fakeExe aim doctor --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $null -ne $unverified.KernelReadable -or $null -ne $unverified.KernelVersion) { throw 'unverified diagnostic loaded native bridge' }
+    $selection=& $exe status --json | ConvertFrom-Json
+    if ($null -ne $selection.receiver) {
+        $blockedAim=& $fakeExe aim status --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $blockedAim.State -ne 'unavailable' -or $blockedAim.Note -notmatch 'unverified') { throw 'aim menu path bypassed backend verification' }
+    }
     Write-Host 'passed / cleanup boundaries, locked-file preservation, junction rejection, readonly files and session gate'
 } finally {
     if ($null -ne $lock) { $lock.Dispose() }

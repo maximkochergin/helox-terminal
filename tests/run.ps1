@@ -16,7 +16,7 @@ $status = & $executable status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status contract failed' }
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
 $doctor=& $executable aim doctor --json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $null -eq $doctor.BackendPrepared -or $null -eq $doctor.KernelReadable) { throw 'driver doctor contract failed' }
+if ($LASTEXITCODE -ne 0 -or $null -eq $doctor.BackendPrepared -or !$doctor.PSObject.Properties['KernelReadable']) { throw 'driver doctor contract failed' }
 $afterDoctor=& $executable status --json | ConvertFrom-Json
 if (($afterDoctor.windows | ConvertTo-Json -Compress) -ne ($status.windows | ConvertTo-Json -Compress) -or ($afterDoctor.gameAcceleration | ConvertTo-Json -Compress) -ne ($status.gameAcceleration | ConvertTo-Json -Compress)) { throw 'doctor changed settings' }
 $cancel="6`n5`n0`n6`n6`n0`n8`n10`n0`n0" | & $executable

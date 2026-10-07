@@ -1,5 +1,13 @@
 # configuration audits
 
+## 0.8.1 / maintenance review
+
+the 0.8.0 driver doctor reported failed backend verification but still attempted kernel readback, which loaded the bridge. readback now stays unknown when preparation/archive/backend verification fails. every first bridge load also checks integrity, so opening the aim menu cannot bypass the diagnostic guard. tests use a temporary app with a deliberately failed integrity report; no vendor binaries are changed.
+
+reset previously checked delete access only after restoration and uninstall. a locked backend could therefore abort cleanup after settings or driver state had already changed. delete-access checks now run before any mutation and repeat before deletion. all snapshots that will be restored are validated before restoration starts, preventing a damaged aim snapshot from aborting only after the windows snapshot has been applied. a malformed aim backup is irrelevant when the driver is confirmed unloaded.
+
+startup checks also ran before json argument parsing, so blocked json commands emitted plain text. errors now retain the requested json format. regressions cover the blocked session, unverified bridge paths, locked preflight, invalid backups and reset callback ordering. uninstall failure/pending-deletion tests were rerun with mocked system operations; no real uninstall or purge was performed.
+
 ## 0.7.2 / ambiguous json fields
 
 two load paths checked case-sensitive dictionary keys, then passed the same input to a case-insensitive deserializer. a windows snapshot with `"Speed":10` and `"speed":"20"` passed integer checks and loaded speed 20. the official aim bridge accepted a profile with `"Output DPI":1000` and `"output dpi":2000`, producing output dpi 2000 after the guard had checked 1000. both mismatches were reproduced without applying settings or activating the driver.
