@@ -305,6 +305,40 @@ internal static class SelfTest {
         Dictionary<string,object> changed=Aim.Configure(peers,defaults,"HID\\FIRST",false,true,8);
         Expect(Aim.SameValue(Aim.Items(peers["devices"])[1],Aim.Items(changed["devices"])[1]) && Aim.Describe(changed,"HID\\FIRST").OutputHalfLifeMs==8,"aim toggle preserves peer entries and selected strength");
         AimConfigGuard.Check(changed);
+        Dictionary<string,object> tuned=Aim.Configure(peers,defaults,"HID\\FIRST",true,true,8,1.6,true,10);
+        AimStatus live=Aim.Describe(tuned,"HID\\FIRST");
+        Expect(live.GainLimit==1.6 && live.InputHalfLifeMs==10 && live.ScaleHalfLifeMs==5 && live.StabilityEnabled==true && live.OutputHalfLifeMs==8,"independent acceleration and output filters appear in readback");
+        Expect(Aim.SameValue(peers["defaultDeviceConfig"],tuned["defaultDeviceConfig"]) && Aim.SameValue(Aim.Items(peers["devices"])[1],Aim.Items(tuned["devices"])[1]),"stability preserves default dpi/polling and peers");
+        AimPreset options=Aim.Resolve(live,null,"smooth",false);
+        Expect(options.GainLimit==1.6 && options.Stability && options.StabilityMs==10 && !options.Smooth && options.SmoothMs==8,"live strength and stability survive smooth off");
+        AimPreset disabled=Aim.Resolve(live,options.ToMap(),"precision",false);
+        Dictionary<string,object> off=Aim.Configure(tuned,defaults,"HID\\FIRST",disabled.Precision,disabled.Smooth,disabled.SmoothMs,disabled.GainLimit,disabled.Stability,disabled.StabilityMs);
+        AimStatus offStatus=Aim.Describe(off,"HID\\FIRST");
+        Expect(offStatus.InputHalfLifeMs==0 && offStatus.ScaleHalfLifeMs==0 && offStatus.StabilityEnabled==false,"precision off bypasses acceleration filters even with remembered stability");
+        options=Aim.Resolve(offStatus,disabled.ToMap(),"precision",true);
+        Expect(options.Precision && options.Stability && options.StabilityMs==10 && options.GainLimit==1.6,"precision off/on remembers tuned acceleration");
+        options=Aim.Resolve(live,disabled.ToMap(),"resume",false);
+        Expect(!options.Precision && options.Stability && options.StabilityMs==10 && options.GainLimit==1.6,"resume uses saved choices instead of unrelated live state");
+        options=Aim.Resolve(live,null,"stability",false);
+        Expect(!options.Stability && options.Precision && options.Smooth && options.GainLimit==1.6 && options.SmoothMs==8,"stability off preserves precision and output smoothing");
+        Dictionary<string,object> steady=Aim.Configure(tuned,defaults,"HID\\FIRST",options.Precision,options.Smooth,options.SmoothMs,options.GainLimit,options.Stability,options.StabilityMs);
+        AimStatus steadyStatus=Aim.Describe(steady,"HID\\FIRST");
+        Expect(steadyStatus.InputHalfLifeMs==4 && steadyStatus.ScaleHalfLifeMs==2 && steadyStatus.OutputHalfLifeMs==8,"stability off restores baseline acceleration filters only");
+        options=Aim.Resolve(steadyStatus,null,"stability",true,null,null,12);
+        Expect(options.Stability && options.StabilityMs==12 && options.GainLimit==1.6,"stability on keeps live gain and accepts bounded timing");
+        bool blocked=false;try {Aim.Resolve(offStatus,disabled.ToMap(),"stability",true);}catch(InvalidOperationException) {blocked=true;}
+        Expect(blocked,"stability cannot claim an effect with precision off");
+        blocked=false;try {Aim.Resolve(live,null,"resume",false);}catch(InvalidOperationException) {blocked=true;}
+        Expect(blocked,"resume requires a saved preset");
+        DateTime now=DateTime.UtcNow;
+        RateResult history=new RateResult {Reports=1001,Intervals=1000,ActiveHz=100,MedianIntervalMs=10,P95IntervalMs=10,DevicePath="mouse",MeasuredUtc=now.ToString("o")};
+        Expect(Aim.StabilityHalfLife(history,"MOUSE",now)==10,"stability uses matching valid median interval");
+        history.MedianIntervalMs=1;Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"fast streams use the stability minimum");
+        history.MedianIntervalMs=20;history.P95IntervalMs=20;Expect(Aim.StabilityHalfLife(history,"mouse",now)==12,"slow streams cannot exceed stability maximum");
+        Expect(Aim.StabilityHalfLife(history,"other",now)==8 && Aim.StabilityHalfLife(null,"mouse",now)==8,"missing or unrelated history uses fallback");
+        history.MeasuredUtc=now.AddHours(-25).ToString("o");Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"stale stability timing ignored");
+        history.MeasuredUtc=now.AddMinutes(6).ToString("o");Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"future stability timing ignored");
+        history.MeasuredUtc=now.ToString("o");history.MedianIntervalMs=double.NaN;Expect(Aim.StabilityHalfLife(history,"mouse",now)==8,"invalid stability timing ignored");
         Expect(Aim.EndpointMayExist(true,0),"loaded driver remains present without a service record");
         Expect(Aim.EndpointMayExist(false,5),"inaccessible driver is not treated as absent");
         Expect(!Aim.EndpointMayExist(false,2) && !Aim.EndpointMayExist(false,3),"only missing driver paths prove absence");
@@ -316,6 +350,11 @@ internal static class SelfTest {
             Expect((bool)Aim.Map(saved["mouse"])["precision"] && !(bool)Aim.Map(saved["mouse"])["smooth"],"saved aim toggles roundtrip");
             Expect(saved.ContainsKey("MOUSE"),"saved aim identity ignores case like driver identity");
             Expect(Aim.SavedHalfLife(Aim.Map(saved["mouse"]))==4,"legacy smoothing presets keep 4 ms");
+            AimPreset legacy=Aim.ReadPreset(Aim.Map(saved["mouse"]));
+            Expect(legacy.GainLimit==1.4 && !legacy.Stability && legacy.StabilityMs==8,"legacy presets keep the original curve and filters");
+            saved["mouse"]=new AimPreset {Precision=true,Smooth=true,SmoothMs=8,GainLimit=1.6,Stability=true,StabilityMs=10}.ToMap();Store.Save(presetPath,saved);
+            AimPreset restored=Aim.ReadPreset(Aim.Map(Aim.Saved(presetPath)["MOUSE"]));
+            Expect(restored.GainLimit==1.6 && restored.Stability && restored.StabilityMs==10,"extended aim presets roundtrip");
             foreach(double ms in new double[]{2,4,8}) {
                 Aim.Map(saved["mouse"])["smoothMs"]=ms;Store.Save(presetPath,saved);
                 Expect(Aim.SavedHalfLife(Aim.Map(Aim.Saved(presetPath)["MOUSE"]))==ms,"smoothing strength persists by device identity");
@@ -323,6 +362,13 @@ internal static class SelfTest {
             foreach(object invalid in new object[]{0,13,"4",true,double.NaN,double.PositiveInfinity}) {
                 bool rejected=false;try {Aim.SavedHalfLife(new Dictionary<string,object>{{"smoothMs",invalid}});}catch(ArgumentException) {rejected=true;}
                 Expect(rejected,"unsafe smoothing strength rejected");
+            }
+            foreach(string key in new string[]{"gainLimit","stabilityMs","stability"}) {
+                foreach(object invalid in key=="stability" ? new object[]{1,"true",null} : new object[]{0,100,"8",true,null,double.NaN,double.PositiveInfinity}) {
+                    Dictionary<string,object> invalidPreset=legacy.ToMap();invalidPreset[key]=invalid;Store.Save(presetPath,new Dictionary<string,object>{{"mouse",invalidPreset}});
+                    bool rejected=false;try {Aim.Saved(presetPath);}catch(ArgumentException) {rejected=true;}
+                    Expect(rejected,"invalid extended aim fields blocked before activation");
+                }
             }
             saved["MOUSE"]=new Dictionary<string,object>{{"precision",false},{"smooth",true}};
             Expect(saved.Count==1 && (bool)Aim.Map(saved["mouse"])["smooth"],"aim updates do not create case aliases");

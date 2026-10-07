@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Reflection;
 using System.Threading;
 
@@ -13,9 +14,19 @@ public sealed class AimStatus {
     public string Profile {get;set;}
     public string Mode {get;set;}
     public double? OutputHalfLifeMs {get;set;}
+    public double? InputHalfLifeMs {get;set;}
+    public double? ScaleHalfLifeMs {get;set;}
+    public bool? StabilityEnabled {get;set;}
     public double? GainLimit {get;set;}
     public bool? Enabled {get;set;}
     public bool? InputTransformed {get;set;}
+}
+internal sealed class AimPreset {
+    internal bool Precision,Smooth,Stability;
+    internal double SmoothMs=4,GainLimit=1.4,StabilityMs=8;
+    internal Dictionary<string,object> ToMap() {
+        return new Dictionary<string,object>{{"precision",Precision},{"smooth",Smooth},{"smoothMs",SmoothMs},{"gainLimit",GainLimit},{"stability",Stability},{"stabilityMs",StabilityMs}};
+    }
 }
 internal static class Aim {
     internal static readonly string Root=Path.Combine(Store.Root,"rawaccel-1.7.1","RawAccel");
@@ -33,9 +44,9 @@ internal static class Aim {
             Dictionary<string,object> normalized=new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
             foreach(KeyValuePair<string,object> entry in presets) {
                 if(String.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length>199 || entry.Key.IndexOf('\0')>=0) throw new ArgumentException();
-                Dictionary<string,object> preset=Map(entry.Value);object precision,smooth;
-                if(preset==null || !preset.TryGetValue("precision",out precision) || !(precision is bool) || !preset.TryGetValue("smooth",out smooth) || !(smooth is bool)) throw new ArgumentException();
-                SavedHalfLife(preset);
+                Dictionary<string,object> preset=Map(entry.Value);
+                if(preset==null) throw new ArgumentException();
+                ReadPreset(preset);
                 normalized.Add(entry.Key,entry.Value);
             }
             return normalized;
@@ -51,6 +62,65 @@ internal static class Aim {
     }
     internal static void CheckHalfLife(double ms) {
         if(double.IsNaN(ms) || double.IsInfinity(ms) || ms<1 || ms>12) throw new ArgumentException("smooth half-life: 1..12 ms");
+    }
+    private static double SavedNumber(Dictionary<string,object> preset,string key,double fallback) {
+        object value;if(!preset.TryGetValue(key,out value)) return fallback;
+        if(!(value is int) && !(value is long) && !(value is double) && !(value is decimal)) throw new ArgumentException("invalid "+key);
+        return Convert.ToDouble(value);
+    }
+    internal static void CheckGain(double gain) {
+        if(double.IsNaN(gain) || double.IsInfinity(gain) || gain<1.1 || gain>1.8) throw new ArgumentException("precision gain limit: 1.1..1.8x");
+    }
+    private static void CheckStability(double ms) {
+        if(double.IsNaN(ms) || double.IsInfinity(ms) || ms<8 || ms>12) throw new ArgumentException("stability input half-life: 8..12 ms");
+    }
+    internal static AimPreset ReadPreset(Dictionary<string,object> saved) {
+        AimPreset preset=new AimPreset();if(saved==null) return preset;
+        object precision,smooth,stability;
+        if(!saved.TryGetValue("precision",out precision) || !(precision is bool) || !saved.TryGetValue("smooth",out smooth) || !(smooth is bool)) throw new ArgumentException("invalid saved aim toggles");
+        preset.Precision=(bool)precision;preset.Smooth=(bool)smooth;preset.SmoothMs=SavedHalfLife(saved);
+        preset.GainLimit=SavedNumber(saved,"gainLimit",1.4);CheckGain(preset.GainLimit);
+        if(saved.TryGetValue("stability",out stability)) {if(!(stability is bool)) throw new ArgumentException("invalid saved stability toggle");preset.Stability=(bool)stability;}
+        preset.StabilityMs=SavedNumber(saved,"stabilityMs",8);CheckStability(preset.StabilityMs);return preset;
+    }
+    internal static double StabilityHalfLife(RateResult history,string devicePath,DateTime now) {
+        DateTime measured;
+        if(history==null || String.IsNullOrEmpty(devicePath) || !Analysis.ValidHistory(history) || !String.Equals(history.DevicePath,devicePath,StringComparison.OrdinalIgnoreCase) ||
+            !DateTime.TryParseExact(history.MeasuredUtc,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out measured) ||
+            measured.ToUniversalTime()<now.ToUniversalTime().AddHours(-24) || measured.ToUniversalTime()>now.ToUniversalTime().AddMinutes(5)) return 8;
+        return Math.Max(8,Math.Min(12,history.MedianIntervalMs));
+    }
+    private static double StabilityHalfLife(Device device) {
+        RateResult history=null;
+        try {history=Store.Load<RateResult>(Path.Combine(Store.Root,"rate.json"));}catch {} // Invalid or inaccessible optional history uses the explicit 8 ms fallback.
+        return StabilityHalfLife(history,device.Path,DateTime.UtcNow);
+    }
+    internal static void CheckChange(string feature,bool on,double? smoothMs,double? gainLimit) {
+        if(feature!="precision" && feature!="smooth" && feature!="stability" && feature!="resume") throw new ArgumentException("use aim precision|smooth|stability on|off or aim resume");
+        if(smoothMs.HasValue) {CheckHalfLife(smoothMs.Value);if(feature!="smooth" || !on) throw new ArgumentException("strength requires aim smooth on");}
+        if(gainLimit.HasValue) {CheckGain(gainLimit.Value);if(feature!="precision" || !on) throw new ArgumentException("gain limit requires aim precision on");}
+    }
+    internal static AimPreset Resolve(AimStatus status,Dictionary<string,object> saved,string feature,bool on,double? smoothMs=null,double? gainLimit=null,double stabilityMs=8) {
+        CheckChange(feature,on,smoothMs,gainLimit);CheckStability(stabilityMs);
+        AimPreset preset=ReadPreset(saved);
+        if(feature=="resume") {if(saved==null) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");return preset;}
+        bool own=status.Profile!=null && status.Profile.StartsWith("helox-",StringComparison.Ordinal);
+        preset.Precision=own && status.Mode=="natural";preset.Smooth=own && status.OutputHalfLifeMs>0;
+        if(preset.Smooth && status.OutputHalfLifeMs>=1 && status.OutputHalfLifeMs<=12) preset.SmoothMs=status.OutputHalfLifeMs.Value;
+        if(preset.Precision) {
+            if(status.GainLimit>=1.1 && status.GainLimit<=1.8) preset.GainLimit=status.GainLimit.Value;
+            preset.Stability=status.InputHalfLifeMs>=8 && status.InputHalfLifeMs<=12 && status.ScaleHalfLifeMs==status.InputHalfLifeMs/2;
+            if(preset.Stability) preset.StabilityMs=status.InputHalfLifeMs.Value;
+        }
+        if(feature=="precision") preset.Precision=on;
+        else if(feature=="smooth") preset.Smooth=on;
+        else {
+            if(on && !preset.Precision) throw new InvalidOperationException("enable precision first / stability smooths acceleration only");
+            preset.Stability=on;if(on) preset.StabilityMs=stabilityMs;
+        }
+        if(smoothMs.HasValue) preset.SmoothMs=smoothMs.Value;
+        if(gainLimit.HasValue) preset.GainLimit=gainLimit.Value;
+        return preset;
     }
     private static void Load() {
         if(bridge!=null) return;
@@ -137,14 +207,16 @@ internal static class Aim {
             Dictionary<string,object> config=entry==null ? Map(cfg["defaultDeviceConfig"]) : Map(entry["config"]);
             return new AimStatus {State="ready",DeviceId=id,Profile=name,Enabled=!(bool)config["disable"],Mode=(string)Map(profile[X])["mode"],
                 OutputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Output]),GainLimit=Convert.ToDouble(Map(profile[X])["limit"]),
+                InputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Input]),ScaleHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Scale]),
+                StabilityEnabled=!(bool)config["disable"] && (string)Map(profile[X])["mode"]=="natural" && Convert.ToDouble(Map(profile[Speed])[Input])>=8 && Convert.ToDouble(Map(profile[Speed])[Input])<=12 && Convert.ToDouble(Map(profile[Speed])[Scale])==Convert.ToDouble(Map(profile[Speed])[Input])/2,
                 InputTransformed=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]!="noaccel" || (string)Map(profile["Vertical accel parameters"])["mode"]!="noaccel" || Convert.ToDouble(Map(profile[Speed])[Output])>0 ||
                     Convert.ToDouble(profile["Output DPI"])!=1000 || Convert.ToDouble(config["DPI (normalizes input speed unit: counts/ms -> in/s)"])!=0 ||
                     Convert.ToDouble(profile["Y/X output DPI ratio (vertical sens multiplier)"])!=1 || Convert.ToDouble(profile["L/R output DPI ratio (left sens multiplier)"])!=1 || Convert.ToDouble(profile["U/D output DPI ratio (up sens multiplier)"])!=1 ||
                     Convert.ToDouble(profile["Degrees of rotation"])!=0 || Convert.ToDouble(profile["Degrees of angle snapping"])!=0 || Convert.ToDouble(profile["Input Speed Cap"])>0),Note="live driver readback; profile resets on reboot"};
     }
     // Preserve defaults and other devices; only replace our selected hardware-id override.
-    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4) {
-        CheckHalfLife(smoothMs);
+    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4,double gainLimit=1.4,bool stability=false,double stabilityMs=8) {
+        CheckHalfLife(smoothMs);CheckGain(gainLimit);CheckStability(stabilityMs);
         Dictionary<string,object> cfg=Parse(Store.Json.Serialize(current));
         string name="helox-"+id.ToLowerInvariant().Replace('\\','-');
         List<object> profiles=Items(cfg["profiles"]);
@@ -153,8 +225,8 @@ internal static class Aim {
         while(Profile(cfg,name)!=null && ((string)Map(profiles[0])["name"]==name || Items(cfg["devices"]).Exists(delegate(object d){return !String.Equals((string)Map(d)["id"],id,StringComparison.OrdinalIgnoreCase) && (string)Map(d)["profile"]==name;}))) name=baseName+"-"+(++suffix);
         Dictionary<string,object> profile=Map(Items(defaults["profiles"])[0]);profile=Parse(Store.Json.Serialize(profile));profile["name"]=name;
         Dictionary<string,object> accel=Map(profile[X]);accel["mode"]=precision ? "natural" : "noaccel";
-        accel["Gain / Velocity"]=true;accel["inputOffset"]=3.0;accel["decayRate"]=0.05;accel["limit"]=1.4;
-        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? 4.0 : 0.0;speed[Scale]=precision ? 2.0 : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
+        accel["Gain / Velocity"]=true;accel["inputOffset"]=3.0;accel["decayRate"]=0.05;accel["limit"]=gainLimit;
+        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? (stability ? stabilityMs : 4.0) : 0.0;speed[Scale]=precision ? (stability ? stabilityMs/2 : 2.0) : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
         int index=profiles.FindIndex(delegate(object p){return (string)Map(p)["name"]==name;});
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
         cfg["profiles"]=profiles.ToArray();
@@ -192,28 +264,20 @@ internal static class Aim {
             throw new IOException("aim apply failed; previous driver settings restored: "+error.Message);
         }
     }
-    internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null) {
-        if(smoothMs.HasValue) {CheckHalfLife(smoothMs.Value);if(feature!="smooth" || !on) throw new ArgumentException("strength requires aim smooth on");}
+    internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null,double? gainLimit=null) {
+        CheckChange(feature,on,smoothMs,gainLimit);
         using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
                 Dictionary<string,object> before=Active();string id=Id(device);AimStatus status=Describe(before,id);
-                bool precision=status.Profile!=null && status.Profile.StartsWith("helox-") && status.Mode=="natural";
-                bool smooth=status.Profile!=null && status.Profile.StartsWith("helox-") && status.OutputHalfLifeMs>0;
                 string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
-                object existing;double halfLife=presets.TryGetValue(id,out existing) ? SavedHalfLife(Map(existing)) : 4;
-                if(smooth && status.OutputHalfLifeMs>=1 && status.OutputHalfLifeMs<=12) halfLife=status.OutputHalfLifeMs.Value;
-                if(feature=="resume") {
-                    object saved;if(!presets.TryGetValue(id,out saved)) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");
-                    precision=(bool)Map(saved)["precision"];smooth=(bool)Map(saved)["smooth"];
-                    halfLife=SavedHalfLife(Map(saved));
-                } else if(feature=="precision") precision=on;else if(feature=="smooth") smooth=on;else throw new ArgumentException("use aim resume or aim precision|smooth on|off");
-                if(smoothMs.HasValue) halfLife=smoothMs.Value;
-                Dictionary<string,object> after=Configure(before,Defaults(),id,precision,smooth,halfLife);Validate(after);
+                object existing;Dictionary<string,object> saved=presets.TryGetValue(id,out existing) ? Map(existing) : null;
+                AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,feature=="stability" && on ? StabilityHalfLife(device) : 8);
+                Dictionary<string,object> after=Configure(before,Defaults(),id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs);Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
-                presets[id]=new Dictionary<string,object>{{"precision",precision},{"smooth",smooth},{"smoothMs",halfLife}};
+                presets[id]=preset.ToMap();
                 return Describe(Commit(before,after,Write,delegate {Store.Save(preferences,presets);}),id);
             }finally {if(held) mutex.ReleaseMutex();}
         }
@@ -257,6 +321,38 @@ internal static class Aim {
         for(int i=0;i<100;i++) low=Axis(Call(engine,"ManagedAccel","Accelerate",8,0,1.0,8.0));
         for(int i=0;i<100;i++) high=Axis(Call(engine,"ManagedAccel","Accelerate",800,0,1.0,8.0));
         if(Math.Abs(low-8)>.001 || high<=800 || high>800*1.401) throw new Exception("precision engine response failed");
+        double previousFast=1;
+        foreach(double limit in new double[]{1.1,1.2,1.4,1.6,1.8}) {
+            cfg=Validate(Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",true,false,4,limit));
+            accels=(IList)cfg.GetType().GetField("accels").GetValue(cfg);engine=accels[accels.Count-1];
+            for(int i=0;i<100;i++) low=Axis(Call(engine,"ManagedAccel","Accelerate",8,0,1.0,8.0));
+            for(int i=0;i<100;i++) high=Axis(Call(engine,"ManagedAccel","Accelerate",800,0,1.0,8.0))/800;
+            if(Math.Abs(low-8)>.001 || high<=previousFast || high>limit+.001) throw new Exception("precision gain choice response failed");
+            previousFast=high;
+            Console.WriteLine("  precision limit "+limit.ToString(CultureInfo.InvariantCulture)+"x / settled fast ratio "+high.ToString("0.000",CultureInfo.InvariantCulture)+"x / native engine");
+        }
+        double baselineVariation=0;
+        foreach(double stabilityMs in new double[]{0,8,10,12}) {
+            bool stable=stabilityMs>0;
+            cfg=Validate(Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",true,false,4,1.4,stable,stable ? stabilityMs : 8));
+            accels=(IList)cfg.GetType().GetField("accels").GetValue(cfg);engine=accels[accels.Count-1];
+            double slowRatio=0,fastRatio=0;
+            for(int i=0;i<100;i++) {
+                slowRatio=Axis(Call(engine,"ManagedAccel","Accelerate",40,0,1.0,8.0))/40;
+                fastRatio=Axis(Call(engine,"ManagedAccel","Accelerate",120,0,1.0,8.0))/120;
+                if(double.IsNaN(slowRatio) || double.IsNaN(fastRatio) || slowRatio<=0 || slowRatio>1.401 || fastRatio<=0 || fastRatio>1.401) throw new Exception("stability transient gain bounds failed");
+            }
+            double variation=Math.Abs(fastRatio-slowRatio);
+            if(slowRatio<1 || slowRatio>1.401 || fastRatio<1 || fastRatio>1.401 || variation<=0) throw new Exception("stability gain bounds failed");
+            if(!stable) baselineVariation=variation;
+            else if(variation>=baselineVariation) throw new Exception("stability did not reduce alternating acceleration variation");
+            Console.WriteLine("  stability "+(stable ? stabilityMs+" ms" : "off")+" / alternating ratio spread "+variation.ToString("0.000",CultureInfo.InvariantCulture)+"x / native engine");
+            object turn=Call(engine,"ManagedAccel","Accelerate",-80,40,1.0,8.0);
+            double tx=Axis(turn),ty=Convert.ToDouble(turn.GetType().GetProperty("Item2").GetValue(turn,null));
+            if(tx>=0 || ty<=0 || Math.Abs(tx/ty+2)>.001) throw new Exception("stability changed direction");
+            object stop=Call(engine,"ManagedAccel","Accelerate",0,0,1.0,8.0);
+            if(Axis(stop)!=0 || Convert.ToDouble(stop.GetType().GetProperty("Item2").GetValue(stop,null))!=0) throw new Exception("stability generated motion at rest");
+        }
         cfg=Validate(Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",false,true));
         accels=(IList)cfg.GetType().GetField("accels").GetValue(cfg);engine=accels[accels.Count-1];
         double peak=0,trough=0;
@@ -304,7 +400,7 @@ internal static class Aim {
         Validate(protectedShared);
         Dictionary<string,object> capped=Defaults();Map(Items(capped["profiles"])[0])["Input Speed Cap"]=10;
         if(Describe(capped,"HID\\VID_145F&PID_0326").InputTransformed!=true) throw new Exception("dpi filter misses input speed cap");
-        Console.WriteLine("  passed / official aim engine: slow 1x, fast <=1.4x, smoother output, direction preserved; no driver writes");
+        Console.WriteLine("  passed / official aim engine: gain choices, steadier acceleration, smoother output, direction preserved; no driver writes");
     }
     private static double Axis(object pair) {return Convert.ToDouble(pair.GetType().GetProperty("Item1").GetValue(pair,null));}
 }

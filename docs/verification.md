@@ -36,6 +36,11 @@
 - installer preparation recovers a corrupt cached zip, removes temporary downloads and rejects a parallel setup before extraction; no kernel installation is required for these checks.
 - preparation also succeeds while the cli's native bridge and json assembly are loaded: verified identical files are retained instead of overwriting locked dlls.
 - saved aim choices round-trip; null, incomplete and mistyped presets are rejected.
+- gain limits 1.1/1.2/1.4/1.6/1.8x produce ordered, bounded settled acceleration in the released engine, with 1x at settled slow input.
+- stability at 8/4 ms reduces alternating acceleration ratio spread at 8 ms delivery intervals, preserves direction and produces no movement at rest.
+- gain and stabilization survive off/on and resume; stability requires precision and never changes output strength, dpi/polling defaults or peer overrides.
+- delivery-based stabilization ignores invalid, stale, future or unrelated history and clamps its input half-life to 8..12 ms.
+- new aim field types/ranges and invalid command strengths are rejected; precision and smoothing menu cancellation leave live settings unchanged.
 - analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
 - malformed driver snapshots are rejected before loading the bridge: nonfinite/string numbers, overlong or nul-containing names, duplicate profiles/device ids, missing profile references, invalid clamps/integers and lookup float overflow.
 - driver presence considers its live control endpoint as well as the service registry; inaccessible endpoints fail closed rather than enabling dpi estimation.

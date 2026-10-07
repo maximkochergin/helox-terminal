@@ -83,10 +83,15 @@ $aimMenu = "8`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
 $smoothChoice = "8`n3`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($smoothChoice -join "`n") -notmatch 'light 2 ms' -or ($smoothChoice -join "`n") -match 'applied /') { throw 'smoothing choice or cancellation failed' }
-foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'))) {
+$precisionChoice = "8`n1`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($precisionChoice -join "`n") -notmatch 'steady 1.2x' -or ($precisionChoice -join "`n") -match 'applied /') { throw 'precision choice or cancellation failed' }
+if (($aimMenu -join "`n") -notmatch '11  stability on') { throw 'stability menu missing' }
+foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'),@('aim','precision','on','1'),@('aim','precision','on','1.9'),@('aim','precision','on','NaN'),@('aim','precision','on','Infinity'),@('aim','precision','off','1.4'),@('aim','stability','on','8'),@('aim','stability','maybe'))) {
     $invalidStrength = & $executable @badStrength --json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'smoothing command validation failed' }
+    if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'aim command validation failed' }
 }
+$afterAimValidation = & $executable aim status --json | ConvertFrom-Json
+if (($afterAimValidation | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'invalid or cancelled aim choices changed driver settings' }
 $devices = & $executable devices --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'device list failed' }
 if ($devices.Count -gt 0) {

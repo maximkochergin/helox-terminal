@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.8.1
+  helox / 0.9.0
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -30,8 +30,11 @@ type a number and press enter. empty answers, `0` or `back` cancel a prompt. res
 
 open `8` > `5 install driver`, approve windows uac, close the official installer with a keypress, then restart windows once. reopen `launch.bat` > `8`:
 
-- `1 precision on`: natural gain curve, 1x for slow corrections, progressively approaching 1.4x for fast motions. input offset 3 counts/ms, decay 0.05, input smoothing 4 ms, sensitivity smoothing 2 ms. your physical dpi and game sensitivity determine where this curve feels useful; this is a starting preset.
+- `1 precision on`: choose steady (1.2x), balanced (1.4x), or flick (1.6x). the natural gain curve stays at 1x at settled slow speeds and progressively approaches the selected fast-motion limit. input offset 3 counts/ms, decay 0.05, baseline input/sensitivity half-lives 4/2 ms. advanced command: `aim precision on <1.1..1.8>`; comma and dot decimals work. `aim precision on` reuses the remembered limit, or 1.4x for older presets. dpi is unknown, so no assumed dpi normalization is applied; your physical dpi and game sensitivity determine the useful transition speeds.
+- `11 stability on`: steadier acceleration coefficient, using input-speed and sensitivity ema filters rather than output smoothing. precision must already be on. input half-life uses the last valid median delivery interval for this mouse, clamped to 8..12 ms; sensitivity half-life is half that value. history older than 24 hours, over five minutes in the future, missing or invalid uses 8/4 ms. this is a helox heuristic, not a manufacturer recommendation or polling override. `12 stability off` restores baseline 4/2 ms without changing your gain limit or `smooth` strength. advanced command: `aim stability on|off`.
 - `3 smooth on`: choose light (2 ms), balanced (4 ms), or strong (8 ms). these are output magnitude smoothing half-lives; higher values trade more smoothing for more delay. direction is preserved. half-life is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision or forgetting the strength. advanced command: `aim smooth on 1..12` (integer milliseconds); `aim smooth on` reuses the remembered strength, or 4 ms for older presets. resume also restores the strength.
+
+stability filters the amount of acceleration and delays its response to speed changes, including a return to slow motion after a flick. it preserves current movement direction and does not generate motion at rest. `smooth` separately averages output magnitude and adds movement delay. neither can recover wireless gaps. gain limit, stability and output strength survive precision off/on and resume. precision off bypasses both acceleration filters; a remembered stability choice takes effect when precision is enabled again. `aim status` reads the actual gain limit and all three half-lives from the driver; json adds `InputHalfLifeMs`, `ScaleHalfLifeMs`, and `StabilityEnabled`. the stability label reflects the enabled natural curve with the 8..12 ms input / half-size scale pair, including matching settings applied outside helox.
 
 settings target the selected hardware id. identical receivers with the same id share the override. existing defaults, profiles and other device overrides are retained; a profile used as the default or shared by another device is cloned before editing. activation is verified by reading the driver after its one-second write delay; no fake success when the backend is missing. failures report whether rollback succeeded. `6 undo aim` restores the complete driver snapshot from before the first helox aim change, including other devices. windows settings have their own restore in `5`.
 
@@ -105,6 +108,8 @@ aim doctor
 aim uninstall
 cleanup --confirm
 aim precision on|off
+aim precision on <1.1..1.8>
+aim stability on|off
 aim smooth on|off
 aim smooth on <1..12 ms>
 aim restore

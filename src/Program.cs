@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.8.1";
+    internal const string Version="0.9.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -108,9 +108,14 @@ internal static class Program {
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n  0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n  0  back");
         string choice=Ask("choose");
-        if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
+        if(choice=="1") {
+            Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
+            string strength=Ask("choose");
+            if(strength!="1" && strength!="2" && strength!="3") throw new ArgumentException("choose 1..3 or 0");
+            AimCommand(new string[]{"aim","precision","on",strength=="1" ? "1.2" : strength=="2" ? "1.4" : "1.6"});
+        }else if(choice=="2") AimCommand(new string[]{"aim","precision","off"});
         else if(choice=="3" || choice=="4") {
             if(choice=="3") {
                 Console.WriteLine("  smooth / more smoothing adds more delay\n  1  light 2 ms     2  balanced 4 ms     3  strong 8 ms     0  back");
@@ -124,12 +129,16 @@ internal static class Program {
         else if(choice=="8") AimCommand(new string[]{"aim","resume"});
         else if(choice=="9") AimCommand(new string[]{"aim","doctor"});
         else if(choice=="10") ConfirmUninstall();
-        else throw new ArgumentException("choose 1..10 or 0");
+        else if(choice=="11" || choice=="12") AimCommand(new string[]{"aim","stability",choice=="11" ? "on" : "off"});
+        else throw new ArgumentException("choose 1..12 or 0");
         Finish();
     }
     private static void PrintAim(AimStatus status) {
         Console.WriteLine("\n  aim / "+status.State);
-        if(status.State=="ready") Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+status.Mode+" / output half-life "+F(status.OutputHalfLifeMs.Value)+" ms");
+        if(status.State=="ready") {
+            Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+status.Mode+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
+            Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
+        }
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
@@ -165,13 +174,17 @@ internal static class Program {
             using(System.Diagnostics.Process process=System.Diagnostics.Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new InvalidOperationException("aim backend setup failed / see message above");}
             return;
         }
-        if((words.Length==3 || words.Length==4) && (words[1]=="precision" || words[1]=="smooth")) {
-            bool enabled=Toggle(words[2])!=0;double? strength=null;
-            if(words.Length==4) {if(words[1]!="smooth" || !enabled) throw new ArgumentException("use aim smooth on <1..12 ms>");strength=Integer(words[3]);Aim.CheckHalfLife(strength.Value);}
-            AimStatus state=Aim.Set(Selected(),words[1],enabled,strength);
+        if((words.Length==3 || words.Length==4) && (words[1]=="precision" || words[1]=="smooth" || words[1]=="stability")) {
+            bool enabled=Toggle(words[2])!=0;double? strength=null,gain=null;
+            if(words.Length==4) {
+                if(!enabled || words[1]=="stability") throw new ArgumentException("use aim precision on <1.1..1.8x> or aim smooth on <1..12 ms>");
+                if(words[1]=="precision") gain=double.Parse(words[3].Replace(',','.'),NumberStyles.Float,CultureInfo.InvariantCulture);else strength=Integer(words[3]);
+            }
+            Aim.CheckChange(words[1],enabled,strength,gain);
+            AimStatus state=Aim.Set(Selected(),words[1],enabled,strength,gain);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|doctor|prepare|install|uninstall|restore|resume or aim precision|smooth on|off");
+        throw new ArgumentException("use aim status|doctor|prepare|install|uninstall|restore|resume or aim precision|smooth|stability on|off");
     }
     private static string DoctorLabel(string key) {
         switch(key) {
@@ -195,7 +208,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
+        Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
@@ -400,7 +413,7 @@ internal static class Program {
         else throw new ArgumentException("use profile save|show|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > 11 stability averages acceleration changes.\n  8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(words[0]=="cleanup") {
