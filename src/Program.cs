@@ -5,11 +5,12 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.7.3";
+    internal const string Version="0.8.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
         try {
+            if(!(args.Length==1 && (args[0]=="maintenance-restore" || args[0]=="maintenance-aim-restore"))) Maintenance.CheckStartup();
             if(args.Length>0) {
                 Run(Arguments(args));return 0;
             }
@@ -87,18 +88,25 @@ internal static class Program {
                 else throw new ArgumentException("choose 1..5 or 0");
                 Finish();return;
             case "6":
-                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq     0  back");
+                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver     0  back");
                 string more=Ask("choose");
                 if(more=="0") Home();
                 else if(more=="1") {ChooseMouse();Finish();}
                 else if(more=="2") {Help();Finish();}
                 else if(more=="3") {Faq();Finish();}
-                else throw new ArgumentException("choose 1, 2, 3 or 0");return;
+                else if(more=="4") {AimCommand(new string[]{"aim","doctor"});Finish();}
+                else if(more=="5") {ConfirmUninstall();Finish();}
+                else if(more=="6") {
+                    Console.WriteLine("  restores original windows settings if backed up\n  removes the shared raw accel driver, all profiles, backups and cache\n  backups cannot be recovered / restart required if driver installed");
+                    if(Ask("type reset / 0 back")!="reset") throw new OperationCanceledException();
+                    Maintenance.Reset();
+                }
+                else throw new ArgumentException("choose 1..6 or 0");return;
         }
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n  0  back");
         string choice=Ask("choose");
         if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
         else if(choice=="3" || choice=="4") {
@@ -112,7 +120,9 @@ internal static class Program {
         else if(choice=="6") AimCommand(new string[]{"aim","restore"});
         else if(choice=="7") Measure(new string[]{"measure"});
         else if(choice=="8") AimCommand(new string[]{"aim","resume"});
-        else throw new ArgumentException("choose 1..8 or 0");
+        else if(choice=="9") AimCommand(new string[]{"aim","doctor"});
+        else if(choice=="10") ConfirmUninstall();
+        else throw new ArgumentException("choose 1..10 or 0");
         Finish();
     }
     private static void PrintAim(AimStatus status) {
@@ -121,6 +131,23 @@ internal static class Program {
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
+        if(words.Length==2 && words[1]=="doctor") {
+            Dictionary<string,object> report=Maintenance.Doctor();
+            if(json) Console.WriteLine(Store.Json.Serialize(report));
+            else {
+                Console.WriteLine("\n  driver check / read only");
+                foreach(string key in new string[]{"BackendPrepared","PackageVerified","BackendVerified","ServiceRegistered","ServiceDeletionPending","FilterRegistered","DriverFilePresent","DriverMatchesPackage","PendingFilePresent","EndpointPresent","KernelReadable"})
+                    Console.WriteLine("  "+DoctorLabel(key)+" / "+(report[key]==null ? "unknown" : (bool)report[key] ? "yes" : "no"));
+                Console.WriteLine("  signature / "+(report["DriverSignature"] ?? "not available").ToString().ToLowerInvariant()+"\n  protocol / "+(report["KernelVersion"] ?? "not available"));
+                if(report["KernelError"]!=null) Console.WriteLine("  readback / "+report["KernelError"].ToString().ToLowerInvariant());
+                foreach(object error in (object[])report["Errors"]) Console.WriteLine("  "+error.ToString().ToLowerInvariant());
+                Console.WriteLine("  after install or uninstall / restart windows, then check again");
+            }return;
+        }
+        if(words.Length==2 && words[1]=="uninstall") {
+            if(json) throw new ArgumentException("driver removal does not support json");
+            Maintenance.Uninstall();return;
+        }
         if(words.Length==2 && words[1]=="resume") {
             AimStatus state=Aim.Set(Selected(),"resume",false);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  saved aim resumed / driver readback verified");PrintAim(state);}return;
@@ -142,7 +169,22 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),words[1],enabled,strength);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|prepare|install|restore|resume or aim precision|smooth on|off");
+        throw new ArgumentException("use aim status|doctor|prepare|install|uninstall|restore|resume or aim precision|smooth on|off");
+    }
+    private static string DoctorLabel(string key) {
+        switch(key) {
+            case "BackendPrepared":return "backend files";case "PackageVerified":return "official archive verified";
+            case "BackendVerified":return "backend matches archive";case "ServiceRegistered":return "service registered";
+            case "ServiceDeletionPending":return "service deletion pending";
+            case "FilterRegistered":return "mouse filter registered";case "DriverFilePresent":return "driver file";
+            case "DriverMatchesPackage":return "driver matches archive";case "PendingFilePresent":return "pending driver file";
+            case "EndpointPresent":return "driver endpoint open";default:return "kernel readback";
+        }
+    }
+    private static void ConfirmUninstall() {
+        Console.WriteLine("  removes the shared raw accel driver for all mice\n  profiles and backups stay / restart required");
+        if(Ask("type uninstall / 0 back")!="uninstall") throw new OperationCanceledException();
+        AimCommand(new string[]{"aim","uninstall"});
     }
     private static void Finish() {
         if(Console.IsInputRedirected || Console.IsOutputRedirected) return;
@@ -151,8 +193,8 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim prepare / install / status / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
-        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
+        Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
+        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
@@ -359,9 +401,20 @@ internal static class Program {
         Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: base sens stays 1x; fast movement gradually rises to 1.4x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
+        if(words[0]=="cleanup") {
+            if(json || words.Length!=2 || words[1]!="--confirm") throw new ArgumentException("use cleanup --confirm / restores windows backup, removes shared driver and all helox data");
+            Maintenance.Reset();return;
+        }
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest" || words[0]=="check"))
             throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
+            case "maintenance-restore":if(words.Length!=1) break;Run(new string[]{"restore"});return;
+            case "maintenance-aim-restore":
+                if(words.Length!=1) break;
+                bool? endpoint=Aim.EndpointState();
+                if(endpoint==null) throw new InvalidOperationException("driver endpoint unreadable / data kept");
+                if(endpoint==true) {Aim.Restore();Console.WriteLine("  original aim snapshot restored / verified");}
+                else Console.WriteLine("  driver not loaded / aim backup not applied");return;
             case "aim":AimCommand(words);return;
             case "status":if(words.Length!=1) break;Status();return;
             case "devices":if(words.Length!=1) break;Devices();return;

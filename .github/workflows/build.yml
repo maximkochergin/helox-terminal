@@ -24,6 +24,12 @@ jobs:
       - name: build recovery checks
         shell: powershell
         run: .\tests\build.ps1
+      - name: cleanup safety checks
+        shell: powershell
+        run: .\tests\maintenance.ps1
+      - name: uninstall orchestration checks
+        shell: powershell
+        run: .\tests\uninstall.ps1
       - name: package
         shell: powershell
         run: .\package.ps1

@@ -118,6 +118,16 @@ internal static class Aim {
         }catch {return true;} // An unreadable state cannot be treated as an unfiltered mouse.
     }
     internal static bool EndpointMayExist(bool opened,int error) {return opened || (error!=2 && error!=3);}
+    internal static bool? EndpointState() {
+        try {
+            using(Microsoft.Win32.SafeHandles.SafeFileHandle handle=Native.CreateFile(@"\\.\rawaccel",0,3,IntPtr.Zero,3,0,IntPtr.Zero)) {
+                if(!handle.IsInvalid) return true;
+                int error=System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                return error==2 || error==3 ? (bool?)false : null;
+            }
+        }catch {return null;}
+    }
+    internal static string KernelVersion() {return (string)Active()["version"];}
     internal static AimStatus Describe(Dictionary<string,object> cfg,string id) {
             Dictionary<string,object> entry=DeviceEntry(cfg,id);
             string name=entry==null || String.IsNullOrEmpty((string)entry["profile"]) ? (string)Map(Items(cfg["profiles"])[0])["name"] : (string)entry["profile"];

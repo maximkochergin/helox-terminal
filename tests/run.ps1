@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'build.ps1')
 & (Join-Path (Split-Path $PSScriptRoot -Parent) 'build.ps1')
+& (Join-Path $PSScriptRoot 'maintenance.ps1')
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'uninstall.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'uninstall regression tests failed' }
 $executable = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\helox.exe'
 & $executable selftest
 if ($LASTEXITCODE -ne 0) { throw 'selftest failed' }
@@ -12,6 +15,16 @@ if (($beforeCheck.windows | ConvertTo-Json -Compress) -ne ($afterCheck.windows |
 $status = & $executable status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status contract failed' }
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
+$doctor=& $executable aim doctor --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $null -eq $doctor.BackendPrepared -or $null -eq $doctor.KernelReadable) { throw 'driver doctor contract failed' }
+$afterDoctor=& $executable status --json | ConvertFrom-Json
+if (($afterDoctor.windows | ConvertTo-Json -Compress) -ne ($status.windows | ConvertTo-Json -Compress) -or ($afterDoctor.gameAcceleration | ConvertTo-Json -Compress) -ne ($status.gameAcceleration | ConvertTo-Json -Compress)) { throw 'doctor changed settings' }
+$cancel="6`n5`n0`n6`n6`n0`n8`n10`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($cancel -join "`n") -notmatch 'type reset' -or ($cancel -join "`n") -notmatch 'type uninstall') { throw 'cleanup menu cancellation failed' }
+foreach ($arguments in @(@('cleanup'),@('cleanup','--confirm','--json'),@('aim','uninstall','--json'))) {
+    & $executable @arguments | Out-Null
+    if ($LASTEXITCODE -ne 1) { throw 'unsupported destructive command accepted' }
+}
 if ($status.receiver.Path) {
     $historyPath = Join-Path $env:LOCALAPPDATA 'helox-terminal\rate.json'
     $historyBytes = if (Test-Path -LiteralPath $historyPath) { [IO.File]::ReadAllBytes($historyPath) } else { $null }

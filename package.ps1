@@ -4,7 +4,7 @@ $dist = Join-Path $PSScriptRoot 'dist'
 $stage = Join-Path (Join-Path $dist ([guid]::NewGuid().ToString('n'))) 'helox-terminal'
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'bin') | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'bin\helox.exe') -Destination (Join-Path $stage 'bin\helox.exe')
-foreach ($name in @('launch.bat', 'README.md', 'LICENSE', 'build.ps1', 'install-aim.ps1')) {
+foreach ($name in @('launch.bat', 'README.md', 'LICENSE', 'build.ps1', 'install-aim.ps1', 'maintenance.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage $name)
 }
 foreach ($folder in @('src', 'tests', 'docs')) {

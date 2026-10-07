@@ -31,6 +31,8 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 
 **aim** — optional raw accel integration. gradual acceleration up to 1.4x and selectable output smoothing. [setup](docs/manual.md#aim-tools).
 
+**maintain** — check driver installation and live readback. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
+
 ## readings
 
 hardware dpi, configured polling rate and battery remain unknown. measured hz and estimated dpi are separate readings. smoothing adds delay and cannot recover missing reports.

@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.7.3
+  helox / 0.8.0
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -37,7 +37,23 @@ settings target the selected hardware id. identical receivers with the same id s
 
 driver settings reset on reboot: use `8 resume saved` in aim tools or `aim resume` to reapply the last choices for this mouse. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
 
-the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. uninstall using `%localappdata%\helox-terminal\rawaccel-1.7.1\RawAccel\uninstaller.exe` as administrator, then restart. [mechanics, research and verification](aim.md).
+the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. [mechanics, research and verification](aim.md).
+
+### driver checks and removal
+
+`8 > 9 check driver`, `6 > 4`, or `aim doctor` checks backend files against the pinned official archive, service registration, the mouse class filter, installed driver hash/signature, pending driver file, control endpoint and live protocol readback. no selected mouse is needed and no settings are applied. `aim doctor --json` exports the same checks. missing or inaccessible evidence remains unknown; a registered service alone does not establish that the driver is active. the upstream 1.7.1 package uses protocol 1.7.0.
+
+`8 > 10 uninstall driver` and `6 > 5` perform the same removal. type `uninstall` to continue, or `0` to cancel. advanced command: `aim uninstall`. this affects raw accel for all mice and other raw accel apps; helox profiles, backups and downloads stay available. the verified official uninstaller removes the filter and driver file. helox then removes the remaining service only if its type and image match the expected raw accel driver. windows uac and the official keypress window are required. the filter/file/service results are checked rather than trusting the upstream exit code alone.
+
+restart windows after removal: a loaded driver and files queued for deletion can remain until then, as described in the [official guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md#installation). `aim doctor` can report an open endpoint even after removal. no force-unload or automatic restart is attempted.
+
+### reset helox
+
+`6 > 6 reset all helox data + driver` requires typing `reset`. advanced command: `cleanup --confirm`. the current session closes and a separate cleanup window reports the result. close other helox sessions first.
+
+reset restores the original windows snapshot if present and the original aim snapshot if backed up and the driver is loaded. it then uninstalls the shared raw accel driver and deletes `%localappdata%\helox-terminal`: profiles, original/undo/aim backups, saved presets, dpi/hz history, downloaded backend and temporary cache files. a missing original windows snapshot leaves windows preferences unchanged; a failed restore stops cleanup. backups are permanently deleted after successful removal. extracted application files stay in their original folder and can be deleted after closing the cleanup window.
+
+cleanup refuses junctions/symlinks, other helox sessions, unexpected roots and locked/inaccessible files. it checks delete access for the complete tree before deleting backups. failure to restore or uninstall keeps the data; filesystem errors after deletion begins can leave a partial tree and are reported. new helox sessions are blocked while cleanup runs. restart if the driver was installed, then repeat the driver check if needed.
 
 ## what works
 
@@ -85,6 +101,9 @@ setup
 aim prepare
 aim install
 aim status
+aim doctor
+aim uninstall
+cleanup --confirm
 aim precision on|off
 aim smooth on|off
 aim smooth on <1..12 ms>
