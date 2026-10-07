@@ -68,6 +68,12 @@ if ($aimStatus.State -ne 'ready') {
 }
 $aimMenu = "8`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
+$smoothChoice = "8`n3`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($smoothChoice -join "`n") -notmatch 'light 2 ms' -or ($smoothChoice -join "`n") -match 'applied /') { throw 'smoothing choice or cancellation failed' }
+foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'))) {
+    $invalidStrength = & $executable @badStrength --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'smoothing command validation failed' }
+}
 $devices = & $executable devices --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'device list failed' }
 if ($devices.Count -gt 0) {

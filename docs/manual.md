@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.6.4
+  helox / 0.7.0
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -31,7 +31,7 @@ type a number and press enter. empty answers, `0` or `back` cancel a prompt. res
 open `8` > `5 install driver`, approve windows uac, close the official installer with a keypress, then restart windows once. reopen `launch.bat` > `8`:
 
 - `1 precision on`: natural gain curve, 1x for slow corrections, progressively approaching 1.4x for fast motions. input offset 3 counts/ms, decay 0.05, input smoothing 4 ms, sensitivity smoothing 2 ms. your physical dpi and game sensitivity determine where this curve feels useful; this is a starting preset.
-- `3 smooth on`: output magnitude smoothing with a 4 ms half-life. it reduces variation between reports while preserving direction. it adds input delay; 4 ms is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision.
+- `3 smooth on`: choose light (2 ms), balanced (4 ms), or strong (8 ms). these are output magnitude smoothing half-lives; higher values trade more smoothing for more delay. direction is preserved. half-life is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision or forgetting the strength. advanced command: `aim smooth on 1..12` (integer milliseconds); `aim smooth on` reuses the remembered strength, or 4 ms for older presets. resume also restores the strength.
 
 settings target the selected hardware id. identical receivers with the same id share the override. existing defaults, profiles and other device overrides are retained; a profile used as the default or shared by another device is cloned before editing. activation is verified by reading the driver after its one-second write delay; no fake success when the backend is missing. failures report whether rollback succeeded. `6 undo aim` restores the complete driver snapshot from before the first helox aim change, including other devices. windows settings have their own restore in `5`.
 
@@ -55,6 +55,8 @@ hardware dpi/polling writes, current sensor dpi, configured polling, battery and
 for wireless stutters, repeat the capture without stopping and compare with the receiver close to the mouse, away from active usb 3 devices/cables. [intel's measurements](https://www.benq.com/content/dam/newb2b/Support/FAQ/intel_white%20paper_usb3%20interference.pdf) document 2.4 ghz interference and receiver placement effects. smoothing cannot recreate missing packets or raise hardware polling rate.
 
 repeat tests show the change in active hz and p95 interval against the last valid test of the same mouse. positive p95 means longer intervals; negative means shorter. use similar motion for both tests. json exposes these deltas in `Comparison`; no baseline gives null. invalid history is excluded from status and comparisons.
+
+the test also shows delivery frequency including long gaps and the percentage of the sampled span spent in gaps over 50 ms. this span starts at the first motion report and ends at the last; time before/after movement is excluded. a pause and interrupted wireless delivery remain indistinguishable. slow intervals use a displayed heuristic threshold of `max(1.75 * median, median + 0.25 ms)`, so a 16 ms interval among 8 ms reports is now detected. this is a timing outlier count, not proof of lost hardware packets. json adds `SpanMs`, `GapDurationMs`, `DeliveredHz`, `GapPercent`, and `SlowThresholdMs`; older history leaves them null.
 
 `4` checks approximate dpi without a ruler or pad marks. keep a fingertip beside the front edge of the mouse, then slide the mouse forward until the rear edge reaches that same stationary fingertip. this gives one mouse-body length of travel. press enter to start and finish each pass. do not rotate, lift or return during a pass. repeat three times; the app uses their median and rejects a spread above 15 percent. the gxt 929 body length is 125 mm according to the manufacturer. repeatability is not absolute accuracy: hand alignment and actual travel still matter.
 
@@ -83,6 +85,7 @@ aim install
 aim status
 aim precision on|off
 aim smooth on|off
+aim smooth on <1..12 ms>
 aim restore
 aim resume
 check

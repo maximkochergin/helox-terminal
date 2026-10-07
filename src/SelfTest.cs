@@ -51,12 +51,28 @@ internal static class SelfTest {
         }
         RateResult legacy=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(rate));
         legacy.P99IntervalMs=null;legacy.MaxGapMs=null;legacy.SlowIntervals=null;legacy.SameTimestampReports=null;
+        legacy.SpanMs=null;legacy.GapDurationMs=null;legacy.DeliveredHz=null;legacy.GapPercent=null;legacy.SlowThresholdMs=null;
         Expect(Analysis.ValidHistory(legacy),"legacy history without optional metrics remains valid");
         legacy.MeasuredUtc=DateTime.UtcNow.AddDays(1).ToString("o");
         Expect(Analysis.CompareRates(legacy,rate)==null,"future baseline is not compared with an older test");
         for(int i=0;i<1001;i++) samples[i].Ms=i*8;
         Expect(Math.Abs(Analysis.Rate(samples).ObservedHz-125)<.01,"125 hz analysis");
         samples.Add(new Sample(10000,1,0));Expect(Analysis.Rate(samples).IdleGaps==1 && Analysis.Rate(samples).MaxGapMs==2000 && Analysis.Rate(samples).Quality.Contains("long gaps"),"long gaps remain visible");
+        RateResult paused=Analysis.Rate(samples);
+        Expect(paused.GapDurationMs==2000 && paused.SpanMs==10000 && paused.GapPercent==20 && paused.DeliveredHz<paused.ActiveHz,"span frequency exposes gaps excluded from active hz");
+        List<Sample> delayed125=new List<Sample>();double elapsed=0;
+        for(int i=0;i<=1000;i++) {delayed125.Add(new Sample(elapsed,1,0));elapsed+=i==500 ? 16 : 8;}
+        RateResult delayed=Analysis.Rate(delayed125);
+        Expect(delayed.SlowIntervals==1 && delayed.SlowThresholdMs==14 && delayed.IdleGaps==0,"125 hz test detects a doubled delivery interval");
+        foreach(Action<RateResult> corrupt in new Action<RateResult>[] {
+            delegate(RateResult value) {value.GapPercent=101;},
+            delegate(RateResult value) {value.GapDurationMs=value.SpanMs+1;},
+            delegate(RateResult value) {value.DeliveredHz=double.NaN;},
+            delegate(RateResult value) {value.SlowThresholdMs=0;}
+        }) {
+            RateResult damaged=Store.Json.Deserialize<RateResult>(Store.Json.Serialize(delayed));corrupt(damaged);
+            Expect(!Analysis.ValidHistory(damaged),"invalid span metrics rejected");
+        }
         List<Sample> batched=new List<Sample>();
         for(int i=0;i<1001;i++) batched.Add(new Sample((i/8)*8+(i%8)*.01,1,0));
         RateResult batch=Analysis.Rate(batched);
@@ -213,6 +229,15 @@ internal static class SelfTest {
             Dictionary<string,object> saved=Aim.Saved(presetPath);
             Expect((bool)Aim.Map(saved["mouse"])["precision"] && !(bool)Aim.Map(saved["mouse"])["smooth"],"saved aim toggles roundtrip");
             Expect(saved.ContainsKey("MOUSE"),"saved aim identity ignores case like driver identity");
+            Expect(Aim.SavedHalfLife(Aim.Map(saved["mouse"]))==4,"legacy smoothing presets keep 4 ms");
+            foreach(double ms in new double[]{2,4,8}) {
+                Aim.Map(saved["mouse"])["smoothMs"]=ms;Store.Save(presetPath,saved);
+                Expect(Aim.SavedHalfLife(Aim.Map(Aim.Saved(presetPath)["MOUSE"]))==ms,"smoothing strength persists by device identity");
+            }
+            foreach(object invalid in new object[]{0,13,"4",true,double.NaN,double.PositiveInfinity}) {
+                bool rejected=false;try {Aim.SavedHalfLife(new Dictionary<string,object>{{"smoothMs",invalid}});}catch(ArgumentException) {rejected=true;}
+                Expect(rejected,"unsafe smoothing strength rejected");
+            }
             saved["MOUSE"]=new Dictionary<string,object>{{"precision",false},{"smooth",true}};
             Expect(saved.Count==1 && (bool)Aim.Map(saved["mouse"])["smooth"],"aim updates do not create case aliases");
             foreach(string invalid in new string[]{"{\"mouse\":{\"precision\":true,\"smooth\":false},\"MOUSE\":{\"precision\":false,\"smooth\":true}}","{\"\":{\"precision\":true,\"smooth\":false}}"}) {

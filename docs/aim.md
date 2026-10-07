@@ -2,6 +2,14 @@
 
 checked 2026-10-06. presets change mouse input, not game state or targets. no claim of guaranteed score improvement.
 
+## refinement / 2026-10-07
+
+reviewed the [official v1.7.1 coalescion guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md#coalescion), [processing implementation](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp), [jitter discussion](https://github.com/RawAccelOfficial/rawaccel/issues/119), and [community polling discussion](https://www.reddit.com/r/MouseAccel/comments/1d2l8pz/raw_accel_is_limiting_my_mouse_polling_rate/). forum comments supplied questions to investigate; implementation follows the released engine and is tested against it.
+
+smooth now offers 2/4/8 ms choices and an advanced 1..12 ms integer range. the range and presets are helox choices, not upstream recommendations. tests run the official engine at 8 ms report intervals with alternating 40/120-count motion, check that larger half-lives reduce alternating output spread, and check direction/sign preservation. this is an algorithm check, not a measurement of physical latency or aim performance. custom strength persists across off/on, precision changes, and resume; older boolean-only presets retain 4 ms.
+
+delivery tests now expose span frequency and gap time beside active frequency, because excluding pauses can make the headline look healthy despite interruptions. the slow-interval heuristic is based on the observed median, with a 0.25 ms margin for small timestamp variation. the former `max(12 ms, 3 * median)` threshold missed 16 ms intervals on an otherwise 125 hz stream. synthetic tests reproduce that case. neither timing statistic reads hardware polling or identifies whether a pause was radio loss.
+
 ## sources and decisions
 
 - [official raw accel guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md): natural gain, whole-vector application, and input/sensitivity/output ema smoothing. output smoothing adds delay; input smoothing alone does not smooth the movement sent to a game.

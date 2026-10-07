@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.6.4";
+    internal const string Version="0.7.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -102,8 +102,12 @@ internal static class Program {
         string choice=Ask("choose");
         if(choice=="1" || choice=="2") AimCommand(new string[]{"aim","precision",choice=="1" ? "on" : "off"});
         else if(choice=="3" || choice=="4") {
-            if(choice=="3") Console.WriteLine("  smooth / 4 ms half-life / adds input lag; preserves direction");
-            AimCommand(new string[]{"aim","smooth",choice=="3" ? "on" : "off"});
+            if(choice=="3") {
+                Console.WriteLine("  smooth / more smoothing adds more delay\n  1  light 2 ms     2  balanced 4 ms     3  strong 8 ms     0  back");
+                string strength=Ask("choose");
+                if(strength!="1" && strength!="2" && strength!="3") throw new ArgumentException("choose 1..3 or 0");
+                AimCommand(new string[]{"aim","smooth","on",strength=="1" ? "2" : strength=="2" ? "4" : "8"});
+            }else AimCommand(new string[]{"aim","smooth","off"});
         } else if(choice=="5") AimCommand(new string[]{"aim","install"});
         else if(choice=="6") AimCommand(new string[]{"aim","restore"});
         else if(choice=="7") Measure(new string[]{"measure"});
@@ -132,8 +136,10 @@ internal static class Program {
             using(System.Diagnostics.Process process=System.Diagnostics.Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new InvalidOperationException("aim backend setup failed / see message above");}
             return;
         }
-        if(words.Length==3 && (words[1]=="precision" || words[1]=="smooth")) {
-            AimStatus state=Aim.Set(Selected(),words[1],Toggle(words[2])!=0);
+        if((words.Length==3 || words.Length==4) && (words[1]=="precision" || words[1]=="smooth")) {
+            bool enabled=Toggle(words[2])!=0;double? strength=null;
+            if(words.Length==4) {if(words[1]!="smooth" || !enabled) throw new ArgumentException("use aim smooth on <1..12 ms>");strength=Integer(words[3]);Aim.CheckHalfLife(strength.Value);}
+            AimStatus state=Aim.Set(Selected(),words[1],enabled,strength);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
         throw new ArgumentException("use aim status|prepare|install|restore|resume or aim precision|smooth on|off");
@@ -145,7 +151,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim prepare / install / status / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on|off      4 ms output half-life / adds lag\n  check                  analysis checks / no settings changes");
+        Console.WriteLine("\n  aim prepare / install / status / restore / resume\n  aim precision on|off   gradual fast-motion gain up to 1.4x\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
@@ -286,6 +292,7 @@ internal static class Program {
             if(json) Console.WriteLine(Store.Json.Serialize(result));
             else {
                 Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  p95 "+F(result.P95IntervalMs)+" ms / p99 "+F(result.P99IntervalMs.Value)+" ms\n  slow intervals "+result.SlowIntervals+" / long gaps "+result.IdleGaps+" / max "+F(result.MaxGapMs.Value)+" ms\n  "+result.Quality);
+                Console.WriteLine("  including gaps ~"+F(result.DeliveredHz.Value)+" hz / gap time "+F(result.GapPercent.Value)+"%\n  slow threshold "+F(result.SlowThresholdMs.Value)+" ms / heuristic, not lost-packet count");
                 if(result.Comparison!=null) Console.WriteLine("  vs previous test / hz "+Signed(result.Comparison.ActiveHzDifference)+" / p95 "+Signed(result.Comparison.P95IntervalDifferenceMs)+" ms");
                 if(result.IdleGaps>0 || result.SlowIntervals>0) Console.WriteLine("  repeat without stopping / place receiver near mouse, away from usb 3 hubs\n  smooth reduces movement fluctuations; it cannot recover missing reports");
                 Console.WriteLine("  home / return to menu");

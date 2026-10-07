@@ -35,6 +35,7 @@ internal static class Aim {
                 if(String.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length>199 || entry.Key.IndexOf('\0')>=0) throw new ArgumentException();
                 Dictionary<string,object> preset=Map(entry.Value);object precision,smooth;
                 if(preset==null || !preset.TryGetValue("precision",out precision) || !(precision is bool) || !preset.TryGetValue("smooth",out smooth) || !(smooth is bool)) throw new ArgumentException();
+                SavedHalfLife(preset);
                 normalized.Add(entry.Key,entry.Value);
             }
             return normalized;
@@ -42,6 +43,14 @@ internal static class Aim {
             if(e is IOException || e is UnauthorizedAccessException) throw;
             throw new ArgumentException("invalid saved aim preset / aim restore to reset it");
         }
+    }
+    internal static double SavedHalfLife(Dictionary<string,object> preset) {
+        object value;if(!preset.TryGetValue("smoothMs",out value)) return 4;
+        if(!(value is int) && !(value is long) && !(value is double) && !(value is decimal)) throw new ArgumentException("invalid smoothing strength");
+        double ms=Convert.ToDouble(value);CheckHalfLife(ms);return ms;
+    }
+    internal static void CheckHalfLife(double ms) {
+        if(double.IsNaN(ms) || double.IsInfinity(ms) || ms<1 || ms>12) throw new ArgumentException("smooth half-life: 1..12 ms");
     }
     private static void Load() {
         if(bridge!=null) return;
@@ -123,7 +132,8 @@ internal static class Aim {
                     Convert.ToDouble(profile["Degrees of rotation"])!=0 || Convert.ToDouble(profile["Degrees of angle snapping"])!=0 || Convert.ToDouble(profile["Input Speed Cap"])>0),Note="live driver readback; profile resets on reboot"};
     }
     // Preserve defaults and other devices; only replace our selected hardware-id override.
-    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth) {
+    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4) {
+        CheckHalfLife(smoothMs);
         Dictionary<string,object> cfg=Parse(Store.Json.Serialize(current));
         string name="helox-"+id.ToLowerInvariant().Replace('\\','-');
         List<object> profiles=Items(cfg["profiles"]);
@@ -133,7 +143,7 @@ internal static class Aim {
         Dictionary<string,object> profile=Map(Items(defaults["profiles"])[0]);profile=Parse(Store.Json.Serialize(profile));profile["name"]=name;
         Dictionary<string,object> accel=Map(profile[X]);accel["mode"]=precision ? "natural" : "noaccel";
         accel["Gain / Velocity"]=true;accel["inputOffset"]=3.0;accel["decayRate"]=0.05;accel["limit"]=1.4;
-        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? 4.0 : 0.0;speed[Scale]=precision ? 2.0 : 0.0;speed[Output]=smooth ? 4.0 : 0.0;
+        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? 4.0 : 0.0;speed[Scale]=precision ? 2.0 : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
         int index=profiles.FindIndex(delegate(object p){return (string)Map(p)["name"]==name;});
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
         cfg["profiles"]=profiles.ToArray();
@@ -168,7 +178,8 @@ internal static class Aim {
             throw new IOException("aim apply failed; previous driver settings restored: "+error.Message);
         }
     }
-    internal static AimStatus Set(Device device,string feature,bool on) {
+    internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null) {
+        if(smoothMs.HasValue) {CheckHalfLife(smoothMs.Value);if(feature!="smooth" || !on) throw new ArgumentException("strength requires aim smooth on");}
         using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
@@ -177,14 +188,18 @@ internal static class Aim {
                 bool precision=status.Profile!=null && status.Profile.StartsWith("helox-") && status.Mode=="natural";
                 bool smooth=status.Profile!=null && status.Profile.StartsWith("helox-") && status.OutputHalfLifeMs>0;
                 string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
+                object existing;double halfLife=presets.TryGetValue(id,out existing) ? SavedHalfLife(Map(existing)) : 4;
+                if(smooth && status.OutputHalfLifeMs>=1 && status.OutputHalfLifeMs<=12) halfLife=status.OutputHalfLifeMs.Value;
                 if(feature=="resume") {
                     object saved;if(!presets.TryGetValue(id,out saved)) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");
                     precision=(bool)Map(saved)["precision"];smooth=(bool)Map(saved)["smooth"];
+                    halfLife=SavedHalfLife(Map(saved));
                 } else if(feature=="precision") precision=on;else if(feature=="smooth") smooth=on;else throw new ArgumentException("use aim resume or aim precision|smooth on|off");
-                Dictionary<string,object> after=Configure(before,Defaults(),id,precision,smooth);Validate(after);
+                if(smoothMs.HasValue) halfLife=smoothMs.Value;
+                Dictionary<string,object> after=Configure(before,Defaults(),id,precision,smooth,halfLife);Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
-                presets[id]=new Dictionary<string,object>{{"precision",precision},{"smooth",smooth}};
+                presets[id]=new Dictionary<string,object>{{"precision",precision},{"smooth",smooth},{"smoothMs",halfLife}};
                 return Describe(Commit(before,after,Write,delegate {Store.Save(preferences,presets);}),id);
             }finally {if(held) mutex.ReleaseMutex();}
         }
@@ -239,6 +254,21 @@ internal static class Aim {
         object reverse=Call(engine,"ManagedAccel","Accelerate",-80,40,1.0,8.0);
         double rx=Axis(reverse),ry=Convert.ToDouble(reverse.GetType().GetProperty("Item2").GetValue(reverse,null));
         if(rx>=0 || ry<=0 || Math.Abs(rx/ry+2)>.001) throw new Exception("smoothing changed direction");
+        double previousVariation=double.PositiveInfinity;
+        foreach(double ms in new double[]{2,4,8}) {
+            cfg=Validate(Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",false,true,ms));
+            accels=(IList)cfg.GetType().GetField("accels").GetValue(cfg);engine=accels[accels.Count-1];
+            for(int i=0;i<100;i++) {trough=Axis(Call(engine,"ManagedAccel","Accelerate",40,0,1.0,8.0));peak=Axis(Call(engine,"ManagedAccel","Accelerate",120,0,1.0,8.0));}
+            double variation=peak-trough;
+            if(variation<=0 || variation>=80 || variation>=previousVariation) throw new Exception("smoothing strength response failed");
+            previousVariation=variation;
+            Console.WriteLine("  smooth "+ms+" ms / alternating spread "+variation.ToString("0.00",System.Globalization.CultureInfo.InvariantCulture)+" counts / native engine");
+            reverse=Call(engine,"ManagedAccel","Accelerate",-80,40,1.0,8.0);
+            rx=Axis(reverse);ry=Convert.ToDouble(reverse.GetType().GetProperty("Item2").GetValue(reverse,null));
+            if(rx>=0 || ry<=0 || Math.Abs(rx/ry+2)>.001) throw new Exception("smoothing strength changed direction");
+            Dictionary<string,object> tuned=Configure(defaults,Defaults(),"HID\\VID_145F&PID_0326",true,true,ms);
+            if(Describe(tuned,"HID\\VID_145F&PID_0326").OutputHalfLifeMs!=ms || !SameValue(defaults["defaultDeviceConfig"],tuned["defaultDeviceConfig"])) throw new Exception("smoothing strength configuration failed");
+        }
         Dictionary<string,object> again=Configure(precision,Defaults(),"HID\\VID_145F&PID_0326",true,true);
         if(Items(again["profiles"]).Count!=2 || Items(again["devices"]).Count!=1 || Store.Json.Serialize(again["defaultDeviceConfig"])!=Store.Json.Serialize(defaults["defaultDeviceConfig"])) throw new Exception("aim scope or repeated update failed");
         Validate(again);

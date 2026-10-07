@@ -57,6 +57,11 @@ public sealed class Sample {
     public Sample(double ms,int x,int y) {Ms=ms;X=x;Y=y;}
 }
 public sealed class RateResult {
+    public double? SpanMs {get;set;}
+    public double? GapDurationMs {get;set;}
+    public double? DeliveredHz {get;set;}
+    public double? GapPercent {get;set;}
+    public double? SlowThresholdMs {get;set;}
     public RateComparison Comparison {get;set;}
     public int Reports {get;set;}
     public int Intervals {get;set;}
@@ -107,6 +112,11 @@ public static class Analysis {
             (!result.MaxGapMs.HasValue || (Finite(result.MaxGapMs.Value) && result.MaxGapMs.Value>=0)) &&
             (!result.SlowIntervals.HasValue || (result.SlowIntervals.Value>=0 && result.SlowIntervals.Value<=result.Intervals)) &&
             (!result.SameTimestampReports.HasValue || (result.SameTimestampReports.Value>=0 && result.SameTimestampReports.Value<=result.Intervals)) &&
+            (!result.SpanMs.HasValue || Positive(result.SpanMs.Value)) &&
+            (!result.GapDurationMs.HasValue || (Finite(result.GapDurationMs.Value) && result.GapDurationMs.Value>=0 && (!result.SpanMs.HasValue || result.GapDurationMs.Value<=result.SpanMs.Value))) &&
+            (!result.DeliveredHz.HasValue || Positive(result.DeliveredHz.Value)) &&
+            (!result.GapPercent.HasValue || (Finite(result.GapPercent.Value) && result.GapPercent.Value>=0 && result.GapPercent.Value<=100)) &&
+            (!result.SlowThresholdMs.HasValue || Positive(result.SlowThresholdMs.Value)) &&
             (result.Comparison==null || (Timestamp(result.Comparison.PreviousMeasuredUtc) && Finite(result.Comparison.ActiveHzDifference) && Finite(result.Comparison.P95IntervalDifferenceMs)));
     }
     internal static bool ValidHistory(DpiResult result) {
@@ -147,23 +157,26 @@ public static class Analysis {
         return sorted[lo]+(sorted[hi]-sorted[lo])*(index-lo);
     }
     public static RateResult Rate(List<Sample> samples) {
-        List<double> times=new List<double>(); int gaps=0,batched=0; double total=0,maxGap=0;
+        List<double> times=new List<double>(); int gaps=0,batched=0; double total=0,maxGap=0,gapDuration=0;
         foreach(Sample sample in samples)
             if(sample==null || double.IsNaN(sample.Ms) || double.IsInfinity(sample.Ms))
                 throw new InvalidOperationException("invalid capture timestamps / repeat test");
         for(int i=1;i<samples.Count;i++) {
             double delta=samples[i].Ms-samples[i-1].Ms;
             maxGap=Math.Max(maxGap,delta);
-            if(delta>50) {gaps++;continue;}
+            if(delta>50) {gaps++;gapDuration+=delta;continue;}
             if(delta<0) throw new InvalidOperationException("capture timestamps out of order / repeat test");
             if(delta==0) {batched++;continue;}
             times.Add(delta); total+=delta;
         }
         if(times.Count<100 || total<250) throw new InvalidOperationException("not enough sustained motion / repeat test");
         times.Sort(); double median=Percentile(times,.5);
-        int slow=times.FindAll(delegate(double time){return time>Math.Max(12,median*3);}).Count;
+        double slowThreshold=Math.Max(median*1.75,median+.25);
+        int slow=times.FindAll(delegate(double time){return time>slowThreshold;}).Count;
         double medianHz=1000/median, activeHz=1000*(times.Count+batched)/total;
+        double span=total+gapDuration;
         return new RateResult { Reports=samples.Count, Intervals=times.Count+batched, IdleGaps=gaps, MedianIntervalMs=median,
+            SpanMs=span,GapDurationMs=gapDuration,DeliveredHz=1000*(samples.Count-1)/span,GapPercent=100*gapDuration/span,SlowThresholdMs=slowThreshold,
             P95IntervalMs=Percentile(times,.95),P99IntervalMs=Percentile(times,.99),MaxGapMs=maxGap,SlowIntervals=slow,SameTimestampReports=batched,
             ObservedHz=activeHz, ActiveHz=activeHz, MedianHz=medianHz,
             Quality=gaps>0 ? "long gaps / pauses or delivery interruption; repeat with continuous motion" : slow>0 || batched>0 || Math.Abs(medianHz-activeHz)/activeHz>.2 ? "uneven delivery / repeat test" : "consistent delivery",
