@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.7.2";
+    internal const string Version="0.7.3";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -341,8 +341,16 @@ internal static class Program {
             catch(DirectoryNotFoundException) {throw new ArgumentException("profile not found / use profile list");}
             if(words[1]=="show") {
                 if(json) Console.WriteLine(Store.Json.Serialize(settings));
-                else Console.WriteLine("  profile / "+words[2]+"\n  speed "+settings.Speed+"/20 / acceleration "+(settings.Acceleration==0 ? "off" : "on")+" / thresholds "+settings.Threshold1+", "+settings.Threshold2+
-                    "\n  wheel "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms / buttons "+(settings.SwapButtons==0 ? "normal" : "swapped"));
+                else {
+                    string[] changes=settings.PreviewChanges(Settings.Read());
+                    Console.WriteLine("  profile / "+words[2]);
+                    if(changes.Length==0) Console.WriteLine("  already matches / no changes");
+                    else {
+                        Console.WriteLine("  current -> saved");
+                        foreach(string change in changes) Console.WriteLine("  "+change);
+                        Console.WriteLine("  preview only / nothing applied");
+                    }
+                }
             }else Apply(settings);
         }
         else throw new ArgumentException("use profile save|show|apply <name> or profile list");

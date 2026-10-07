@@ -204,6 +204,14 @@ internal static class SelfTest {
     private static void SnapshotRegression() {
         string path=Path.Combine(Path.GetTempPath(),"helox-snapshot-"+Guid.NewGuid().ToString("n")+".json");
         Settings original=new Settings {Speed=10,Threshold1=6,Threshold2=10,Acceleration=1,WheelLines=3,DoubleClickMs=500,SwapButtons=0};
+        Expect(original.PreviewChanges(original).Length==0,"matching profile has no pending changes");
+        Settings different=new Settings {Speed=12,Threshold1=7,Threshold2=11,Acceleration=2,WheelLines=-1,DoubleClickMs=600,SwapButtons=1};
+        string[] changes=different.PreviewChanges(original);
+        Expect(changes.Length==6 && changes[0]=="speed / 10 -> 12 / 20" && changes[1]=="acceleration / on (mode 1) -> on (mode 2)" &&
+            changes[2]=="thresholds / 6, 10 -> 7, 11" && changes[3]=="wheel / 3 lines -> page" &&
+            changes[4]=="doubleclick / 500 ms -> 600 ms" && changes[5]=="buttons / normal -> swapped","profile preview covers every field and preserves direction");
+        Settings wheelOnly=new Settings {Speed=10,Threshold1=6,Threshold2=10,Acceleration=1,WheelLines=0,DoubleClickMs=500,SwapButtons=0};
+        Expect(wheelOnly.PreviewChanges(original).Length==1 && wheelOnly.PreviewChanges(original)[0]=="wheel / 3 lines -> 0 lines","profile preview hides unchanged values and handles zero scrolling");
         try {
             Store.Save(path,original);Expect(original.Same(Store.Load<Settings>(path)),"validated snapshot roundtrip");
             string valid=File.ReadAllText(path);

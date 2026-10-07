@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.7.2
+  helox / 0.7.3
   ----------------------------------------
   receiver  gxt 929 helox
   windows   speed 10/20 / accel on
@@ -74,7 +74,7 @@ saved profiles are selected by number when loading.
 
 `5` > `4` or `undo` reverses the last successful windows settings change, including a profile load or original restore. a second undo reverses that undo. unchanged settings preserve the existing undo snapshot. if saving the undo snapshot fails, the tool rolls the change back and reports any rollback failure. aim driver settings keep their separate restore command.
 
-`5` > `5` or `profile show <name>` previews every saved windows setting without applying it; `--json` exports the snapshot. saving profiles shares the settings lock so another helox instance cannot write halfway through the snapshot.
+`5` > `5` or `profile show <name>` shows only settings that would change, as `current -> saved`. identical profiles show `already matches / no changes`. acceleration modes, both thresholds, page scrolling and swapped buttons are included. this reads current preferences without applying the profile; another app can still change them after the preview. `--json` continues to export the complete saved snapshot. saving profiles shares the settings lock so another helox instance cannot write halfway through the snapshot.
 
 profiles must contain a complete, valid settings snapshot. a damaged original backup blocks new changes so recovery is not silently lost. simultaneous cli instances serialize settings changes and read current values after acquiring the lock.
 

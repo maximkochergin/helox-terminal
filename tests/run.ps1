@@ -103,9 +103,12 @@ try {
     $profileNumber = [array]::IndexOf(@($profileNames),$profileName) + 1
     $menuPreview = "5`n5`n$profileNumber`n0" | & $executable
     if ($LASTEXITCODE -ne 0 -or ($menuPreview -join "`n") -notmatch ('profile / ' + $profileName) -or ($menuPreview -join "`n") -match 'applied /') { throw 'profile preview menu failed' }
+    if (($menuPreview -join "`n") -notmatch 'already matches / no changes') { throw 'identical profile preview failed' }
     $testSpeed = if ($beforeUndo.windows.Speed -eq 10) { 11 } else { 10 }
     & $executable set speed $testSpeed --json | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'undo test change failed' }
+    $changedPreview = & $executable profile show $profileName
+    if ($LASTEXITCODE -ne 0 -or ($changedPreview -join "`n") -notmatch ('speed / ' + $testSpeed + ' -> ' + $beforeUndo.windows.Speed + ' / 20')) { throw 'profile preview difference failed' }
     $undone = & $executable undo --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$undone.undone -or ($undone.readback | ConvertTo-Json -Compress) -ne ($beforeUndo.windows | ConvertTo-Json -Compress)) { throw 'undo did not restore previous settings' }
     & $executable set speed $beforeUndo.windows.Speed --json | Out-Null

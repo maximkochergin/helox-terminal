@@ -40,6 +40,20 @@ public sealed class Settings {
         return other!=null && Speed==other.Speed && Threshold1==other.Threshold1 && Threshold2==other.Threshold2 &&
             Acceleration==other.Acceleration && WheelLines==other.WheelLines && DoubleClickMs==other.DoubleClickMs && SwapButtons==other.SwapButtons;
     }
+    internal string[] PreviewChanges(Settings current) {
+        Validate();current.Validate();
+        List<string> changes=new List<string>();
+        if(Speed!=current.Speed) changes.Add("speed / "+current.Speed+" -> "+Speed+" / 20");
+        if(Acceleration!=current.Acceleration) changes.Add("acceleration / "+AccelerationLabel(current.Acceleration)+" -> "+AccelerationLabel(Acceleration));
+        if(Threshold1!=current.Threshold1 || Threshold2!=current.Threshold2)
+            changes.Add("thresholds / "+current.Threshold1+", "+current.Threshold2+" -> "+Threshold1+", "+Threshold2);
+        if(WheelLines!=current.WheelLines) changes.Add("wheel / "+WheelLabel(current.WheelLines)+" -> "+WheelLabel(WheelLines));
+        if(DoubleClickMs!=current.DoubleClickMs) changes.Add("doubleclick / "+current.DoubleClickMs+" ms -> "+DoubleClickMs+" ms");
+        if(SwapButtons!=current.SwapButtons) changes.Add("buttons / "+(current.SwapButtons==0 ? "normal" : "swapped")+" -> "+(SwapButtons==0 ? "normal" : "swapped"));
+        return changes.ToArray();
+    }
+    private static string AccelerationLabel(int value) {return value==0 ? "off" : "on (mode "+value+")";}
+    private static string WheelLabel(int value) {return value==-1 ? "page" : value+" lines";}
     public void Apply() {
         Validate(); Settings before=Read();
         try { Write(); if(!Same(Read())) throw new IOException("windows readback did not match requested settings"); }
