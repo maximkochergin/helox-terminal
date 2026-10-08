@@ -1,6 +1,6 @@
 # helox terminal
 
-minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, numbered menu, batch launcher.
+mouse controls for windows, with lowercase text, a numbered menu and a batch launcher. select the mouse you want to measure or configure in `6 more > 1 choose mouse`. input measurements use windows raw input; vendor-specific readings and controls depend on the device.
 
 ## start
 

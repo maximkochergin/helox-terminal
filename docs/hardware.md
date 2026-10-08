@@ -1,5 +1,7 @@
 # hardware findings
 
+helox's input measurements and selected-device aim controls are not restricted to this model. the findings below document the gxt 929 used for initial hardware research; they must not be treated as specifications for other mice. hardware-specific controls require a verified protocol for each supported model.
+
 observed on a connected device on 2026-10-06. machine-specific paths and serial-like identifiers are intentionally omitted.
 
 | property | observed value |

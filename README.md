@@ -1,45 +1,50 @@
-![helox — mouse controls, in a terminal](docs/assets/helox.svg)
+![helox — mouse controls for windows](docs/assets/helox.svg)
 
 **[download](https://github.com/maximkochergin/helox-terminal/releases/latest)** &nbsp; / &nbsp; [manual](docs/manual.md) &nbsp; / &nbsp; [releases](https://github.com/maximkochergin/helox-terminal/releases)
 
----
-
 ## start
 
-extract the release zip, open `launch.bat`, choose a number.
+mouse controls for windows 10/11. a numbered terminal menu, launched from a batch file.
 
-![helox home menu: acceleration, pointer speed, test hz and gaps, check dpi, profiles, more, mouse status, aim tools, game presets and exit](docs/assets/terminal.svg)
+1. extract the release zip and open `launch.bat`.
+2. select your mouse in `6 more → 1 choose mouse`.
+3. open `9 game presets` for a complete setup, or `8 aim tools` to tune your own curve.
 
-menu illustration / choose `9 game presets` for a complete setup.
+![illustration of the helox home menu](docs/assets/terminal.svg)
 
-built for the trust gxt 929 helox. windows 10/11, .net framework 4.x.
-opening the app leaves your settings unchanged. no account, telemetry or background app.
+opening helox leaves settings unchanged. no account, telemetry or background app.
 
 ## controls
 
-**adjust** — windows pointer speed, acceleration, scrolling and buttons, with readback after changes.
+| control | action |
+| --- | --- |
+| pointer | windows speed, acceleration, scrolling and buttons |
+| input | delivered hz, report timing, gaps and known-distance dpi estimation |
+| aim tools | personal acceleration curves, filter previews and selected-mouse bypass |
+| game presets | complete driver setups for valorant, cs2 and matched kovaak's practice |
+| profiles | saved windows settings, previews and undo |
+| maintenance | driver checks, recovery, uninstall and data cleanup |
 
-**measure** — delivered input frequency, interval tails and gaps. compare repeat tests for the same mouse. estimate dpi with three mouse-length passes.
+[aim setup](docs/manual.md#aim-tools) &nbsp; / &nbsp; [curves](docs/curves.md) &nbsp; / &nbsp; [game presets](docs/game-presets.md) &nbsp; / &nbsp; [movement checks](docs/movement.md)
 
-**save** — named profiles, a `current -> saved` preview, undo for the last windows change and an original-settings backup.
+## compatibility
 
-**aim** — optional raw accel integration. build a personal curve and preview its response before applying. independent stability, smoothing, snapping, direction scales and micro damping; one selected-mouse bypass. [curves](docs/curves.md) / [filters](docs/filters.md) / [setup](docs/manual.md#aim-tools).
+input measurement uses mice exposed through windows raw input. aim tools use the optional raw accel driver and apply to the selected device; windows pointer settings apply to the desktop. game sensitivity and fov stay manual.
 
-**game presets** — complete input recipes for valorant, cs2 and matched kovaak's training. preview, apply and undo windows + driver settings together. sensitivity and fov steps stay explicit. [recipes](docs/game-presets.md).
+hardware dpi, configured polling rate and battery are not read automatically. measured hz is delivered input frequency; dpi calibration is an estimate. vendor-specific hardware controls depend on a verified device protocol.
 
-start with `9 game presets`: choose your game, review what turns on or off, then apply. the screen checks which recipe matches the live driver. `preset status` checks again after edits or a restart; saved choices alone do not mean a preset is active.
+<details>
+<summary>setup and recovery</summary>
 
-flicks leave a tail? `8 aim tools > 22 remove flick tail` disables output averaging while keeping your curve. it avoids this filter's overshoot; it cannot reconstruct a sensor spinout. [movement checks](docs/movement.md).
+basic features use .net framework 4.x. aim tools require 64-bit windows, the raw accel prerequisites, administrator rights for installation and a restart. [installation](docs/manual.md#aim-tools).
 
-an interrupted preset keeps a recovery snapshot. reopen `9 > 6` to restore it, or run `preset recover` with games closed.
+after reboot, use `8 → 8 resume saved` to restore saved aim choices. `preset status` checks which recipe matches the live driver. an interrupted preset keeps a recovery snapshot; close games and use `9 → 6` or `preset recover`.
 
-**maintain** — check installation, live readback and the selected mouse's driver stack. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
+known-distance dpi estimation is available through `calibrate <cm>`. the mouse-body shortcut in `4 check dpi` currently uses verified gxt 929 dimensions only. [measurement details](docs/manual.md#tests-and-recovery).
 
-## readings
+settings and backups stay in `%localappdata%\helox-terminal`. [driver removal and cleanup](docs/manual.md#driver-checks-and-removal).
 
-hardware dpi, configured polling rate and battery remain unknown. measured hz and estimated dpi are separate readings. smoothing adds delay and cannot recover missing reports.
-
-windows acceleration is separate from the aim driver: raw input games bypass the windows setting. aim installation needs administrator rights and a restart; saved aim choices can be resumed after reboot.
+</details>
 
 <details>
 <summary>commands</summary>
@@ -47,20 +52,15 @@ windows acceleration is separate from the aim driver: raw input games bypass the
 ```text
 launch.bat status --json
 launch.bat measure 10 --json
-launch.bat profile show training
-launch.bat undo
-launch.bat aim resume
-launch.bat aim response
-launch.bat preset show valorant
+launch.bat calibrate 20
+launch.bat preset status
 launch.bat preset preview cs2
-launch.bat aim verify
-launch.bat aim curve
-launch.bat aim events
+launch.bat aim response
+launch.bat aim resume
 launch.bat check
 ```
 
-`help` lists every command. `profile show training` requires a saved profile named `training`.
-settings and backups stay in `%localappdata%\helox-terminal`.
+`help` lists every command. [full reference](docs/manual.md#advanced-commands).
 
 </details>
 
@@ -73,12 +73,11 @@ powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
 the launcher builds if the executable is missing. rebuild after source changes.
-the full tests temporarily change windows preferences and restore them; `check` does not apply settings. `tests\live.ps1` separately exercises real driver writes, all five recipe apply/undo paths and persistence-failure recovery with games closed.
+
+the full tests temporarily change windows preferences and restore them; `check` does not apply settings. `tests\live.ps1` separately verifies actual driver writes, recipe apply/undo and failure recovery with games closed. [verification](docs/verification.md).
 
 </details>
 
----
-
-[hardware notes](docs/hardware.md) &nbsp; / &nbsp; [aim research](docs/aim.md) &nbsp; / &nbsp; [verification](docs/verification.md)
+[hardware research](docs/hardware.md) &nbsp; / &nbsp; [aim research](docs/aim.md)
 
 [mit licensed](LICENSE). use, modify and redistribute with the copyright and license notice retained. supplied without warranty. the optional raw accel package retains its own mit license.
