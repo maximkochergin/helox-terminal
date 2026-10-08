@@ -31,6 +31,9 @@ public sealed class AimResponse {
     public int AfterFlickZeroReports {get;set;}
     public int[] AfterFlickX {get;set;}
     public int[] AfterFlickY {get;set;}
+    public long ReversalPeakCounts {get;set;}
+    public int ReversalWrongWayReports {get;set;}
+    public int ReversalZeroReports {get;set;}
     public string Source {get;set;}
 }
 // Reproduce the released callback's truncation and fractional carry for example motion.
@@ -118,6 +121,16 @@ internal static class AimResponseTest {
                     int[] packet=recovery.Packet(0,1);result.AfterFlickX[i]=packet[0];result.AfterFlickY[i]=packet[1];
                     result.AfterFlickPeakCounts=Math.Max(result.AfterFlickPeakCounts,Math.Max(Math.Abs((long)packet[0]),Math.Abs((long)packet[1])));
                     if(packet[0]==0 && packet[1]==0) result.AfterFlickZeroReports++;
+                }
+            }
+            using(Simulation reversal=new Simulation(accels[index],device,dt)) {
+                for(int i=0;i<result.WarmupReports;i++) reversal.Packet(8,0);
+                for(int i=0;i<result.BurstReports;i++) reversal.Packet(800,0);
+                for(int i=0;i<16;i++) {
+                    int[] packet=reversal.Packet(-1,0);
+                    result.ReversalPeakCounts=Math.Max(result.ReversalPeakCounts,Math.Max(Math.Abs((long)packet[0]),Math.Abs((long)packet[1])));
+                    if(packet[0]>0 || packet[1]!=0) result.ReversalWrongWayReports++;
+                    if(packet[0]==0 && packet[1]==0) result.ReversalZeroReports++;
                 }
             }
         }finally {foreach(object accel in accels) {IDisposable disposable=accel as IDisposable;if(disposable!=null) disposable.Dispose();}}

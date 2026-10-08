@@ -491,6 +491,17 @@ internal static class Aim {
         string exampleId="HID\\VID_145F&PID_0326";
         AimResponse averaged=AimResponseTest.Run(Configure(defaults,Defaults(),exampleId,true,true,8),exampleId,8);
         AimResponse tracking=AimResponseTest.Run(Configure(defaults,Defaults(),exampleId,true,false,8,1.4,true,8),exampleId,8);
+        Dictionary<string,object> smoothed=Configure(defaults,defaults,exampleId,true,true,8);
+        AimPreset recoveredPreset=Resolve(Describe(smoothed,exampleId),null,"smooth",false,null,null,8);
+        Dictionary<string,object> recoveredConfig=ConfigurePreset(smoothed,defaults,exampleId,recoveredPreset);
+        foreach(double interval in new double[]{1,8,16}) {
+            AimResponse recovered=AimResponseTest.Run(recoveredConfig,exampleId,interval);
+            AimResponse reference=AimResponseTest.Run(smoothed,exampleId,interval);
+            Console.WriteLine("  flick recovery / "+interval+" ms / turn peak "+recovered.AfterFlickPeakCounts+" zeros "+recovered.AfterFlickZeroReports+" / reverse peak "+recovered.ReversalPeakCounts+" wrong way "+recovered.ReversalWrongWayReports+" zeros "+recovered.ReversalZeroReports);
+            // Opposite fractional carry can cancel one first reversal count even without a filter.
+            if(recovered.AfterFlickPeakCounts>2 || recovered.AfterFlickZeroReports!=0 || recovered.ReversalPeakCounts>2 || recovered.ReversalWrongWayReports!=0 || recovered.ReversalZeroReports>1) throw new Exception("output averaging removal failed flick recovery");
+            if(Math.Abs(recovered.SmallMotionRatio-reference.SmallMotionRatio)>.0001 || Math.Abs(recovered.FastMotionRatio-reference.FastMotionRatio)>.0001) throw new Exception("output averaging removal changed settled sensitivity");
+        }
         if(averaged.AfterFlickPeakCounts<40 || averaged.AfterFlickZeroReports<1) throw new Exception("output smoothing transient was not reproduced");
         if(tracking.AfterFlickPeakCounts>2 || tracking.AfterFlickPeakCounts<1 || tracking.AfterFlickZeroReports!=0 || tracking.FastMotionRatio<=1 || tracking.FastMotionRatio>1.401) throw new Exception("tracking recovery response failed");
         if(tracking.AfterFlickX[0]!=0 || tracking.AfterFlickY[0]<1) throw new Exception("tracking one-count turn failed");
@@ -707,7 +718,11 @@ internal static class Aim {
         AimResponse old=AimResponseTest.Run(legacy,id,8),current=AimResponseTest.Run(fixedCurve,id,8);
         if(old.AfterFlickZeroReports<1 || current.AfterFlickZeroReports!=0 || current.AfterFlickPeakCounts!=1) throw new Exception("LUT flick recovery regression failed");
         foreach(GameRecipe recipe in GamePresets.List()) foreach(double interval in new double[]{1,8,16}) {
-            AimResponse response=AimResponseTest.Run(GamePresets.Configure(defaults,defaults,id,recipe),id,interval);
+            Dictionary<string,object> recipeConfig=Canonical(GamePresets.Configure(defaults,defaults,id,recipe));
+            if(Array.IndexOf(GamePresets.Matches(recipeConfig,defaults,id),recipe.Id)<0) throw new Exception("live recipe match missed an applied recipe");
+            if(GamePresets.Matches(Canonical(ConfigureBypass(recipeConfig,id,true)),defaults,id).Length!=0) throw new Exception("bypassed recipe reported active");
+            AimResponse response=AimResponseTest.Run(recipeConfig,id,interval);
+            if(response.ReversalWrongWayReports!=0) throw new Exception("recipe reversed a one-count correction after flick");
             if(response.Readback.LookupInputSmoothingRisk!=false || response.Readback.OutputHalfLifeMs!=0 || response.FastMotionRatio>recipe.Curve.Limit+1e-6 || response.FastMotionRatio<=1) throw new Exception("game recipe response bounds failed");
             if(!recipe.MicroDamping && (response.AfterFlickPeakCounts>2 || response.AfterFlickZeroReports!=0)) throw new Exception("undamped game recipe swallowed a micro correction");
             foreach(int output in response.AfterFlickY) if(output<0) throw new Exception("game recipe reversed correction direction");

@@ -1,5 +1,7 @@
 # helox
 
+![helox — mouse controls, in a terminal](docs/assets/helox.svg)
+
 mouse controls for windows, in a terminal.
 
 **[download](https://github.com/maximkochergin/helox-terminal/releases/latest)** &nbsp; / &nbsp; [manual](docs/manual.md) &nbsp; / &nbsp; [releases](https://github.com/maximkochergin/helox-terminal/releases)
@@ -23,6 +25,8 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 
 ## controls
 
+![input path: keep hardware dpi, configure curve and aim tools with a preset, keep in-game sensitivity](docs/assets/input-path.svg)
+
 **adjust** — windows pointer speed, acceleration, scrolling and buttons, with readback after changes.
 
 **measure** — delivered input frequency, interval tails and gaps. compare repeat tests for the same mouse. estimate dpi with three mouse-length passes.
@@ -32,6 +36,10 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 **aim** — optional raw accel integration. build a personal curve and preview its response before applying. independent stability, smoothing, snapping, direction scales and micro damping; one selected-mouse bypass. [curves](docs/curves.md) / [filters](docs/filters.md) / [setup](docs/manual.md#aim-tools).
 
 **game presets** — complete input recipes for valorant, cs2 and matched kovaak's training. preview, apply and undo windows + driver settings together. sensitivity and fov steps stay explicit. [recipes](docs/game-presets.md).
+
+start with `9 game presets`: choose your game, review what turns on or off, then apply. the screen checks which recipe matches the live driver. `preset status` checks again after edits or a restart; saved choices alone do not mean a preset is active.
+
+flicks leave a tail? `8 aim tools > 22 remove flick tail` disables output averaging while keeping your curve. it avoids this filter's overshoot; it cannot reconstruct a sensor spinout. [movement checks](docs/movement.md).
 
 an interrupted preset keeps a recovery snapshot. reopen `9 > 6` to restore it, or run `preset recover` with games closed.
 

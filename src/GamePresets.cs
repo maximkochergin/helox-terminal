@@ -29,7 +29,29 @@ public sealed class GamePresetPreview {
     public bool Applied {get;set;}
     public bool GameSettingsApplied {get;set;}
 }
+public sealed class GamePresetStatus {
+    public string[] DriverMatches {get;set;}
+    public bool WindowsMatch {get;set;}
+    public string Source {get;set;}
+    public bool GameSettingsVerified {get;set;}
+}
 internal static class GamePresets {
+    // Compare effective selected-device configuration, not a remembered preset label.
+    internal static string[] Matches(Dictionary<string,object> current,Dictionary<string,object> defaults,string id) {
+        List<string> matches=new List<string>();
+        foreach(GameRecipe recipe in List()) {
+            Dictionary<string,object> expected=Aim.Canonical(Configure(current,defaults,id,recipe));
+            if(Aim.SameValue(current,expected)) matches.Add(recipe.Id);
+        }
+        return matches.ToArray();
+    }
+    internal static GamePresetStatus Status(Device device) {
+        return Aim.Locked(delegate {
+            Dictionary<string,object> current=Aim.Active();Settings windows=Settings.Read();
+            return new GamePresetStatus {DriverMatches=Matches(current,Aim.Defaults(),Aim.Id(device)),WindowsMatch=windows.Same(Windows(windows)),
+                Source="live driver + windows readback / identical training recipes share a match",GameSettingsVerified=false};
+        });
+    }
     private static readonly string UndoPath=Path.Combine(Store.Root,"game-undo.json");
     internal static GameRecipe[] List() {return new GameRecipe[]{Get("valorant"),Get("cs2"),Get("kovaaks-valorant"),Get("kovaaks-cs2"),Get("kovaaks-tracking")};}
     internal static GameRecipe Get(string id) {

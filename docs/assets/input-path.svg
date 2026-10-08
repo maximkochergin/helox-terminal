@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="220" viewBox="0 0 1200 220" role="img" aria-labelledby="title desc">
+  <title id="title">one setup, three places</title>
+  <desc id="desc">Hardware DPI stays on your mouse. Helox presets configure the selected driver's curve and filters. In-game sensitivity stays yours; sensitivity and FOV setup are manual.</desc>
+  <rect width="1200" height="220" rx="8" fill="#101214"/>
+  <g stroke="#454b50" fill="none"><path d="M48 55H1152M365 117H415M750 117H800"/><path d="m408 112 7 5-7 5m385-5 7 5-7 5"/></g>
+  <g fill="#a8adb1" font-family="Consolas, monospace" font-size="14">
+    <text x="48" y="34">one setup / three places</text>
+    <text x="48" y="91">01 / mouse</text><text x="442" y="91">02 / helox preset</text><text x="837" y="91">03 / game</text>
+  </g>
+  <g fill="#f4f4f2" font-family="Segoe UI, Arial, sans-serif" font-size="27">
+    <text x="48" y="132">keep your dpi</text><text x="442" y="132">curve + aim tools</text><text x="837" y="132">keep your sens</text>
+  </g>
+  <g fill="#a8adb1" font-family="Segoe UI, Arial, sans-serif" font-size="17">
+    <text x="48" y="175">hardware stage stays yours</text><text x="442" y="175">apply + verify driver settings</text><text x="837" y="175">sensitivity / fov set manually</text>
+  </g>
+</svg>

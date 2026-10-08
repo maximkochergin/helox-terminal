@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.14.1";
+    internal const string Version="0.15.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -110,7 +110,7 @@ internal static class Program {
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors 18  direction scales\n 19  micro damping   20  bypass all\n 21  "+(File.Exists(LiveVerify.RecoveryPath) ? "restore live verify" : "live verify")+"    0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors 18  direction scales\n 19  micro damping   20  bypass all\n 21  "+(File.Exists(LiveVerify.RecoveryPath) ? "restore live verify" : "live verify")+"\n 22  remove flick tail\n  0  back");
         string choice=Ask("choose");
         if(choice=="1") {
             Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
@@ -155,7 +155,12 @@ internal static class Program {
             if(File.Exists(LiveVerify.RecoveryPath)) AimCommand(new string[]{"aim","verify","restore"});
             else {Console.WriteLine("  temporary driver writes / original state restored / close games first");AimCommand(new string[]{"aim","verify"});}
         }
-        else throw new ArgumentException("choose 1..21 or 0");
+        else if(choice=="22") {
+            Console.WriteLine("  remove output averaging / keep curve, dpi and game sensitivity\n  reduces the filter's flick tail / cannot reconstruct sensor tracking\n  1 apply    0 back");
+            if(Ask("choose")!="1") throw new ArgumentException("choose 1 or 0");
+            AimCommand(new string[]{"aim","smooth","off"});
+        }
+        else throw new ArgumentException("choose 1..22 or 0");
         Finish();
     }
     private static void DirectionMenu() {
@@ -169,31 +174,44 @@ internal static class Program {
     }
     private static void GameMenu() {
         GameRecipe[] recipes=GamePresets.List();Console.WriteLine("\n  game presets / complete input recipes");
+        try {PrintPresetStatus(GamePresets.Status(Selected()));}catch(Exception e) {Console.WriteLine("  live match unavailable / "+Error(e));}
+        Console.WriteLine("\n  start here / choose your game, read the setup, then apply");
         for(int i=0;i<recipes.Length;i++) Console.WriteLine("  "+(i+1)+"  "+recipes[i].Id);
         Console.WriteLine("  6  "+(GameRecovery.Pending ? "recover interrupted preset" : "undo last game preset")+"\n  0  back");int choice=Integer(Ask("choose"));
         if(choice==6) {PresetCommand(new string[]{"preset",GameRecovery.Pending ? "recover" : "undo"});Finish();return;}
         if(choice<1 || choice>recipes.Length) throw new ArgumentException("choose 1..6 or 0");
         GameRecipe recipe=recipes[choice-1];PrintRecipe(recipe);
-        Console.WriteLine("  1 preview    2 apply    0 back");string action=Ask("choose");
-        if(action!="1" && action!="2") throw new ArgumentException("choose 1..2 or 0");
-        PresetCommand(new string[]{"preset",action=="1" ? "preview" : "apply",recipe.Id});Finish();
+        while(true) {
+            Console.WriteLine("\n  1 preview details    2 apply full setup    0 back");string action=Ask("choose");
+            if(action!="1" && action!="2") throw new ArgumentException("choose 1..2 or 0");
+            PresetCommand(new string[]{"preset",action=="1" ? "preview" : "apply",recipe.Id});
+            if(action=="2") {Finish();return;}
+        }
+    }
+    private static void PrintPresetStatus(GamePresetStatus status) {
+        Console.WriteLine("  driver matches / "+(status.DriverMatches.Length==0 ? "custom setup / no game recipe active" : String.Join(" + ",status.DriverMatches)));
+        Console.WriteLine("  windows setup / "+(status.WindowsMatch ? "matches" : "different / apply sets pointer 10 and acceleration off"));
+        Console.WriteLine("  checked now / game sensitivity and fov stay manual");
     }
     private static void PrintRecipe(GameRecipe recipe) {
-        Console.WriteLine("\n  "+recipe.Id+" / "+recipe.Engine+"\n  "+recipe.InputPath+"\n  windows / speed 10/20 / acceleration off / wheel + buttons kept");
-        Console.WriteLine("  curve / 1x -> "+N(recipe.Curve.Limit)+"x / "+N(recipe.Curve.Start)+".."+N(recipe.Curve.End)+" counts/ms / shape "+N(recipe.Curve.Shape));
-        Console.WriteLine("  stability "+(recipe.Stability ? "scale 4 ms" : "off")+" / speed smoothing off / output smoothing off\n  micro "+(recipe.MicroDamping ? "0.9x -> 1x at 0.75 counts/ms" : "off")+" / snap off / direction scales 1x\n  software normalization off / timing auto / hardware dpi + hz unknown");
+        Console.WriteLine("\n  full setup / includes aim tools\n  on   / personal acceleration / slow 1x, fast up to "+N(recipe.Curve.Limit)+"x");
+        Console.WriteLine("  "+(recipe.Stability ? "on   " : "off  ")+"/ acceleration stability\n  "+(recipe.MicroDamping ? "on   " : "off  ")+"/ micro damping"+(recipe.MicroDamping ? " / also reduces deliberate small corrections" : " / keep small corrections intact"));
+        Console.WriteLine("  off  / output smoothing / avoid a tail after flicks\n  off  / angle snapping + direction reduction / keep free movement\n  keep / hardware dpi + in-game sensitivity\n  replaces current aim filters / undo available after applying");
+        Console.WriteLine("\n  "+recipe.Id+" / "+recipe.Engine+"\n  windows / pointer 10/20 + acceleration off / desktop only");
         Console.WriteLine("  game steps / manual");foreach(string step in recipe.GameSteps) Console.WriteLine("  "+step);
     }
     private static void PresetCommand(string[] words) {
+        if(words.Length==2 && words[1]=="status") {GamePresetStatus status=GamePresets.Status(Selected());if(json) Console.WriteLine(Store.Json.Serialize(status));else PrintPresetStatus(status);return;}
         if(words.Length==2 && words[1]=="recover") {GameRecovery.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  interrupted preset recovered / windows + driver + saved files verified");return;}
         if(words.Length==2 && words[1]=="list") {GameRecipe[] recipes=GamePresets.List();if(json) Console.WriteLine(Store.Json.Serialize(recipes));else foreach(GameRecipe entry in recipes) Console.WriteLine("  "+entry.Id+" / "+entry.Engine);return;}
         if(words.Length==2 && words[1]=="undo") {GamePresets.Undo();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  previous windows + driver settings restored / verified");return;}
-        if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|undo|recover or preset show|preview|apply <name>");
+        if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|undo|recover or preset show|preview|apply <name>");
         GameRecipe recipe=GamePresets.Get(words[2]);
         if(words[1]=="show") {if(json) Console.WriteLine(Store.Json.Serialize(recipe));else PrintRecipe(recipe);return;}
         GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(Selected(),recipe.Id) : GamePresets.Apply(Selected(),recipe.Id);
         if(json) Console.WriteLine(Store.Json.Serialize(result));else {
-            Console.WriteLine("  "+(result.Applied ? "applied / windows + driver readback verified" : "preview / nothing applied"));PrintFilterPreview(result.Response,!result.Applied);
+            Console.WriteLine("  "+(result.Applied ? "applied / windows + driver readback verified / aim tools included" : "preview / nothing applied"));
+            if(!result.Applied) PrintFilterPreview(result.Response,true);
             Console.WriteLine("  in-game settings remain manual / preset show "+recipe.Id+"\n  undo both / preset undo");
         }
     }
@@ -232,6 +250,7 @@ internal static class Program {
         if(status.State=="ready") {
             Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+(status.Mode=="lut" ? "custom" : status.Mode)+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
             if(status.Enabled!=true) Console.WriteLine("  effects bypassed / values below are configured only");
+            if(status.Enabled==true && status.OutputHalfLifeMs>0) Console.WriteLine("  output averaging can magnify corrections after flicks / aim tools > 22");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
             Console.WriteLine("  snap "+(status.SnapDegrees>0 ? F(status.SnapDegrees.Value)+" degrees" : "off"));
             if(status.Enabled==true && status.LookupInputSmoothingRisk==true) Console.WriteLine("  legacy lut speed smoothing / may suppress flick corrections / reapply curve or preset");
@@ -281,6 +300,7 @@ internal static class Program {
             else {
                 Console.WriteLine("\n  response / current profile / simulation / read only\n  example interval "+F(result.ExampleIntervalMs)+" ms / processed "+F(result.ProcessedIntervalMs)+" ms\n  "+result.IntervalSource);
                 Console.WriteLine("  after "+result.WarmupReports+" reports / 8-count "+result.SmallMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x / 800-count "+result.FastMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x\n  flick -> 1-count turn / peak "+result.AfterFlickPeakCounts+" counts / zero outputs "+result.AfterFlickZeroReports+" of 16");
+                Console.WriteLine("  flick -> reverse / peak "+result.ReversalPeakCounts+" counts / wrong way "+result.ReversalWrongWayReports+" / zero outputs "+result.ReversalZeroReports+" of 16");
                 List<string> mid=new List<string>();
                 foreach(AimResponsePoint point in result.HorizontalSamples) if(point.InputCounts==24 || point.InputCounts==80 || point.InputCounts==160) mid.Add(point.InputCounts+": "+point.OutputRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x");
                 Console.WriteLine("  horizontal counts/report / "+String.Join(" / ",mid.ToArray()));
@@ -440,7 +460,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  preset list / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
+        Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
         Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");

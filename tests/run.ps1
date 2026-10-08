@@ -79,6 +79,10 @@ $aimStatus = & $executable aim status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
 $recipes = & $executable preset list --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $recipes.Count -ne 5 -or $recipes[0].Id -ne 'valorant' -or $recipes[1].Engine -ne 'source 2') { throw 'game recipe list failed' }
+$recipeCancel = "9`n1`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($recipeCancel -join "`n") -notmatch 'includes aim tools' -or ($recipeCancel -join "`n") -match 'applied /') { throw 'recipe explanation or cancellation failed' }
+$tailCancel = "8`n22`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($tailCancel -join "`n") -notmatch 'keep curve, dpi and game sensitivity' -or ($tailCancel -join "`n") -match 'applied /') { throw 'flick tail action cancellation failed' }
 foreach ($recipe in $recipes) {
     $plan = & $executable preset show $recipe.Id --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$plan.DriverControls.precision -or $plan.DriverControls.smooth -or $plan.DriverControls.snapDegrees -ne 0 -or !$plan.GameSteps -or !$plan.Sources) { throw 'complete game recipe definition failed' }
@@ -87,8 +91,12 @@ foreach ($recipe in $recipes) {
         if ($LASTEXITCODE -ne 0 -or $gamePreview.Applied -or $gamePreview.GameSettingsApplied -or $gamePreview.Windows.Speed -ne 10 -or $gamePreview.Windows.Acceleration -ne 0 -or $gamePreview.Response.Readback.LookupInputSmoothingRisk -or $gamePreview.Response.Readback.InputHalfLifeMs -ne 0) { throw 'game recipe preview failed' }
     }
 }
-$gameCancel = "9`n1`n0`n0" | & $executable
-if ($LASTEXITCODE -ne 0 -or ($gameCancel -join "`n") -notmatch 'windows / speed 10/20' -or ($gameCancel -join "`n") -match 'applied /') { throw 'game recipe cancellation failed' }
+if ($aimStatus.State -eq 'ready') {
+    $gamePreviewFlow = "9`n1`n1`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ([regex]::Matches(($gamePreviewFlow -join "`n"),'2 apply full setup')).Count -ne 2 -or ($gamePreviewFlow -join "`n") -match 'applied /') { throw 'preview did not return to recipe actions' }
+    $liveRecipe = & $executable preset status --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or !$liveRecipe.PSObject.Properties['DriverMatches'] -or !$liveRecipe.Source -or $liveRecipe.GameSettingsVerified) { throw 'live recipe status contract failed' }
+}
 foreach ($arguments in @(@('preset','apply','unknown'),@('preset','apply'),@('preset','list','extra'),@('preset','undo','extra'),@('preset','recover','extra'),@('aim','verify','extra'))) {
     $invalidRecipe = & $executable @arguments --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidRecipe.error -or $invalidRecipe.Applied) { throw 'invalid recipe command accepted' }

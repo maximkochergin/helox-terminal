@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="title desc">
+  <title id="title">helox — mouse controls, in a terminal</title>
+  <desc id="desc">A white movement trace rises gently across a dark canvas beside the helox wordmark. Abstract illustration, not a measured response graph.</desc>
+  <rect width="1200" height="380" rx="8" fill="#101214"/>
+  <g fill="none" stroke="#303437">
+    <path d="M48 48H1152M48 332H1152"/>
+    <path d="M650 100V280M760 100V280M870 100V280M980 100V280M1090 100V280" stroke-dasharray="2 9"/>
+    <path d="M620 260H1136"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" fill="#f4f4f2">
+    <text x="48" y="176" font-size="100" letter-spacing="-5">helox</text>
+    <text x="52" y="226" font-size="22" fill="#a8adb1">mouse controls, in a terminal.</text>
+  </g>
+  <path d="M620 260H748C838 260 842 136 940 136H1136" stroke="#f4f4f2" stroke-width="3" fill="none"/>
+  <circle cx="940" cy="136" r="6" fill="#f4f4f2"/>
+  <g font-family="Consolas, monospace" font-size="14" fill="#a8adb1">
+    <text x="52" y="308">windows / gxt 929 / open source</text>
+    <text x="967" y="308">your hand. your curve.</text>
+  </g>
+</svg>

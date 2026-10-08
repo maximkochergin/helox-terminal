@@ -1,5 +1,11 @@
 # verification
 
+## flick recovery and live recipe matching / 0.15.0
+
+the response model now includes a horizontal flick followed by sixteen opposite one-count reports, alongside the perpendicular correction case. removing output averaging preserves settled slow/fast response in the natural curve at 1, 8 and 16 ms intervals. corrected turn peaks are 2, 1 and 1 counts respectively; reversal peaks are 1 count with no wrong-direction output. fractional carry can cancel the first opposite count at 8 and 16 ms, so that is reported explicitly rather than described as zero lost counts.
+
+tests check every recipe's live configuration match and reject a bypassed recipe as active. local integration tests check the same match after real apply/readback. command tests cover cancellation and returning from preview to apply. these are processing and configuration checks, not a sensor spinout repair or a measurement inside a game.
+
 ## interrupted preset transactions / 0.14.1
 
 - apply and undo persist a validated complete recovery snapshot before native or preference changes. validation covers previous desktop undo and saved-control metadata; invalid files stop preflight.

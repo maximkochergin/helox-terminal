@@ -47,6 +47,8 @@ internal static class LiveProbe {
                 Console.WriteLine("live / apply, repeat and undo "+name);
                 Dictionary<string,object> applied=Command("preset apply "+name),read=Map(Map(applied["Response"])["Readback"]);
                 Expect((bool)applied["Applied"] && !(bool)applied["GameSettingsApplied"] && (string)read["Mode"]=="lut" && Convert.ToDouble(read["InputHalfLifeMs"])==0 && (int)Map(applied["Windows"])["Acceleration"]==0,"live preset apply failed");
+                Dictionary<string,object> match=Command("preset status");
+                Expect((bool)match["WindowsMatch"] && ((System.Collections.IList)match["DriverMatches"]).Contains(name) && !(bool)match["GameSettingsVerified"],"live preset status missed active recipe");
                 string undoPath=Path.Combine(root,"game-undo.json"),undoBytes=Convert.ToBase64String(File.ReadAllBytes(undoPath));
                 Dictionary<string,object> repeat=Command("preset apply "+name);
                 Expect((bool)repeat["Applied"] && undoBytes==Convert.ToBase64String(File.ReadAllBytes(undoPath)),"identical reapply replaced useful undo");

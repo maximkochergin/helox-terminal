@@ -2,6 +2,8 @@
 
 open `9 game presets`, choose a recipe, then `1 preview` or `2 apply`. `6 undo last game preset` restores the previous windows settings, complete driver configuration and saved aim choices together. a named profile remains your saved windows configuration; these built-in recipes specify the complete selected-mouse processing chain.
 
+the setup screen lists **on / off / keep**, including every aim component and why tactical filters are off. preview returns to the same recipe so you can apply without starting again. the game menu and `preset status` compare the actual driver against the complete recipes, including the device's enabled flag, normalization and timing. windows matching is reported separately; game files are not inspected. matched training recipes share the same settings, so two names can appear together. a custom setup or a driver reset after reboot does not get an active-preset label just because choices were saved.
+
 ## engine and game settings
 
 valorant moved to unreal engine 5.3 in [riot's 11.02 notes](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-11-02/). [11.06](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-11-06/) made raw input buffer permanently enabled. no obsolete buffer toggle is required. windows pointer acceleration does not set the in-game acceleration curve; the selected raw accel device is configured upstream.
