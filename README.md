@@ -1,8 +1,4 @@
-# helox
-
 ![helox — mouse controls, in a terminal](docs/assets/helox.svg)
-
-mouse controls for windows, in a terminal.
 
 **[download](https://github.com/maximkochergin/helox-terminal/releases/latest)** &nbsp; / &nbsp; [manual](docs/manual.md) &nbsp; / &nbsp; [releases](https://github.com/maximkochergin/helox-terminal/releases)
 
@@ -12,20 +8,14 @@ mouse controls for windows, in a terminal.
 
 extract the release zip, open `launch.bat`, choose a number.
 
-```text
-  1  acceleration     2  pointer speed
-  3  test hz / gaps   4  check dpi
-  5  profiles         6  more
-  7  mouse status     8  aim tools
-  9  game presets     0  exit
-```
+![helox home menu: acceleration, pointer speed, test hz and gaps, check dpi, profiles, more, mouse status, aim tools, game presets and exit](docs/assets/terminal.svg)
+
+menu illustration / choose `9 game presets` for a complete setup.
 
 built for the trust gxt 929 helox. windows 10/11, .net framework 4.x.
 opening the app leaves your settings unchanged. no account, telemetry or background app.
 
 ## controls
-
-![input path: keep hardware dpi, configure curve and aim tools with a preset, keep in-game sensitivity](docs/assets/input-path.svg)
 
 **adjust** — windows pointer speed, acceleration, scrolling and buttons, with readback after changes.
 
