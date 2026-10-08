@@ -2,6 +2,14 @@
 
 checked 2026-10-07. presets change mouse input, not game state or targets. no claim of guaranteed score improvement.
 
+## clearer profile diagnostics / 0.11.0
+
+reviewed 2026-10-08. the earlier 8/800-count examples showed two extremes but omitted the intermediate region that may dominate actual use. response now independently runs eight horizontal input sizes through the same official engine for 120 reports each. at an 8 ms interval, the inspected natural 1.4x profile yields approximately 1x / 1.093x / 1.199x for 24/80/160 counts. this is an example calculation, not measured hand speeds or proof of in-game delivery. the callback's integer flick-to-micro test and existing json ratio fields are retained.
+
+doctor/status also query the selected device's windows-reported stack using [configuration manager](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/nf-cfgmgr32-cm_get_devnode_propertyw) and the [sdk stack property](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/shared/devpkey.h). interface-to-instance resolution follows the [documented interface property](https://learn.microsoft.com/en-us/windows/win32/api/cfgmgr32/nf-cfgmgr32-cm_get_device_interface_propertyw); driver metadata no longer constructs an assumed hid instance from a symbolic path. stack evidence is independent of the global control endpoint and class filter registration. malformed, absent or unsupported properties stay unknown, with bounded buffer retries.
+
+the selected gxt 929 node reports started with problem code 0, and its stack contains rawaccel. the user reports normal valorant startup. these observations do not demonstrate a vanguard conflict or establish that a match consumed every transformed report. [compatibility notes](valorant.md) separate this evidence from riot approval and describe manual comparison. the signed kernel binary and current active curve/filter choices are unchanged.
+
 ## flick-to-micro recovery / 0.10.0
 
 user feedback distinguished reduced roughness in kovaaks from little perceived change in valorant, with intermittent micro jerks remaining. live readback showed natural 1.4x, output half-life 8 ms, input/scale half-lives 4/2 ms, stability off. delivery history had a median near 8 ms and a maximum gap near 64 ms. these observations do not prove which component caused the reported jerks.

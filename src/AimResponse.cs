@@ -3,6 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 
 namespace Helox {
+public sealed class AimResponsePoint {
+    public int InputCounts {get;set;}
+    public double InputCountsPerMs {get;set;}
+    public double OutputRatio {get;set;}
+}
 public sealed class AimResponse {
     public AimStatus Readback {get;set;}
     public double ExampleIntervalMs {get;set;}
@@ -12,6 +17,7 @@ public sealed class AimResponse {
     public int BurstReports {get;set;}
     public double SmallMotionRatio {get;set;}
     public double FastMotionRatio {get;set;}
+    public AimResponsePoint[] HorizontalSamples {get;set;}
     public long AfterFlickPeakCounts {get;set;}
     public int AfterFlickZeroReports {get;set;}
     public int[] AfterFlickX {get;set;}
@@ -70,17 +76,21 @@ internal static class AimResponseTest {
         List<object> profiles=Aim.Items(cfg["profiles"]);int index=profiles.FindIndex(delegate(object p){return (string)Aim.Map(p)["name"]==status.Profile;});
         if(index<0) throw new InvalidOperationException("response profile not found");
         double dt=Time(device,exampleMs);
+        if(double.IsInfinity(800/dt)) throw new InvalidOperationException("response interval too small for finite speed examples");
         AimResponse result=new AimResponse {Readback=status,ExampleIntervalMs=exampleMs,ProcessedIntervalMs=dt,WarmupReports=120,BurstReports=8,
             AfterFlickX=new int[16],AfterFlickY=new int[16],Source="official calculation engine + integer carry model / example motion, not game or latency measurement"};
         object valid=Aim.Validate(cfg);IList accels=(IList)valid.GetType().GetField("accels").GetValue(valid);
         try {
-            foreach(int input in new int[]{8,800}) using(Simulation steady=new Simulation(accels[index],device,dt)) {
+            List<AimResponsePoint> points=new List<AimResponsePoint>();
+            foreach(int input in new int[]{1,8,24,40,80,160,400,800}) using(Simulation steady=new Simulation(accels[index],device,dt)) {
                 double[] output=null;
                 for(int i=0;i<result.WarmupReports;i++) output=steady.Step(input,0);
                 double ratio=Math.Sqrt(output[0]*output[0]+output[1]*output[1])/input;
                 if(double.IsNaN(ratio) || double.IsInfinity(ratio)) throw new InvalidOperationException("nonfinite response simulation");
-                if(input==8) result.SmallMotionRatio=ratio;else result.FastMotionRatio=ratio;
+                points.Add(new AimResponsePoint {InputCounts=input,InputCountsPerMs=input/dt,OutputRatio=ratio});
+                if(input==8) result.SmallMotionRatio=ratio;else if(input==800) result.FastMotionRatio=ratio;
             }
+            result.HorizontalSamples=points.ToArray();
             using(Simulation recovery=new Simulation(accels[index],device,dt)) {
                 for(int i=0;i<result.WarmupReports;i++) recovery.Packet(8,0);
                 for(int i=0;i<result.BurstReports;i++) recovery.Packet(800,0);

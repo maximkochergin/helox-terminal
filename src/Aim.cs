@@ -341,14 +341,25 @@ internal static class Aim {
         if(averaged.AfterFlickPeakCounts<40 || averaged.AfterFlickZeroReports<1) throw new Exception("output smoothing transient was not reproduced");
         if(tracking.AfterFlickPeakCounts>2 || tracking.AfterFlickPeakCounts<1 || tracking.AfterFlickZeroReports!=0 || tracking.FastMotionRatio<=1 || tracking.FastMotionRatio>1.401) throw new Exception("tracking recovery response failed");
         if(tracking.AfterFlickX[0]!=0 || tracking.AfterFlickY[0]<1) throw new Exception("tracking one-count turn failed");
+        int pointIndex=0;double previousRatio=0;
+        foreach(int input in new int[]{1,8,24,40,80,160,400,800}) {
+            AimResponsePoint point=averaged.HorizontalSamples[pointIndex++];
+            if(point.InputCounts!=input || point.InputCountsPerMs!=input/8.0 || point.OutputRatio<previousRatio-.000001 || point.OutputRatio<1-.000001 || point.OutputRatio>1.401) throw new Exception("horizontal response sweep failed");
+            if(input<=24 && Math.Abs(point.OutputRatio-1)>.000001) throw new Exception("horizontal sweep missed the precision threshold");
+            if(input==8 && point.OutputRatio!=averaged.SmallMotionRatio || input==800 && point.OutputRatio!=averaged.FastMotionRatio) throw new Exception("horizontal sweep changed legacy response ratios");
+            previousRatio=point.OutputRatio;
+        }
+        if(averaged.HorizontalSamples[4].OutputRatio<=1 || averaged.HorizontalSamples[4].OutputRatio>=1.1) throw new Exception("intermediate response was mistaken for the full gain limit");
         Dictionary<string,object> bypass=Configure(defaults,Defaults(),exampleId,true,true,8);
         Map(Map(Items(bypass["devices"])[0])["config"])["disable"]=true;
         AimResponse disabled=AimResponseTest.Run(bypass,exampleId,8);
         if(disabled.SmallMotionRatio!=1 || disabled.FastMotionRatio!=1 || disabled.AfterFlickPeakCounts!=1 || disabled.AfterFlickZeroReports!=0) throw new Exception("disabled response was not bypassed");
+        foreach(AimResponsePoint point in disabled.HorizontalSamples) if(point.OutputRatio!=1) throw new Exception("disabled sweep was not bypassed");
         Dictionary<string,object> normalized=Configure(defaults,Defaults(),exampleId,false,false);
         Map(Map(Items(normalized["devices"])[0])["config"])["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
         AimResponse scaled=AimResponseTest.Run(normalized,exampleId,8);
         if(Math.Abs(scaled.SmallMotionRatio-.625)>.000001 || Math.Abs(scaled.FastMotionRatio-.625)>.000001) throw new Exception("response missed configured dpi normalization");
+        foreach(AimResponsePoint point in scaled.HorizontalSamples) if(Math.Abs(point.OutputRatio-.625)>.000001) throw new Exception("response sweep missed configured dpi normalization");
         Dictionary<string,object> normalizedToggle=Configure(normalized,defaults,exampleId,false,true,2);
         AimResponse stillScaled=AimResponseTest.Run(normalizedToggle,exampleId,8);
         if(Math.Abs(stillScaled.SmallMotionRatio-.625)>.000001 || Math.Abs(stillScaled.FastMotionRatio-.625)>.000001) throw new Exception("effect toggle changed configured dpi normalization");

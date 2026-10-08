@@ -11,11 +11,9 @@ public sealed class DriverDetails {
     public string Source {get;set;}
     public string Error {get;set;}
     internal static DriverDetails Read(Device device) {
-        DriverDetails result=new DriverDetails {Source="installed windows device registry"};
+        DriverDetails result=new DriverDetails {Source="windows pnp instance and installed device registry"};
         try {
-            string[] parts=device.Path.Split('#');
-            if(parts.Length<3) return result;
-            string instance="HID\\"+parts[1]+"\\"+parts[2];
+            string instance=DeviceStack.Instance(device.Path);
             using(RegistryKey node=Registry.LocalMachine.OpenSubKey("SYSTEM\\CurrentControlSet\\Enum\\"+instance)) {
                 string driver=node==null ? null : node.GetValue("Driver") as string;
                 if(driver==null) {result.Error="driver details not available";return result;}
@@ -25,7 +23,7 @@ public sealed class DriverDetails {
                     result.Version=key.GetValue("DriverVersion") as string;result.Inf=key.GetValue("InfPath") as string;
                 }
             }
-        }catch(Exception) {result.Error="driver registry not readable";}
+        }catch(Exception) {result.Error="driver metadata unavailable";}
         return result;
     }
 }

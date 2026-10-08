@@ -17,6 +17,14 @@ internal static class Native {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] internal static extern SafeFileHandle CreateFile(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("hid.dll")] internal static extern bool HidD_GetProductString(SafeFileHandle file, byte[] buffer, uint length);
     [DllImport("hid.dll")] internal static extern bool HidD_GetManufacturerString(SafeFileHandle file, byte[] buffer, uint length);
+    [StructLayout(LayoutKind.Sequential)] internal struct DevPropertyKey {
+        internal Guid Format;internal uint Id;
+        internal DevPropertyKey(string format,uint id) {Format=new Guid(format);Id=id;}
+    }
+    [DllImport("cfgmgr32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] internal static extern uint CM_Get_Device_Interface_PropertyW(string path,ref DevPropertyKey key,out uint type,[Out] byte[] buffer,ref uint size,uint flags);
+    [DllImport("cfgmgr32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] internal static extern uint CM_Locate_DevNodeW(out uint node,string instance,uint flags);
+    [DllImport("cfgmgr32.dll",ExactSpelling=true)] internal static extern uint CM_Get_DevNode_Status(out uint status,out uint problem,uint node,uint flags);
+    [DllImport("cfgmgr32.dll",CharSet=CharSet.Unicode,ExactSpelling=true)] internal static extern uint CM_Get_DevNode_PropertyW(uint node,ref DevPropertyKey key,out uint type,[Out] byte[] buffer,ref uint size,uint flags);
     [StructLayout(LayoutKind.Sequential)] internal struct DeviceEntry { public IntPtr Handle; public uint Type; }
     [StructLayout(LayoutKind.Sequential)] internal struct RawRegistration { public ushort Page, Usage; public uint Flags; public IntPtr Target; }
     internal static void Check(bool ok) { if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error()); }

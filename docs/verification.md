@@ -47,6 +47,9 @@
 - effect switches preserve per-device and inherited normalization/timing; off cannot activate a bypassed device, and explicit enable retains its other options.
 - status and response match the kernel's exact device ids, including default profile/timing fallback for a differently cased override.
 - repeated aim restore clears saved choices without activating an already matching snapshot or resetting filter state.
+- response samples eight horizontal speeds, retains existing 8/800-count ratios and checks the intermediate natural-curve region, disabled bypass and dpi normalization with the official engine.
+- selected-device stack diagnostics validate native property types, sizes, utf-16 termination, exact service names and bounded retries; unavailable evidence stays unknown.
+- the home screen distinguishes desktop acceleration from the configured aim profile without adding menu items.
 - analysis-only checks leave windows preferences unchanged; missing-driver resume cannot claim success.
 - malformed driver snapshots are rejected before loading the bridge: nonfinite/string numbers, overlong or nul-containing names, duplicate profiles/device ids, missing profile references, invalid clamps/integers and lookup float overflow.
 - driver presence considers its live control endpoint as well as the service registry; inaccessible endpoints fail closed rather than enabling dpi estimation.

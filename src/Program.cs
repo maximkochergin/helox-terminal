@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.10.1";
+    internal const string Version="0.11.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -151,6 +151,9 @@ internal static class Program {
             else {
                 Console.WriteLine("\n  response / current profile / simulation / read only\n  example interval "+F(result.ExampleIntervalMs)+" ms / processed "+F(result.ProcessedIntervalMs)+" ms\n  "+result.IntervalSource);
                 Console.WriteLine("  after "+result.WarmupReports+" reports / 8-count "+result.SmallMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x / 800-count "+result.FastMotionRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x\n  flick -> 1-count turn / peak "+result.AfterFlickPeakCounts+" counts / zero outputs "+result.AfterFlickZeroReports+" of 16");
+                List<string> mid=new List<string>();
+                foreach(AimResponsePoint point in result.HorizontalSamples) if(point.InputCounts==24 || point.InputCounts==80 || point.InputCounts==160) mid.Add(point.InputCounts+": "+point.OutputRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x");
+                Console.WriteLine("  horizontal counts/report / "+String.Join(" / ",mid.ToArray()));
                 if(result.Readback.Enabled!=true) Console.WriteLine("  selected device bypassed / no driver effect");
                 else if(result.Readback.OutputHalfLifeMs>0) Console.WriteLine("  output averaging active / tracking preset disables it");
                 Console.WriteLine("  example motion / not a test inside your game");
@@ -162,6 +165,7 @@ internal static class Program {
         }
         if(words.Length==2 && words[1]=="doctor") {
             Dictionary<string,object> report=Maintenance.Doctor();
+            DeviceStackReport stack=DeviceStack.Read(OptionalSelected());report["SelectedDeviceStack"]=stack;
             if(json) Console.WriteLine(Store.Json.Serialize(report));
             else {
                 Console.WriteLine("\n  driver check / read only");
@@ -169,6 +173,7 @@ internal static class Program {
                     Console.WriteLine("  "+DoctorLabel(key)+" / "+(report[key]==null ? "unknown" : (bool)report[key] ? "yes" : "no"));
                 Console.WriteLine("  signature / "+(report["DriverSignature"] ?? "not available").ToString().ToLowerInvariant()+"\n  protocol / "+(report["KernelVersion"] ?? "not available"));
                 if(report["KernelError"]!=null) Console.WriteLine("  readback / "+report["KernelError"].ToString().ToLowerInvariant());
+                PrintStack(stack);
                 foreach(object error in (object[])report["Errors"]) Console.WriteLine("  "+error.ToString().ToLowerInvariant());
                 Console.WriteLine("  after install or uninstall / restart windows, then check again");
             }return;
@@ -266,6 +271,7 @@ internal static class Program {
         Device d=null;string note=null;try {d=Selected();}catch(Exception e) {note=Error(e);}
         return new {version=Version,receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
             selectionNote=note,windows=Settings.Read(),dossier=MouseDossier.Read(d),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
+            selectedDeviceStack=DeviceStack.Read(d),
             hardwareControl="unsupported: no verified vendor protocol",gameAcceleration=Aim.Read(d),
             lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
     }
@@ -280,10 +286,12 @@ internal static class Program {
     }
     private static void CompactStatus() {
         Header();Device d=null;
-        try {d=Selected();Console.WriteLine("  receiver  "+(d.Product ?? "mouse device").ToLowerInvariant());}
+        try {d=Selected();Console.WriteLine("  receiver  "+(d.Product ?? "mouse device").ToLowerInvariant()+" / dpi ? / hz ?");}
         catch {Console.WriteLine("  receiver  not selected / use more");}
         Settings s=Settings.Read();
-        Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+"\n  hardware  dpi ? / hz ?");
+        Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+" / desktop");
+        AimStatus aim=Aim.Read(d);
+        Console.WriteLine(aim.State=="ready" ? "  aim       "+aim.Mode+" / "+(aim.Enabled==true ? "enabled" : "bypassed")+" / smooth "+(aim.OutputHalfLifeMs>0 ? F(aim.OutputHalfLifeMs.Value)+" ms" : "off") : "  aim       "+aim.State+" / see 8");
         DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
         if(dpi!=null || rate!=null) Console.WriteLine("  last test "+(dpi!=null ? "~"+F(dpi.EstimatedDpi)+" dpi" : "")+(dpi!=null && rate!=null ? " / " : "")+(rate!=null ? "~"+F(rate.ActiveHz)+" hz" : "")+" / history");
     }
@@ -306,11 +314,24 @@ internal static class Program {
         }
         Settings settings=Settings.Read();
         PrintAim(Aim.Read(device));
+        PrintStack(DeviceStack.Read(device));
         Console.WriteLine("\n  windows / live\n  wheel           "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms\n  buttons         "+(settings.SwapButtons==0 ? "normal" : "swapped"));
         DpiResult lastDpi=Last<DpiResult>("dpi.json",device);RateResult lastRate=Last<RateResult>("rate.json",device);
         if(lastDpi!=null) Console.WriteLine("\n  dpi history / "+lastDpi.MeasuredUtc+" / "+lastDpi.Trials+" pass(es)"+(lastDpi.SpreadPercent.HasValue ? " / spread "+F(lastDpi.SpreadPercent.Value)+"%" : ""));
         if(lastRate!=null) Console.WriteLine("  hz history / "+lastRate.MeasuredUtc+" / "+lastRate.Reports+" reports / "+lastRate.Quality);
         Console.WriteLine("\n  unavailable / sensor dpi, configured hz, battery, link power\n  dpi check / uses mouse body length; estimate, not readback");
+    }
+    private static string Known(bool? value) {return value.HasValue ? (value.Value ? "yes" : "no") : "unknown";}
+    private static void PrintStack(DeviceStackReport stack) {
+        if(stack==null) {Console.WriteLine("  mouse stack / choose a connected mouse to check");return;}
+        Console.WriteLine("  mouse stack / raw accel listed "+Known(stack.RawAccelPresent)+" / started "+Known(stack.Started));
+        if(stack.Services!=null && stack.Services.Length>0) {
+            List<string> names=new List<string>();
+            foreach(string service in stack.Services) names.Add(service.StartsWith(@"\Driver\",StringComparison.OrdinalIgnoreCase) ? service.Substring(8) : service);
+            Console.WriteLine("  "+String.Join(" > ",names.ToArray()).ToLowerInvariant());
+        }
+        if(stack.ProblemCode>0) Console.WriteLine("  pnp problem / "+stack.ProblemCode);
+        if(stack.Error!=null) Console.WriteLine("  stack / "+stack.Error);
     }
     private static void StartPass(string prompt) {
         Console.WriteLine("  "+prompt+" / enter starts / esc cancels");

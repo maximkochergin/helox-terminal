@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Runtime.InteropServices;
 
 namespace Helox {
 internal static class SelfTest {
@@ -8,6 +10,7 @@ internal static class SelfTest {
     internal static void Run(bool native=true) {
         ConfigGuardRegression();
         AimRegression();
+        DeviceStackRegression();
         UndoRegression();
         SnapshotRegression();
         MaintenanceRegression();
@@ -373,6 +376,11 @@ internal static class SelfTest {
         Expect(AimResponseTest.Time(timing,8)==500,"response honors the driver's constant interval when configured");
         timing.Remove("Use constant time interval based on polling rate");
         Expect(AimResponseTest.Time(timing,8)==100,"missing optional constant-time flag uses automatic timing");
+        Dictionary<string,object> tiny=Aim.Parse(Store.Json.Serialize(defaults));
+        Aim.Map(tiny["defaultDeviceConfig"])["minimumTime"]=double.Epsilon;Aim.Map(tiny["defaultDeviceConfig"])["maximumTime"]=double.Epsilon;
+        bool tinyRejected=false;
+        try {AimResponseTest.Run(tiny,"HID\\FIRST",8);}catch(InvalidOperationException e) {tinyRejected=e.Message=="response interval too small for finite speed examples";}
+        Expect(tinyRejected,"response rejects unrepresentable sample speeds before native conversion");
         AimCarry carry=new AimCarry();int sx=0,sy=0;
         for(int i=0;i<12;i++) {int[] packet=carry.Emit(.25,-.5);sx+=packet[0];sy+=packet[1];}
         Expect(sx==3 && sy==-6 && carry.X==0 && carry.Y==0,"response fractional carry retains small counts on both axes");
@@ -466,6 +474,47 @@ internal static class SelfTest {
         try {Aim.Commit(before,after,delegate(Dictionary<string,object> cfg) {writes++;return cfg;},delegate {saves++;throw new IOException("disk full");});}
         catch(IOException e) {caught=e.Message.Contains("previous driver settings restored") && e.Message.Contains("disk full");}
         Expect(caught && writes==2 && saves==1,"aim persistence failure rolls back once without saving again");
+    }
+    private static void DeviceStackRegression() {
+        Expect(Marshal.SizeOf(typeof(Native.DevPropertyKey))==20,"pnp property key matches the native abi");
+        byte[] instance=Encoding.Unicode.GetBytes("ROOT\\MOUSE\\0001\0");
+        Expect(DeviceStack.Decode(0x12,instance,instance.Length,false)[0]=="ROOT\\MOUSE\\0001","pnp ids retain their actual enumerator instead of assuming hid");
+        byte[] stack=Encoding.Unicode.GetBytes("\\Driver\\mouclass\0\\Driver\\rawaccel\0\\Driver\\mouhid\0\0");
+        string[] decoded=DeviceStack.Decode(0x2012,stack,stack.Length,true);
+        Expect(decoded.Length==3 && DeviceStack.IncludesRawAccel(decoded)==true,"pnp driver-object names identify the raw accel stack entry");
+        Expect(DeviceStack.IncludesRawAccel(new string[]{"RAWACCEL"})==true,"plain service names are accepted too");
+        Expect(DeviceStack.IncludesRawAccel(new string[]{"rawaccel2","\\Other\\rawaccel"})==false,"similarly named services do not prove filter presence");
+        Expect(DeviceStack.IncludesRawAccel(null)==null && DeviceStack.IncludesRawAccel(new string[0])==null,"missing or empty stack evidence remains unknown");
+        foreach(Action invalid in new Action[]{
+            delegate {DeviceStack.Decode(0x12,stack,stack.Length,true);},
+            delegate {DeviceStack.Decode(0x2012,stack,stack.Length-2,true);},
+            delegate {DeviceStack.Decode(0x2012,stack,3,true);},
+            delegate {DeviceStack.Decode(0x2012,stack,stack.Length+2,true);},
+            delegate {DeviceStack.Decode(0x12,Encoding.Unicode.GetBytes("a\0b\0"),8,false);},
+            delegate {DeviceStack.Decode(0x12,new byte[]{0,0},2,false);},
+            delegate {DeviceStack.Decode(0x2012,Encoding.Unicode.GetBytes("a\0\0b\0\0"),12,true);}
+        }) {
+            bool blocked=false;try {invalid();}catch(IOException) {blocked=true;}
+            Expect(blocked,"malformed pnp properties cannot produce filter evidence");
+        }
+        int calls=0;
+        string[] retry=DeviceStack.Property(delegate(out uint type,byte[] data,ref uint size) {
+            calls++;type=0x2012;size=(uint)stack.Length;
+            if(data==null || calls==2) return 26;
+            Array.Copy(stack,data,stack.Length);return 0;
+        },true);
+        Expect(calls==4 && DeviceStack.IncludesRawAccel(retry)==true,"pnp buffer growth retries instead of reporting a missing driver");
+        foreach(uint sizeValue in new uint[]{0,3,65538}) {
+            bool blocked=false;
+            try {DeviceStack.Property(delegate(out uint type,byte[] data,ref uint size) {type=0x2012;size=sizeValue;return 26;},true);}catch(IOException) {blocked=true;}
+            Expect(blocked,"invalid pnp sizes are rejected before allocation");
+        }
+        bool denied=false;
+        try {DeviceStack.Property(delegate(out uint type,byte[] data,ref uint size) {type=0;size=0;return 5;},true);}catch(IOException) {denied=true;}
+        Expect(denied,"pnp access errors cannot be interpreted as filter absence");
+        calls=0;denied=false;
+        try {DeviceStack.Property(delegate(out uint type,byte[] data,ref uint size) {calls++;type=0x2012;size=(uint)stack.Length;return 26;},true);}catch(IOException) {denied=true;}
+        Expect(denied && calls==6,"continuously changing pnp properties have a bounded retry");
     }
 }
 }

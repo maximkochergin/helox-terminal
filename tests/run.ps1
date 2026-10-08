@@ -16,7 +16,12 @@ $status = & $executable status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $null -eq $status.windows.Speed) { throw 'status contract failed' }
 if ($null -ne $status.hardwareDpi -or $null -ne $status.hardwarePollingHz) { throw 'unsupported hardware values must remain null' }
 $doctor=& $executable aim doctor --json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $null -eq $doctor.BackendPrepared -or !$doctor.PSObject.Properties['KernelReadable']) { throw 'driver doctor contract failed' }
+if ($LASTEXITCODE -ne 0 -or $null -eq $doctor.BackendPrepared -or !$doctor.PSObject.Properties['KernelReadable'] -or !$doctor.PSObject.Properties['SelectedDeviceStack']) { throw 'driver doctor contract failed' }
+if ($null -ne $doctor.SelectedDeviceStack) {
+    if (!$doctor.SelectedDeviceStack.Source) { throw 'device stack source missing' }
+    if ($doctor.SelectedDeviceStack.Error -and $null -ne $doctor.SelectedDeviceStack.RawAccelPresent) { throw 'unreadable pnp stack must remain unknown' }
+    if (!$doctor.SelectedDeviceStack.Error -and (!$doctor.SelectedDeviceStack.InstanceId -or !$doctor.SelectedDeviceStack.Services)) { throw 'device stack evidence missing' }
+}
 $afterDoctor=& $executable status --json | ConvertFrom-Json
 if (($afterDoctor.windows | ConvertTo-Json -Compress) -ne ($status.windows | ConvertTo-Json -Compress) -or ($afterDoctor.gameAcceleration | ConvertTo-Json -Compress) -ne ($status.gameAcceleration | ConvertTo-Json -Compress)) { throw 'doctor changed settings' }
 $cancel="6`n5`n0`n6`n6`n0`n8`n10`n0`n0" | & $executable
@@ -45,6 +50,7 @@ if ($LASTEXITCODE -ne 1) { throw 'negative wheel must require the page keyword' 
 $menu = "0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($menu -join "`n") -notmatch '1  acceleration') { throw 'numeric menu failed' }
 if (@($menu).Count -gt 18) { throw 'home screen too long' }
+if (($menu -join "`n") -notmatch '/ desktop' -or ($menu -join "`n") -notmatch 'aim       ') { throw 'home must distinguish desktop settings from aim driver settings' }
 $navigation = "1`n0`n6`n3`nhome`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($navigation -join "`n") -notmatch 'game acceleration\?') { throw 'menu navigation failed' }
 $invalidInput = "2`nwrong`n0" | & $executable
@@ -76,8 +82,15 @@ if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validati
 if ($aimStatus.State -eq 'ready') {
     $response = & $executable aim response --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
+    $expectedCounts=@(1,8,24,40,80,160,400,800)
+    if ($response.HorizontalSamples.Count -ne $expectedCounts.Count) { throw 'response speed sweep missing' }
+    for ($pointIndex=0;$pointIndex -lt $expectedCounts.Count;$pointIndex++) {
+        $point=$response.HorizontalSamples[$pointIndex]
+        if ($point.InputCounts -ne $expectedCounts[$pointIndex] -or [Math]::Abs($point.InputCountsPerMs-$point.InputCounts/$response.ProcessedIntervalMs) -gt .000001 -or [double]::IsNaN($point.OutputRatio) -or [double]::IsInfinity($point.OutputRatio)) { throw 'response speed sweep invalid' }
+    }
+    if ($response.HorizontalSamples[1].OutputRatio -ne $response.SmallMotionRatio -or $response.HorizontalSamples[7].OutputRatio -ne $response.FastMotionRatio) { throw 'response sweep changed legacy ratio contract' }
     $responseMenu = "8`n14`n0" | & $executable
-    if ($LASTEXITCODE -ne 0 -or ($responseMenu -join "`n") -notmatch 'current profile / simulation / read only') { throw 'response menu failed' }
+    if ($LASTEXITCODE -ne 0 -or ($responseMenu -join "`n") -notmatch 'current profile / simulation / read only' -or ($responseMenu -join "`n") -notmatch 'horizontal counts/report') { throw 'response menu failed' }
 } else {
     $response = & $executable aim response --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$response.error -or $response.applied) { throw 'response requires an inspectable active profile' }
