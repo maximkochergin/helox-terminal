@@ -1,5 +1,13 @@
 # aim tools / research notes
 
+## LUT correction recovery and game recipes / 0.14.0
+
+the [released lookup](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/accel-lookup.hpp) returns zero sensitivity at nonpositive speed. the [input linear EMA](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) includes a trend term that can clamp estimated speed to zero after a flick despite a nonzero current correction. official-engine testing reproduced three zero outputs among sixteen vertical one-count corrections after eight horizontal 800-count inputs at 8 ms, using a valorant example LUT with the old 4/2 ms filters. disabling input-speed EMA eliminates those three zero outputs in that test. output averaging is independent and can still distort recovery when explicitly enabled.
+
+LUT profiles now use input half-life zero and scale half-life zero unless stability is enabled, then 4..6 ms. scale-only averaging measurably reduces the alternating gain spread without changing direction or generating motion at rest. natural curves retain their existing 4/2 ms baseline and 8..12/half-size stability combination. existing live LUT settings are flagged rather than silently changed; an explicit edit, resume or game recipe rebuilds them. the signed kernel binary remains unchanged.
+
+[game recipes](game-presets.md) distinguish source 2, valorant's documented UE5 migration/always-on raw input buffer and kovaak's sensitivity/fov conventions. engine names do not establish optimal acceleration numbers; the curves are helox starting points. in-game settings remain manual. `aim verify` adds actual temporary activations and complete delayed kernel readbacks with durable recovery, separately from synthetic response calculations and unmeasured game behavior.
+
 ## personal curve builder / 0.12.0
 
 reviewed 2026-10-08 against the pinned [lookup](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/accel-lookup.hpp) and [modifier](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) implementations. the constructor generates a native sensitivity table with independent base, start/end, fast/base plateau and transition shape. official-engine testing exposed extrapolation beyond the last point during development; a constant tail now enforces the steady plateau. tests include start zero, a narrow high-speed transition, shape extremes, a constant curve and far-above-end speeds. the signed driver binary is unchanged.

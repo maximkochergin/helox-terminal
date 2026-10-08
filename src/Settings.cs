@@ -157,7 +157,7 @@ internal static class Store {
         string path=Profile(name);
         Locked(delegate {Settings current=Settings.Read();current.Validate();Save(path,current);});
     }
-    private static void Locked(Action work) {
+    internal static void Locked(Action work) {
         // One user's cli instances must not interleave backup, write and rollback.
         string name="Local\\helox-settings-"+WindowsIdentity.GetCurrent().User.Value;
         using(Mutex gate=new Mutex(false,name)) {

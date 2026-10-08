@@ -1,5 +1,16 @@
 # verification
 
+## live driver and game recipes / 0.14.0
+
+- the native LUT flick reproducer emits three zero reports with legacy input-speed EMA and none after the fix; all five recipes are checked at 1/8/16 ms intervals for finite bounded output and correction direction.
+- native scale-only LUT stability reduces alternating gain spread from 0.157x to 0.123x / 0.114x / 0.106x at selected strengths 8 / 10 / 12 ms. direction and rest checks pass. legacy and modern settings retain strength through explicit migration and component switches.
+- complete recipes clear previous snapping, directional bias and output averaging, define software normalization/timing and preserve default/peer configurations. paired trainer and target controls are identical.
+- transaction checks inject windows, driver, file and rollback failures. recovery attempts every component and retains original and recovery errors. exact file bytes, previous absence and unchanged read-only files are covered.
+- CLI tests cover all five definitions/previews, the new numeric menu/cancellation, malformed commands and finite direction-sample interval bounds.
+- `tests/live.ps1` is a separate local test requiring a started signed backend and closed games. it performs 13 real driver write/readback cases with restoration, applies/repeats/undoes all five recipes, and forces a real preference write failure after activation to verify combined recovery. a pending verification snapshot blocks new aim/recipe writes and supports verified restoration. it is not a CI test and does not inject input.
+
+kernel readback, raw-input registration and native model response are separate evidence. actual hand transformation, game camera behavior, aim-score improvement and vanguard approval are not proven by these tests.
+
 ## personal curves / 0.12.0
 
 - native tests compare lookup interpolation and capped high-speed output against the generated float table, including curve parameter extremes.
@@ -92,4 +103,4 @@ these are calculation and regression checks. no new filter is activated on the u
 
 physical movement and distance calibration are not covered by the automated tests.
 
-a historical sustained-motion result exists for this receiver, but it does not establish its configured polling rate. physical dpi accuracy and the new driver's effect on this mouse remain manual checks. see [aim verification](aim.md).
+a historical sustained-motion result exists for this receiver, but it does not establish its configured polling rate. physical dpi accuracy, actual transformed hand movement and in-game camera response remain manual checks. see [aim verification](aim.md).

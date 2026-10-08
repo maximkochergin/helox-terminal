@@ -15,7 +15,7 @@ extract the release zip, open `launch.bat`, choose a number.
   3  test hz / gaps   4  check dpi
   5  profiles         6  more
   7  mouse status     8  aim tools
-  0  exit
+  9  game presets     0  exit
 ```
 
 built for the trust gxt 929 helox. windows 10/11, .net framework 4.x.
@@ -30,6 +30,8 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 **save** — named profiles, a `current -> saved` preview, undo for the last windows change and an original-settings backup.
 
 **aim** — optional raw accel integration. build a personal curve and preview its response before applying. independent stability, smoothing, snapping, direction scales and micro damping; one selected-mouse bypass. [curves](docs/curves.md) / [filters](docs/filters.md) / [setup](docs/manual.md#aim-tools).
+
+**game presets** — complete input recipes for valorant, cs2 and matched kovaak's training. preview, apply and undo windows + driver settings together. sensitivity and fov steps stay explicit. [recipes](docs/game-presets.md).
 
 **maintain** — check installation, live readback and the selected mouse's driver stack. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
 
@@ -49,6 +51,9 @@ launch.bat profile show training
 launch.bat undo
 launch.bat aim resume
 launch.bat aim response
+launch.bat preset show valorant
+launch.bat preset preview cs2
+launch.bat aim verify
 launch.bat aim curve
 launch.bat aim events
 launch.bat check
@@ -68,7 +73,7 @@ powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
 the launcher builds if the executable is missing. rebuild after source changes.
-the full tests temporarily change windows preferences and restore them; `check` does not apply settings.
+the full tests temporarily change windows preferences and restore them; `check` does not apply settings. `tests\live.ps1` separately exercises real driver writes, all five recipe apply/undo paths and persistence-failure recovery with games closed.
 
 </details>
 

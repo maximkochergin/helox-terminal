@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.13.0
+  helox / 0.14.0
   ----------------------------------------
   receiver  gxt 929 helox / dpi ? / hz ?
   windows   speed 10/20 / accel on / desktop
@@ -17,14 +17,14 @@ download the zip from [releases](https://github.com/maximkochergin/helox-termina
   3  test hz / gaps   4  check dpi
   5  profiles         6  more
   7  mouse status     8  aim tools
-  0  exit
+  9  game presets     0  exit
 ```
 
 type a number and press enter. empty answers, `0` or `back` cancel a prompt. result screens return to the menu with enter or escape. launching alone never changes settings.
 
 `6` > `1` lists mice starting at `1`; `0` goes back. the advanced `devices` / `select <index>` commands use zero-based indices. saving or applying settings keeps the confirmation visible until enter or escape. aim tools remain accessible without a selected mouse for installation and undo; enabling effects still requires a connected selection.
 
-`1` controls windows acceleration; raw input games bypass it. `8` offers game-wide acceleration and smoothing through the official signed raw accel driver. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
+`1` controls windows acceleration; raw input games bypass it. `8` offers acceleration and smoothing through the official signed raw accel driver. `9` applies [complete game recipes](game-presets.md) for valorant, cs2 and matched kovaak's practice, with combined undo and explicit manual sensitivity/fov steps. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
 
 ## aim tools
 
@@ -35,10 +35,12 @@ open `8` > `5 install driver`, approve windows uac, close the official installer
 
 response also shows intermediate horizontal examples at 24/80/160 counts per report. json exports `HorizontalSamples` for 1/8/24/40/80/160/400/800 counts, including input counts per processed millisecond and the final floating-point output ratio after 120 repeated reports. every speed starts with fresh simulation state. a 1.4x limit does not mean every motion is multiplied by 1.4: the natural curve stays at 1x below its offset and approaches the limit gradually. physical dpi and in-game sensitivity are not inferred from these examples.
 - `1 precision on`: choose steady (1.2x), balanced (1.4x), or flick (1.6x). the natural gain curve stays at 1x at settled slow speeds and progressively approaches the selected fast-motion limit. input offset 3 counts/ms, decay 0.05, baseline input/sensitivity half-lives 4/2 ms. advanced command: `aim precision on <1.1..1.8>`; comma and dot decimals work. `aim precision on` reuses the remembered limit, or 1.4x for older presets. dpi is unknown, so no assumed dpi normalization is applied; your physical dpi and game sensitivity determine the useful transition speeds.
-- `11 stability on`: steadier acceleration coefficient, using input-speed and sensitivity ema filters rather than output smoothing. precision must already be on. input half-life uses the last valid median delivery interval for this mouse, clamped to 8..12 ms and rounded to 0.5 ms steps; sensitivity half-life is half that value. rounding avoids retuning for tiny timestamp differences. history older than 24 hours, over five minutes in the future, missing or invalid uses 8/4 ms. this is a helox heuristic, not a manufacturer recommendation or polling override. `12 stability off` restores baseline 4/2 ms without changing your gain limit or `smooth` strength. advanced command: `aim stability on|off`.
+- `11 stability on`: steadier acceleration coefficient. precision must already be on. the chosen strength uses recent same-device delivery history, clamped to 8..12 ms and rounded to 0.5 ms; sensitivity half-life is half that value. natural mode also uses the full value for input-speed half-life. LUT curves keep input-speed averaging off to prevent post-flick correction suppression. missing, stale (>24 h), future (>5 min) or invalid history uses strength 8 ms. `12` restores natural 4/2 ms or LUT 0/0 ms without changing output smoothing. these are helox heuristics, not hardware polling overrides. command: `aim stability on|off`.
 - `3 smooth on`: choose light (2 ms), balanced (4 ms), or strong (8 ms). these are output magnitude smoothing half-lives; higher values trade more smoothing for more delay. direction is preserved. half-life is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision or forgetting the strength. advanced command: `aim smooth on 1..12` (integer milliseconds); `aim smooth on` reuses the remembered strength, or 4 ms for older presets. resume also restores the strength.
 
-stability filters the amount of acceleration and delays its response to speed changes, including a return to slow motion after a flick. it preserves current movement direction and does not generate motion at rest. `smooth` separately averages output magnitude and adds movement delay. a sudden small correction after fast movement can inherit a larger magnitude from that average, followed by very small or zero outputs; reduced alternating spread alone does not establish good recovery. neither filter can recover wireless gaps. gain limit, stability and output strength survive precision off/on and resume. precision off bypasses both acceleration filters; a remembered stability choice takes effect when precision is enabled again. `aim status` reads the actual gain limit and all three half-lives from the driver; json adds `InputHalfLifeMs`, `ScaleHalfLifeMs`, and `StabilityEnabled`. the stability label reflects the enabled natural curve with the 8..12 ms input / half-size scale pair, including matching settings applied outside helox.
+stability filters the amount of acceleration and delays its response to speed changes, including a return to slow motion after a flick. it preserves current movement direction and does not generate motion at rest. `smooth` separately averages output magnitude and adds movement delay. a sudden small correction after fast movement can inherit a larger magnitude from that average, followed by very small or zero outputs; reduced alternating spread alone does not establish good recovery. neither filter can recover wireless gaps. gain limit, stability and output strength survive precision off/on and resume. precision off bypasses acceleration filters while remembering stability. `aim status` reads all three half-lives; `StabilityEnabled` recognizes natural/legacy 8..12 ms input with half-size scale, or modern LUT input 0 with scale 4..6 ms. `LookupInputSmoothingRisk` flags the older LUT input-speed filter. an explicit curve edit, resume or game recipe rebuilds it with input half-life zero.
+
+- `21 live verify`: temporary actual kernel writes and delayed readback for all filters and game recipes, then full restoration. close games first. interrupted runs retain a snapshot for `aim verify restore`. [scope and recovery](game-presets.md#live-verification).
 
 valorant has used raw input since launch according to [riot's 3.07 notes](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-3-07/); the raw input buffer toggle was removed and made always enabled in [11.06](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-11-06/). there is no toggle to enable as a helox fix. compare tracking against your previous profile in the practice range with the same dpi button stage and game sensitivity. this tool does not edit game configuration or certify whether a particular match consumed the transformed stream.
 
@@ -132,6 +134,11 @@ aim curve natural
 aim snap on [0..5]
 aim snap off
 aim response
+aim verify
+aim verify restore
+preset list
+preset show|preview|apply <name>
+preset undo
 aim tracking
 aim doctor
 aim uninstall
@@ -177,7 +184,7 @@ powershell.exe -noprofile -executionpolicy bypass -file .\build.ps1
 powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
-tests temporarily change native settings and always restore them. regressions cover acceleration preservation, queued input timing, calibration timeout, three-pass dpi analysis, descriptor/device scoping, menu navigation, profile validation and input recovery. physical mouse-body/ruler measurements still need manual verification.
+the full suite temporarily changes windows preferences and restores them. regressions cover acceleration preservation, queued input timing, calibration timeout, three-pass dpi analysis, descriptor/device scoping, menu navigation, profile validation and input recovery. `tests\live.ps1` separately performs real reversible driver writes, game recipe apply/undo and persistence-failure recovery; close games before running it. [evidence and limits](verification.md). physical mouse-body/ruler measurements still need manual verification.
 
 source builds compile into a temporary directory and replace the executable only after successful compilation. compiler errors keep the previous executable. if replacement is blocked by a file lock, close helox and retry; the previous executable remains intact.
 

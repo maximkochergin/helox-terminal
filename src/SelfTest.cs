@@ -12,6 +12,7 @@ internal static class SelfTest {
         AimRegression();
         CurveRegression();
         FilterRegression();
+        GameRegression();
         DeviceStackRegression();
         UndoRegression();
         SnapshotRegression();
@@ -374,6 +375,59 @@ internal static class SelfTest {
             Dictionary<string,object> invalid=preset.ToMap();invalid["damping"]=bad;blocked=false;try {Aim.ReadPreset(invalid);}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid saved damping rejected");
         }
         AimPreset legacy=Aim.ReadPreset(new Dictionary<string,object>{{"precision",true},{"smooth",false}});Expect(legacy.Directions.Neutral && !legacy.Damping.Enabled && legacy.SnapStrength==1,"legacy presets keep new filters off");
+    }
+    private static void GameRegression() {
+        Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));
+        Settings original=new Settings {Speed=15,Acceleration=2,Threshold1=7,Threshold2=13,WheelLines=4,DoubleClickMs=450,SwapButtons=1};
+        Settings windows=GamePresets.Windows(original);
+        Expect(windows.Speed==10 && windows.Acceleration==0 && windows.WheelLines==4 && windows.DoubleClickMs==450 && windows.SwapButtons==1 && original.Speed==15,"game policy changes only desktop speed and acceleration");
+        Dictionary<string,object> decorated=Aim.Configure(defaults,defaults,"HID\\GAME",true,true,8,1.6,true,10,true,new AimCurve(),5,new AimDirections {Left=.25,Up=.25},new AimDamping {Enabled=true});
+        Dictionary<string,object> oldConfig=Aim.Map(Aim.DeviceEntry(decorated,"HID\\GAME")["config"]);oldConfig["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;oldConfig["Polling rate Hz (keep at 0 for automatic adjustment)"]=250;oldConfig["Use constant time interval based on polling rate"]=true;
+        Dictionary<string,object> peer=Aim.Configure(decorated,defaults,"HID\\PEER",true,true,4);
+        foreach(GameRecipe recipe in GamePresets.List()) {
+            Dictionary<string,object> cfg=GamePresets.Configure(peer,defaults,"HID\\GAME",recipe);AimConfigGuard.Check(cfg);AimStatus state=Aim.Describe(cfg,"HID\\GAME");
+            Expect(state.Mode=="lut" && state.Enabled==true && state.SnapDegrees==0 && state.OutputHalfLifeMs==0 && state.Directions.Neutral && state.CurveSpeedUnit=="counts/ms","complete game recipe clears old snap, output smoothing and directional bias");
+            Dictionary<string,object> dev=Aim.Map(Aim.DeviceEntry(cfg,"HID\\GAME")["config"]);
+            Expect((int)dev["Polling rate Hz (keep at 0 for automatic adjustment)"]==0 && !(bool)dev["Use constant time interval based on polling rate"],"game recipe resets software timing overrides without hardware writes");
+            Expect(Aim.SameValue(cfg["defaultDeviceConfig"],peer["defaultDeviceConfig"]) && Aim.SameValue(Aim.DeviceEntry(cfg,"HID\\PEER"),Aim.DeviceEntry(peer,"HID\\PEER")),"game recipe preserves defaults and peer mice");
+            Aim.DescribeDamping(state,recipe.Controls());Expect(state.DampingEnabled==recipe.MicroDamping,"game recipe damping readback matches composed native table");
+            Expect(Aim.SameValue(recipe.Controls().ToMap(),Aim.ReadPreset(Aim.Parse(Store.Json.Serialize(recipe.Controls().ToMap()))).ToMap()),"complete game controls roundtrip for resume");
+        }
+        Expect(Aim.SameValue(GamePresets.Get("valorant").Controls().ToMap(),GamePresets.Get("kovaaks-valorant").Controls().ToMap()) && Aim.SameValue(GamePresets.Get("cs2").Controls().ToMap(),GamePresets.Get("kovaaks-cs2").Controls().ToMap()),"matched training recipes keep exactly the target game's processing");
+        AimPreset trackingRecipe=GamePresets.Get("kovaaks-tracking").Controls();
+        Dictionary<string,object> modern=GamePresets.Configure(defaults,defaults,"HID\\GAME",GamePresets.Get("kovaaks-tracking"));
+        AimPreset retained=Aim.Resolve(Aim.Describe(modern,"HID\\GAME"),trackingRecipe.ToMap(),"smooth",false);
+        Expect(retained.Stability && retained.StabilityMs==8,"LUT scale-only stability survives unrelated switches");
+        Dictionary<string,object> legacy=Aim.Parse(Store.Json.Serialize(modern));
+        Dictionary<string,object> speed=Aim.Map(Aim.Map(Aim.Items(legacy["profiles"])[1])["Input speed calculation parameters"]);
+        speed["Time in ms after which an input is weighted at half its original value."]=10.0;speed["Time in ms after which scale is weighted at half its original value."]=5.0;
+        AimPreset migrated=Aim.Resolve(Aim.Describe(legacy,"HID\\GAME"),trackingRecipe.ToMap(),"smooth",false);
+        AimStatus migration=Aim.Describe(Aim.ConfigurePreset(legacy,defaults,"HID\\GAME",migrated,true),"HID\\GAME");
+        Expect(migrated.StabilityMs==10 && migration.InputHalfLifeMs==0 && migration.ScaleHalfLifeMs==5 && migration.LookupInputSmoothingRisk==false,"legacy LUT stability migrates to safe scale-only settings on explicit edits");
+        bool rejected=false;try {GamePresets.Get("unknown");}catch(ArgumentException) {rejected=true;}Expect(rejected,"unknown game cannot select fallback settings");
+        Dictionary<string,object> before=Aim.Parse("{\"v\":1}"),after=Aim.Parse("{\"v\":2}");
+        foreach(string failAt in new string[]{"windows","driver","files","rollback"}) {
+            Settings liveWindows=original;Dictionary<string,object> liveAim=before;int windowsCalls=0,driverCalls=0;bool restored=false;string error=null;
+            try {GamePresets.CommitPair(original,before,windows,after,delegate(Settings value) {
+                windowsCalls++;if(failAt=="windows" && windowsCalls==1) throw new IOException("windows refused");liveWindows=value;
+            },delegate(Dictionary<string,object> value) {
+                driverCalls++;liveAim=value;if(driverCalls==1 && (failAt=="driver" || failAt=="rollback")) throw new IOException("driver refused");if(driverCalls==2 && failAt=="rollback") throw new IOException("driver recovery refused");return value;
+            },delegate(Dictionary<string,object> value) {if(failAt=="files") throw new IOException("disk full");},delegate {restored=true;});}catch(IOException e) {error=e.Message;}
+            Expect(error!=null && original.Same(liveWindows) && Aim.SameValue(before,liveAim) && restored,"combined failure restores both components and files independently");
+            if(failAt=="rollback") Expect(error.Contains("driver refused") && error.Contains("driver recovery refused") && windowsCalls==2,"failed driver rollback retains both errors without skipping windows recovery");
+        }
+        int writes=0,saves=0;GamePresets.CommitPair(original,before,original,before,delegate(Settings s){writes++;},delegate(Dictionary<string,object> c){writes++;return c;},delegate(Dictionary<string,object> c){saves++;},delegate {});
+        Expect(writes==0 && saves==1,"identical complete preset avoids all native writes");
+        string directory=Path.Combine(Path.GetTempPath(),"helox-game-files-"+Guid.NewGuid().ToString("n"));Directory.CreateDirectory(directory);string present=Path.Combine(directory,"present.json"),missing=Path.Combine(directory,"missing.json");
+        try {
+            byte[] bytes={0xef,0xbb,0xbf,0x7b,0x7d};File.WriteAllBytes(present,bytes);SavedFiles files=new SavedFiles(new string[]{present,missing});
+            File.WriteAllText(present,"changed");File.WriteAllText(missing,"new");files.Restore();Expect(Convert.ToBase64String(File.ReadAllBytes(present))==Convert.ToBase64String(bytes) && !File.Exists(missing),"file recovery retains exact bytes and previous absence");
+            File.SetAttributes(present,FileAttributes.ReadOnly);files.Restore();Expect(File.Exists(present),"unchanged readonly recovery file is not rewritten");File.SetAttributes(present,FileAttributes.Normal);
+        }finally {if(File.Exists(present)) {File.SetAttributes(present,FileAttributes.Normal);File.Delete(present);}if(File.Exists(missing)) File.Delete(missing);Directory.Delete(directory);}
+        Dictionary<string,object> tooShort=Aim.Parse(Store.Json.Serialize(defaults));Aim.Map(tooShort["defaultDeviceConfig"])["minimumTime"]=5e-306;Aim.Map(tooShort["defaultDeviceConfig"])["maximumTime"]=5e-306;
+        Expect(!double.IsInfinity(800/5e-306) && double.IsInfinity(1001/5e-306),"direction overflow reproducer escapes the old 800-count guard");
+        rejected=false;try {AimResponseTest.Run(tooShort,"HID\\GAME",8);}catch(InvalidOperationException e) {rejected=e.Message=="response interval too small for finite speed examples";}Expect(rejected,"direction example rejects overflow before native calculation");
+        Expect(LiveVerify.Cases(defaults,defaults,"HID\\GAME").Count==13,"live verification includes every new filter and built-in game recipe");
     }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");

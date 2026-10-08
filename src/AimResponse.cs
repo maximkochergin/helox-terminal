@@ -85,7 +85,8 @@ internal static class AimResponseTest {
         List<object> profiles=Aim.Items(cfg["profiles"]);int index=profiles.FindIndex(delegate(object p){return (string)Aim.Map(p)["name"]==status.Profile;});
         if(index<0) throw new InvalidOperationException("response profile not found");
         double dt=Time(device,exampleMs);
-        if(double.IsInfinity(800/dt)) throw new InvalidOperationException("response interval too small for finite speed examples");
+        // The near-axis direction example is larger than the old 800-count sweep.
+        if(double.IsInfinity(1001/dt)) throw new InvalidOperationException("response interval too small for finite speed examples");
         AimResponse result=new AimResponse {Readback=status,ExampleIntervalMs=exampleMs,ProcessedIntervalMs=dt,WarmupReports=120,BurstReports=8,
             AfterFlickX=new int[16],AfterFlickY=new int[16],Source="official calculation engine + integer carry model / example motion, not game or latency measurement"};
         object valid=Aim.Validate(cfg);IList accels=(IList)valid.GetType().GetField("accels").GetValue(valid);
@@ -105,7 +106,9 @@ internal static class AimResponseTest {
             for(int n=0;n<names.Length;n++) using(Simulation steady=new Simulation(accels[index],device,dt)) {
                 int x=inputs[n,0],y=inputs[n,1];double[] output=null;
                 for(int i=0;i<result.WarmupReports;i++) output=steady.Step(x,y);
-                directions.Add(new AimDirectionPoint {Name=names[n],InputX=x,InputY=y,OutputX=output[0],OutputY=output[1],OutputRatio=Math.Sqrt(output[0]*output[0]+output[1]*output[1])/Math.Sqrt((double)x*x+(double)y*y)});
+                double ratio=Math.Sqrt(output[0]*output[0]+output[1]*output[1])/Math.Sqrt((double)x*x+(double)y*y);
+                if(double.IsNaN(ratio) || double.IsInfinity(ratio)) throw new InvalidOperationException("nonfinite direction response simulation");
+                directions.Add(new AimDirectionPoint {Name=names[n],InputX=x,InputY=y,OutputX=output[0],OutputY=output[1],OutputRatio=ratio});
             }
             result.DirectionSamples=directions.ToArray();
             using(Simulation recovery=new Simulation(accels[index],device,dt)) {

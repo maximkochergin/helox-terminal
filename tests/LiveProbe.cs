@@ -1,0 +1,81 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Web.Script.Serialization;
+using Helox;
+
+internal static class LiveProbe {
+    private static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
+    private static readonly Assembly App=typeof(Settings).Assembly;
+    private static readonly Type Aim=App.GetType("Helox.Aim",true),Files=App.GetType("Helox.SavedFiles",true);
+    private const BindingFlags Static=BindingFlags.NonPublic|BindingFlags.Static,Instance=BindingFlags.NonPublic|BindingFlags.Instance;
+    private static object Call(Type type,string name,params object[] args) {
+        try {return type.GetMethod(name,Static).Invoke(null,args);}catch(TargetInvocationException e) {throw e.InnerException;}
+    }
+    private static bool Same(object a,object b) {return (bool)Call(Aim,"SameValue",a,b);}
+    private static Dictionary<string,object> Map(object value) {return (Dictionary<string,object>)value;}
+    private static void Expect(bool result,string message) {if(!result) throw new IOException(message);}
+    private static Dictionary<string,object> Command(string args,bool failure=false) {
+        ProcessStartInfo info=new ProcessStartInfo(App.Location,args+" --json") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+        using(Process p=Process.Start(info)) {
+            string output=p.StandardOutput.ReadToEnd(),error=p.StandardError.ReadToEnd();p.WaitForExit();
+            Dictionary<string,object> result=Json.Deserialize<Dictionary<string,object>>(output);
+            Expect(p.ExitCode==(failure ? 1 : 0),args+" failed / "+output+error);return result;
+        }
+    }
+    [STAThread] private static int Main() {
+        try {Run();return 0;}catch(Exception e) {Console.Error.WriteLine(e.Message);return 1;}
+    }
+    private static void Run() {
+        Call(App.GetType("Helox.LiveVerify",true),"RequireClosedGames");
+        string root=(string)App.GetType("Helox.Store",true).GetField("Root",Static).GetValue(null);
+        Expect(!File.Exists(Path.Combine(root,"verify-recovery.json")),"restore unfinished live verification first");
+        string[] paths={"aim-presets.json","game-undo.json","undo.json","original.json","aim-before.json","verify-recovery.json"};
+        for(int i=0;i<paths.Length;i++) paths[i]=Path.Combine(root,paths[i]);
+        object files=Files.GetConstructor(Instance,null,new Type[]{typeof(string[])},null).Invoke(new object[]{paths});
+        object before=Call(Aim,"Active");Settings windows=Settings.Read();Exception failure=null;
+        Dictionary<string,object> summary=null;
+        try {
+            Console.WriteLine("live / temporary kernel cases + restoration");
+            Dictionary<string,object> proof=Command("aim verify");System.Collections.IList steps=(System.Collections.IList)proof["Steps"];
+            Expect(steps.Count==13 && (bool)proof["OriginalDriverStateRestored"] && (bool)proof["RawInputSinkRegistered"] && proof["RawInputError"]==null && proof["GameInputVerified"]==null,"real kernel verification failed");
+            foreach(object step in steps) Expect((bool)Map(step)["KernelReadbackMatched"],"kernel readback mismatch");
+            int undos=0;
+            foreach(string name in new string[]{"valorant","cs2","kovaaks-valorant","kovaaks-cs2","kovaaks-tracking"}) {
+                Console.WriteLine("live / apply, repeat and undo "+name);
+                Dictionary<string,object> applied=Command("preset apply "+name),read=Map(Map(applied["Response"])["Readback"]);
+                Expect((bool)applied["Applied"] && !(bool)applied["GameSettingsApplied"] && (string)read["Mode"]=="lut" && Convert.ToDouble(read["InputHalfLifeMs"])==0 && (int)Map(applied["Windows"])["Acceleration"]==0,"live preset apply failed");
+                string undoPath=Path.Combine(root,"game-undo.json"),undoBytes=Convert.ToBase64String(File.ReadAllBytes(undoPath));
+                Dictionary<string,object> repeat=Command("preset apply "+name);
+                Expect((bool)repeat["Applied"] && undoBytes==Convert.ToBase64String(File.ReadAllBytes(undoPath)),"identical reapply replaced useful undo");
+                Expect((bool)Command("preset undo")["restored"],"live preset undo failed");
+                Expect(Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"combined undo changed original native state");undos++;
+            }
+            Console.WriteLine("live / forced preference write failure + independent rollback");
+            string prefs=Path.Combine(root,"aim-presets.json");if(!File.Exists(prefs)) File.WriteAllText(prefs,"{}");FileAttributes attrs=File.GetAttributes(prefs);
+            try {
+                File.SetAttributes(prefs,attrs|FileAttributes.ReadOnly);
+                Dictionary<string,object> failed=Command("preset apply valorant",true);
+                Expect(((string)failed["error"]).Contains("previous settings and saved files restored"),"persistence failure did not report verified recovery");
+            }finally {File.SetAttributes(prefs,attrs);}
+            Expect(Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"failed persistence changed native state");
+            Console.WriteLine("live / interrupted verification guard + snapshot restoration");
+            string recoveryPath=Path.Combine(root,"verify-recovery.json");File.WriteAllText(recoveryPath,Json.Serialize(before));
+            Expect(((string)Command("aim precision on",true)["error"]).Contains("unfinished live verification"),"unfinished verification allowed an aim write");
+            Expect(((string)Command("preset apply valorant",true)["error"]).Contains("unfinished live verification"),"unfinished verification allowed a recipe write");
+            Expect(Same(before,Call(Aim,"Active")),"recovery guard changed the driver");
+            Expect(((string)Command("aim status")["Note"]).Contains("unfinished verification"),"recovery status missing");
+            Expect((bool)Command("aim verify restore")["restored"] && !File.Exists(recoveryPath) && Same(before,Call(Aim,"Active")),"snapshot restoration failed");
+            summary=new Dictionary<string,object>{{"DriverCases",steps.Count},{"PresetsAppliedAndUndone",undos},{"IdempotentReapply",true},{"PersistenceFailureRecovered",true},{"RecoveryGuardAndRestore",true},{"RawReports",proof["CapturedMotionReports"]},{"GameInputVerified",null}};
+        }catch(Exception e) {failure=e;}
+        // Attempt independent native recovery. Preserve recovery evidence if the driver cannot be restored.
+        List<string> recovery=new List<string>();bool driverRestored=false;
+        try {if(!Same(before,Call(Aim,"Active"))) Call(Aim,"Write",before);driverRestored=Same(before,Call(Aim,"Active"));Expect(driverRestored,"native restore mismatch");}catch(Exception e) {recovery.Add("driver: "+e.Message);}
+        try {if(!windows.Same(Settings.Read())) windows.Apply();}catch(Exception e) {recovery.Add("windows: "+e.Message);}
+        if(driverRestored) try {Files.GetMethod("Restore",Instance).Invoke(files,new object[0]);}catch(Exception e) {recovery.Add("files: "+e.Message);}
+        if(failure!=null || recovery.Count>0) throw new IOException((failure==null ? "live verification recovery failed" : failure.Message)+(recovery.Count==0 ? "" : "; "+String.Join(" / ",recovery.ToArray())));
+        Console.WriteLine(Json.Serialize(summary));
+    }
+}

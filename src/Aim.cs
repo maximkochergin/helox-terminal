@@ -29,6 +29,7 @@ public sealed class AimStatus {
     public bool? DampingEnabled {get;set;}
     public double? DampingLowScale {get;set;}
     public double? DampingRecoverySpeed {get;set;}
+    public bool? LookupInputSmoothingRisk {get;set;}
 }
 internal sealed class AimPreset {
     internal bool Precision,Smooth,Stability;
@@ -152,6 +153,7 @@ internal static class Aim {
             if(status.GainLimit>=1.1 && status.GainLimit<=1.8) preset.GainLimit=status.GainLimit.Value;
             preset.Stability=status.InputHalfLifeMs>=8 && status.InputHalfLifeMs<=12 && status.ScaleHalfLifeMs==status.InputHalfLifeMs/2;
             if(preset.Stability) preset.StabilityMs=status.InputHalfLifeMs.Value;
+            else if(status.Mode=="lut" && status.InputHalfLifeMs==0 && status.ScaleHalfLifeMs>=4 && status.ScaleHalfLifeMs<=6) {preset.Stability=true;preset.StabilityMs=status.ScaleHalfLifeMs.Value*2;}
         }
         if(feature=="precision") preset.Precision=on;
         else if(feature=="smooth") preset.Smooth=on;
@@ -200,7 +202,7 @@ internal static class Aim {
     internal static Dictionary<string,object> Parse(string text) {return Map(Store.Json.DeserializeObject(text));}
     private static string Text(object cfg) {return (string)Call(cfg,"DriverConfig","ToJSON");}
     internal static Dictionary<string,object> Defaults() {return Parse(Text(Call(null,"DriverConfig","GetDefault")));}
-    private static Dictionary<string,object> Active() {
+    internal static Dictionary<string,object> Active() {
         Call(null,"VersionHelper","ValidOrThrow");
         return Parse(Text(Call(null,"DriverConfig","GetActive")));
     }
@@ -211,7 +213,8 @@ internal static class Aim {
         if(error!=null) throw new ArgumentException("invalid aim settings / "+error);
         return result.GetType().GetProperty("Item1").GetValue(result,null);
     }
-    private static string Id(Device device) {
+    internal static Dictionary<string,object> Canonical(Dictionary<string,object> cfg) {return Parse(Text(Validate(cfg)));}
+    internal static string Id(Device device) {
         if(device==null) throw new InvalidOperationException("choose a connected mouse first");
         IEnumerable list=(IEnumerable)Call(null,"MultiHandleDevice","GetList");
         foreach(object item in list) {
@@ -236,6 +239,7 @@ internal static class Aim {
         try {
             AimStatus status=Describe(Active(),Id(device));
             DescribeSavedControls(status);
+            if(File.Exists(LiveVerify.RecoveryPath)) status.Note+=" / unfinished verification: aim verify restore";
             return status;
         }catch(Exception e) {return new AimStatus {State="unavailable",InputTransformed=installed ? (bool?)null : false,Note=e.Message.ToLowerInvariant()+" / install or restart if pending"};}
     }
@@ -276,6 +280,7 @@ internal static class Aim {
             Dictionary<string,object> config=entry==null ? Map(cfg["defaultDeviceConfig"]) : Map(entry["config"]);
             return new AimStatus {State="ready",DeviceId=id,Profile=name,Enabled=!(bool)config["disable"],Mode=(string)Map(profile[X])["mode"],
                 Directions=AimDirections.Read(profile),DampingEnabled=(string)Map(profile[X])["mode"]=="lut" ? (bool?)null : false,
+                LookupInputSmoothingRisk=(string)Map(profile[X])["mode"]=="lut" && Convert.ToDouble(Map(profile[Speed])[Input])>0,
                 LookupLayoutCompatible=(bool)Map(profile[Speed])["Whole/combined accel (set false for 'by component' mode)"] && Convert.ToDouble(Map(profile[Speed])["lpNorm"])==2 &&
                     Convert.ToDouble(Map(profile["Stretches domain for horizontal vs vertical inputs"])["x"])==1 && Convert.ToDouble(Map(profile["Stretches domain for horizontal vs vertical inputs"])["y"])==1 &&
                     Convert.ToDouble(Map(profile["Stretches accel range for horizontal vs vertical inputs"])["x"])==1 && Convert.ToDouble(Map(profile["Stretches accel range for horizontal vs vertical inputs"])["y"])==1 && Convert.ToDouble(profile["Degrees of rotation"])==0 && Convert.ToDouble(profile["Input Speed Cap"])==0,
@@ -284,7 +289,9 @@ internal static class Aim {
                 CurveSpeedUnit=Convert.ToDouble(config["DPI (normalizes input speed unit: counts/ms -> in/s)"])>0 ? "in/s" : "counts/ms",
                 OutputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Output]),GainLimit=(string)Map(profile[X])["mode"]=="lut" ? null : (double?)Convert.ToDouble(Map(profile[X])["limit"]),
                 InputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Input]),ScaleHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Scale]),
-                StabilityEnabled=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]=="natural" || (string)Map(profile[X])["mode"]=="lut") && Convert.ToDouble(Map(profile[Speed])[Input])>=8 && Convert.ToDouble(Map(profile[Speed])[Input])<=12 && Convert.ToDouble(Map(profile[Speed])[Scale])==Convert.ToDouble(Map(profile[Speed])[Input])/2,
+                StabilityEnabled=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]=="natural" || (string)Map(profile[X])["mode"]=="lut") &&
+                    ((Convert.ToDouble(Map(profile[Speed])[Input])>=8 && Convert.ToDouble(Map(profile[Speed])[Input])<=12 && Convert.ToDouble(Map(profile[Speed])[Scale])==Convert.ToDouble(Map(profile[Speed])[Input])/2) ||
+                    ((string)Map(profile[X])["mode"]=="lut" && Convert.ToDouble(Map(profile[Speed])[Input])==0 && Convert.ToDouble(Map(profile[Speed])[Scale])>=4 && Convert.ToDouble(Map(profile[Speed])[Scale])<=6)),
                 InputTransformed=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]!="noaccel" || (string)Map(profile["Vertical accel parameters"])["mode"]!="noaccel" || Convert.ToDouble(Map(profile[Speed])[Output])>0 ||
                     Convert.ToDouble(profile["Output DPI"])!=1000 || Convert.ToDouble(config["DPI (normalizes input speed unit: counts/ms -> in/s)"])!=0 ||
                     Convert.ToDouble(profile["Y/X output DPI ratio (vertical sens multiplier)"])!=1 || Convert.ToDouble(profile["L/R output DPI ratio (left sens multiplier)"])!=1 || Convert.ToDouble(profile["U/D output DPI ratio (up sens multiplier)"])!=1 ||
@@ -306,7 +313,11 @@ internal static class Aim {
         if(precision && (curve!=null || damping.Active)) {accel["mode"]="lut";accel["Gain / Velocity"]=false;accel["inputOffset"]=0.0;accel["data"]=AimLookup.Table(curve,gainLimit,damping);}
         profile["Degrees of angle snapping"]=snap;
         directions.Apply(profile);
-        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? (stability ? stabilityMs : 4.0) : 0.0;speed[Scale]=precision ? (stability ? stabilityMs/2 : 2.0) : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
+        // LUT returns zero at speed <= 0. The native input trend smoother can
+        // clamp a nonzero correction to zero after a flick. Smooth scale only
+        // for LUT stability, so an estimated speed cannot swallow that motion.
+        bool lookup=(string)accel["mode"]=="lut";
+        Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision && !lookup ? (stability ? stabilityMs : 4.0) : 0.0;speed[Scale]=precision ? (stability ? stabilityMs/2 : lookup ? 0.0 : 2.0) : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
         int index=profiles.FindIndex(delegate(object p){return (string)Map(p)["name"]==name;});
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
         cfg["profiles"]=profiles.ToArray();
@@ -332,7 +343,7 @@ internal static class Aim {
         if(a is IConvertible && b is IConvertible && !(a is string) && !(b is string) && !(a is bool) && !(b is bool)) return Convert.ToDouble(a)==Convert.ToDouble(b);
         return Object.Equals(a,b);
     }
-    private static Dictionary<string,object> Write(Dictionary<string,object> cfg) {
+    internal static Dictionary<string,object> Write(Dictionary<string,object> cfg) {
         object valid=Validate(cfg);Call(valid,"DriverConfig","Activate");
         // Driver deliberately delays updates by one second. Never verify against the queued write.
         Thread.Sleep(1200);
@@ -348,6 +359,14 @@ internal static class Aim {
             throw new IOException("aim apply failed; previous driver settings restored: "+error.Message);
         }
     }
+    internal static T Locked<T>(Func<T> work) {
+        using(Mutex gate=new Mutex(false,"Local\\helox-aim-settings")) {
+            bool held=false;try {
+                try {held=gate.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
+                if(!held) throw new InvalidOperationException("aim settings busy / retry");return work();
+            }finally {if(held) gate.ReleaseMutex();}
+        }
+    }
     internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null,double? gainLimit=null,AimCurve curve=null,double? snap=null,AimDirections directions=null,AimDamping damping=null,string expectedUnit=null) {
         CheckChange(feature,on,smoothMs,gainLimit);
         if(curve!=null) curve.Check();if(snap.HasValue) CheckSnap(snap.Value);
@@ -356,6 +375,7 @@ internal static class Aim {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
+                LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();string id=Id(device);AimStatus status=Describe(before,id);
                 CheckUnit(status,expectedUnit);
                 string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
@@ -391,6 +411,7 @@ internal static class Aim {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
+                LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();string id=Id(device);
                 Dictionary<string,object> after=ConfigureBypass(before,id,bypass);Validate(after);
                 AimStatus result=Describe(Commit(before,after,Write,delegate {}),id);DescribeSavedControls(result);return result;
@@ -416,7 +437,7 @@ internal static class Aim {
         return result;
     }
     internal static void CheckUnit(AimStatus status,string expected) {if(expected!=null && expected!=status.CurveSpeedUnit) throw new InvalidOperationException("curve speed unit changed / reopen curve builder");}
-    private static void DescribeDamping(AimStatus status,AimPreset preset) {
+    internal static void DescribeDamping(AimStatus status,AimPreset preset) {
         if(status.Mode=="lut" && status.LookupIsSensitivity==true && status.LookupLayoutCompatible==true && (preset.SpeedUnit==null || preset.SpeedUnit==status.CurveSpeedUnit) && AimLookup.Matches(preset,status.LookupData)) {
             status.DampingEnabled=status.Enabled==true && preset.Precision && preset.Damping.Active;
             status.DampingLowScale=preset.Damping.LowScale;status.DampingRecoverySpeed=preset.Damping.RecoverySpeed;
@@ -443,6 +464,7 @@ internal static class Aim {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
                 if(!held) throw new InvalidOperationException("aim settings busy / retry");
+                LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();
                 Dictionary<string,object> after=Parse(File.ReadAllText(path));Validate(after);
                 Commit(before,after,Write,delegate {Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());});
@@ -454,6 +476,7 @@ internal static class Aim {
         Dictionary<string,object> defaults=Defaults();
         TestPersonalCurve(defaults);
         TestFilters(defaults);
+        TestLutRecovery(defaults);
         foreach(Device device in Device.List()) if(device.TrustCandidate) {
             if(Id(device).IndexOf("VID_145F&PID_0326",StringComparison.OrdinalIgnoreCase)<0) throw new Exception("aim hardware id mapping failed");
         }
@@ -675,6 +698,41 @@ internal static class Aim {
             if(emitted<31 || emitted>33) throw new Exception("micro fractional counts were lost instead of accumulated");
         });
         Console.WriteLine("  passed / native directional attenuation, micro LUT, natural approximation <0.001x at samples, combined filters and bypass / no driver writes");
+    }
+    private static void TestLutRecovery(Dictionary<string,object> defaults) {
+        const string id="HID\\RECOVERY";
+        Dictionary<string,object> fixedCurve=GamePresets.Configure(defaults,defaults,id,GamePresets.Get("valorant"));
+        Dictionary<string,object> legacy=Parse(Store.Json.Serialize(fixedCurve));Dictionary<string,object> speed=Map(Map(Items(legacy["profiles"])[1])[Speed]);speed[Input]=4.0;speed[Scale]=2.0;
+        AimResponse old=AimResponseTest.Run(legacy,id,8),current=AimResponseTest.Run(fixedCurve,id,8);
+        if(old.AfterFlickZeroReports<1 || current.AfterFlickZeroReports!=0 || current.AfterFlickPeakCounts!=1) throw new Exception("LUT flick recovery regression failed");
+        foreach(GameRecipe recipe in GamePresets.List()) foreach(double interval in new double[]{1,8,16}) {
+            AimResponse response=AimResponseTest.Run(GamePresets.Configure(defaults,defaults,id,recipe),id,interval);
+            if(response.Readback.LookupInputSmoothingRisk!=false || response.Readback.OutputHalfLifeMs!=0 || response.FastMotionRatio>recipe.Curve.Limit+1e-6 || response.FastMotionRatio<=1) throw new Exception("game recipe response bounds failed");
+            if(!recipe.MicroDamping && (response.AfterFlickPeakCounts>2 || response.AfterFlickZeroReports!=0)) throw new Exception("undamped game recipe swallowed a micro correction");
+            foreach(int output in response.AfterFlickY) if(output<0) throw new Exception("game recipe reversed correction direction");
+        }
+        double unfilteredSpread=0;
+        foreach(double halfLife in new double[]{0,8,10,12}) {
+            Dictionary<string,object> cfg=Configure(defaults,defaults,id,true,false,2,1.4,halfLife>0,halfLife>0 ? halfLife : 8,true,new AimCurve());
+            WithEngine(cfg,delegate(object engine) {
+                double slow=0,fast=0;
+                for(int i=0;i<120;i++) {
+                    slow=Axis(Call(engine,"ManagedAccel","Accelerate",40,0,1.0,8.0))/40;
+                    fast=Axis(Call(engine,"ManagedAccel","Accelerate",120,0,1.0,8.0))/120;
+                }
+                double spread=Math.Abs(fast-slow);
+                if(slow<1 || fast<1 || slow>1.401 || fast>1.401 || spread<=0) throw new Exception("LUT scale stability gain bounds failed");
+                if(halfLife==0) unfilteredSpread=spread;
+                else if(spread>=unfilteredSpread) throw new Exception("LUT scale stability has no measured effect");
+                object turn=Call(engine,"ManagedAccel","Accelerate",-80,40,1.0,8.0);
+                double x=Axis(turn),y=Convert.ToDouble(turn.GetType().GetProperty("Item2").GetValue(turn,null));
+                if(x>=0 || y<=0 || Math.Abs(x/y+2)>.001) throw new Exception("LUT scale stability changed direction");
+                object rest=Call(engine,"ManagedAccel","Accelerate",0,0,1.0,8.0);
+                if(Axis(rest)!=0 || Convert.ToDouble(rest.GetType().GetProperty("Item2").GetValue(rest,null))!=0) throw new Exception("LUT scale stability generated motion at rest");
+                Console.WriteLine("  LUT stability "+(halfLife==0 ? "off" : halfLife.ToString(CultureInfo.InvariantCulture)+" ms")+" / alternating ratio spread "+spread.ToString("0.000",CultureInfo.InvariantCulture)+"x / native engine");
+            });
+        }
+        Console.WriteLine("  passed / native LUT flick recovery: legacy "+old.AfterFlickZeroReports+" zero outputs -> fixed "+current.AfterFlickZeroReports+" / game recipes at 1, 8, 16 ms / no driver writes");
     }
 }
 }
