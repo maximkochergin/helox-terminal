@@ -83,13 +83,19 @@ $badAim = & $executable aim smooth maybe --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validation failed' }
 if ($aimStatus.State -eq 'ready') {
     $curvePreview = & $executable aim curve preview 0.8 2 24 1.8 1.5 --json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $curvePreview.applied -or $curvePreview.response.Readback.Mode -ne 'lut' -or $curvePreview.response.HorizontalSamples.Count -ne 8 -or $curvePreview.curve.base -ne 0.8) { throw 'personal curve preview failed' }
+    if ($LASTEXITCODE -ne 0 -or $curvePreview.applied -or $curvePreview.response.Readback.Mode -ne 'lut' -or $curvePreview.response.Readback.Note -ne 'proposed profile / not activated' -or $curvePreview.response.HorizontalSamples.Count -ne 8 -or $curvePreview.curve.base -ne 0.8) { throw 'personal curve preview failed' }
+    $directionPreview = & $executable aim directions preview 0.8 1 0.9 0.9 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $directionPreview.applied -or $directionPreview.response.DirectionSamples.Count -ne 6 -or [Math]::Abs($directionPreview.response.Readback.Directions.Left - 0.8) -gt 1e-12) { throw 'direction preview contract failed' }
+    if ($aimStatus.Mode -eq 'natural' -or $aimStatus.Mode -eq 'lut') {
+        $microPreview = & $executable aim damp preview 0.85 1 --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $microPreview.applied -or !$microPreview.response.Readback.DampingEnabled -or $microPreview.response.Readback.Mode -ne 'lut' -or $microPreview.response.Readback.DampingLowScale -ne 0.85) { throw 'micro preview contract failed' }
+    }
     $afterPreview = & $executable aim status --json | ConvertFrom-Json
     if (($afterPreview | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'curve preview changed the driver' }
     $builderCancel = "8`n15`n2`n0`n6`n0`n0" | & $executable
     if ($LASTEXITCODE -ne 0 -or ($builderCancel -join "`n") -notmatch 'curve preview / official engine / nothing applied' -or ($builderCancel -join "`n") -match 'curve applied') { throw 'builder zero-start preview/cancel failed' }
     $response = & $executable aim response --json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
+    if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.DirectionSamples.Count -ne 6 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
     $expectedCounts=@(1,8,24,40,80,160,400,800)
     if ($response.HorizontalSamples.Count -ne $expectedCounts.Count) { throw 'response speed sweep missing' }
     for ($pointIndex=0;$pointIndex -lt $expectedCounts.Count;$pointIndex++) {
@@ -119,6 +125,15 @@ if (($aimMenu -join "`n") -notmatch '11  stability on' -or ($aimMenu -join "`n")
 if (($aimMenu -join "`n") -notmatch '15  curve builder' -or ($aimMenu -join "`n") -notmatch '16  angle snapping') { throw 'curve and snap menus missing' }
 $snapCancel = "8`n16`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($snapCancel -join "`n") -notmatch 'optional, not riot certified' -or ($snapCancel -join "`n") -match 'applied /') { throw 'snap cancellation failed' }
+if (($aimMenu -join "`n") -notmatch '18  direction scales' -or ($aimMenu -join "`n") -notmatch '19  micro damping' -or ($aimMenu -join "`n") -notmatch '20  bypass all') { throw 'filter menus missing' }
+foreach ($selection in @(18,19,20)) {
+    $filterCancel = "8`n$selection`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($filterCancel -join "`n") -match 'applied /') { throw 'filter menu cancellation failed' }
+}
+foreach ($arguments in @(@('aim','directions','apply','0','1','1','1'),@('aim','directions','preview','1','1','1','NaN'),@('aim','directions','apply','2','1','1','1'),@('aim','directions','off','1'),@('aim','directions','preview','1','1','1'),@('aim','damp','on','0','1'),@('aim','damp','on','0.8','0'),@('aim','damp','on','0.8','21'),@('aim','damp','on','NaN','1'),@('aim','damp','off','0.8','1'),@('aim','damp','preview'),@('aim','damp','on','0.8'),@('aim','bypass','maybe'),@('aim','bypass','on','extra'))) {
+    $invalidFilter = & $executable @arguments --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalidFilter.error -or $invalidFilter.applied) { throw 'invalid filter arguments accepted' }
+}
 foreach ($arguments in @(@('aim','curve','preview','0','3','30','1.4','1'),@('aim','curve','apply','1','30','3','1.4','1'),@('aim','curve','apply','1','3','30','4','1'),@('aim','curve','preview','1','3','30','1.4','0'),@('aim','curve','apply','1','3','30','1.4'),@('aim','curve'),@('aim','snap','on','6'),@('aim','snap','on','-1'),@('aim','snap','off','1'),@('aim','snap','on','NaN'))) {
     $invalid = & $executable @arguments --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalid.error -or $invalid.applied) { throw 'invalid curve/snap arguments accepted' }

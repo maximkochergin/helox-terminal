@@ -14,6 +14,8 @@ at approximately 8 ms intervals, the official-engine examples give 1.000x for 24
 
 helox configures the verified, signed official raw accel driver and keeps its delayed update mechanism. its [authors report valorant compatibility](https://github.com/RawAccelOfficial/rawaccel/blob/master/doc/FAQ.md), while explicitly declining an absolute anti-cheat guarantee. the terminal does not access game memory, inject code, automate aiming or alter vanguard/security settings. applying a profile does not require keeping the terminal open.
 
+optional snapping, direction scales and micro damping use the same unchanged signed driver, not a new kernel component. they change input differently from acceleration alone and are not riot-certified configurations. [filter interactions and selected-mouse bypass](filters.md) document the controls; default operation leaves the new filters off. standalone engine and configuration checks cannot establish that vanguard accepts every configuration or that a tournament permits it.
+
 [riot's third-party policy](https://support.riotgames.com/en-us/riot/events/third-party-applications) restricts unfair advantages and gameplay automation. a signature or successful local check is not riot approval. if vanguard reports an [incompatible component](https://support.riotgames.com/en-us/riot/performance/error-van-incompatible-software), retain the exact named file/error and follow riot support guidance; helox does not hide or bypass that block.
 
 ## manual comparison

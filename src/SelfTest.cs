@@ -11,6 +11,7 @@ internal static class SelfTest {
         ConfigGuardRegression();
         AimRegression();
         CurveRegression();
+        FilterRegression();
         DeviceStackRegression();
         UndoRegression();
         SnapshotRegression();
@@ -305,12 +306,74 @@ internal static class SelfTest {
         Expect(!ShutdownDiagnostics.IsAim("DeviceDriver.exe","ntdll.dll") && ShutdownDiagnostics.IsAim("HELOX.EXE","ntdll.dll"),"shutdown diagnostics do not confuse unrelated device software with helox");
         DateTime now=DateTime.UtcNow;List<DateTime> times=new List<DateTime>{now};
         Expect(ShutdownDiagnostics.Near(now.AddSeconds(120),times) && !ShutdownDiagnostics.Near(now.AddSeconds(121),times),"shutdown proximity is bounded");
+        Expect(ShutdownDiagnostics.Proximity(now.AddSeconds(121),times,false)==null && ShutdownDiagnostics.Proximity(now,times,false)==true && ShutdownDiagnostics.Proximity(now.AddSeconds(121),times,true)==false,"incomplete shutdown journal leaves unmatched timing unknown");
         Program.RequireCurveContext("mouse","counts/ms",new Device {Path="MOUSE"},new AimStatus {State="ready",CurveSpeedUnit="counts/ms"});
         foreach(bool otherMouse in new bool[]{true,false}) {
             bool blocked=false;try {Program.RequireCurveContext("mouse","counts/ms",new Device {Path=otherMouse ? "other" : "mouse"},new AimStatus {State="ready",CurveSpeedUnit=otherMouse ? "counts/ms" : "in/s"});}catch(InvalidOperationException) {blocked=true;}
             Expect(blocked,"builder refuses changed mouse identity or curve units");
         }
         AimConfigGuard.Check(Aim.ConfigurePreset(defaults,defaults,"HID\\TINY",new AimPreset {Precision=true,Curve=new AimCurve {Start=double.Epsilon}},true));
+    }
+    private static void FilterRegression() {
+        Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));
+        AimDirections weights=new AimDirections {Left=.3,Right=.7,Up=.4,Down=.9};
+        AimPreset preset=new AimPreset {Precision=true,Curve=new AimCurve(),SnapDegrees=2,SnapStrength=2,SpeedUnit="counts/ms",Directions=weights,Damping=new AimDamping {Enabled=true,LowScale=.75,RecoverySpeed=1}};
+        Dictionary<string,object> cfg=Aim.ConfigurePreset(defaults,defaults,"HID\\FILTER",preset,true);AimConfigGuard.Check(cfg);AimStatus status=Aim.Describe(cfg,"HID\\FILTER");
+        AimPreset restored=Aim.ReadPreset(Aim.Parse(Store.Json.Serialize(preset.ToMap())));
+        Expect(Aim.SameValue(weights.ToMap(),restored.Directions.ToMap()) && restored.Damping.Enabled && restored.SpeedUnit=="counts/ms","filters and units roundtrip");
+        Expect(AimLookup.Matches(restored,status.LookupData),"combined table has ownership match");
+        foreach(double recover in new double[]{.1,1,20}) foreach(AimCurve curve in new AimCurve[]{null,new AimCurve(),new AimCurve {Start=0,End=.1,Base=.25,Limit=3,Shape=.5},new AimCurve {Start=1000,End=1000.1,Base=2,Limit=3,Shape=3}}) {
+            AimDamping damping=new AimDamping {Enabled=true,LowScale=.25,RecoverySpeed=recover};object[] table=AimLookup.Table(curve,1.4,damping);float previous=-1;
+            Expect(table.Length<=514 && table.Length%2==0,"combined filters fit native ABI");
+            for(int i=0;i<table.Length;i+=2) {float speed=(float)Convert.ToDouble(table[i]);double scale=Convert.ToDouble(table[i+1]);Expect(speed>previous && scale>0 && scale<=6,"combined table strictly sorted, finite and positive");previous=speed;}
+            Expect(Convert.ToDouble(table[table.Length-1])==Convert.ToDouble(table[table.Length-3]),"combined tail cannot extrapolate additional gain");
+            Expect(damping.Scale(0)==.25 && damping.Scale(recover)==1,"micro damping fully recovers without a hard deadzone");
+        }
+        foreach(double gain in new double[]{1.1,1.4,1.8}) foreach(double recover in new double[]{.1,1,20}) {
+            AimDamping damping=new AimDamping {Enabled=true,LowScale=.25,RecoverySpeed=recover};object[] sampled=AimLookup.Table(null,gain,damping);
+            for(int i=0;i<=1024;i++) {double velocity=.00001*Math.Pow(1e10,i/1024.0);Expect(Math.Abs(AimLookup.Interpolate(sampled,velocity)-AimLookup.Natural(velocity,gain)*damping.Scale(velocity))<.001,"natural micro sampling error stays below 0.001x on a logarithmic sweep");}
+        }
+        foreach(string feature in new string[]{"smooth","stability","tracking","snap","precision"}) {
+            AimPreset next=Aim.Resolve(status,preset.ToMap(),feature,feature=="tracking");
+            Expect(next.Damping.Enabled && Aim.SameValue(weights.ToMap(),next.Directions.ToMap()),"component toggles retain independent filters");AimConfigGuard.Check(Aim.ConfigurePreset(cfg,defaults,"HID\\FILTER",next));
+        }
+        AimPreset snapOff=Aim.Resolve(status,preset.ToMap(),"snap",false);AimStatus snapOffStatus=Aim.Describe(Aim.ConfigurePreset(cfg,defaults,"HID\\FILTER",snapOff),"HID\\FILTER");
+        Expect(Aim.Resolve(snapOffStatus,snapOff.ToMap(),"snap",true).SnapDegrees==2,"snap on restores the chosen angle after off");
+        Expect(Aim.Resolve(status,preset.ToMap(),"snap",true).SnapDegrees==2,"snap on without argument retains active angle");
+        AimPreset precisionOff=Aim.Resolve(status,preset.ToMap(),"precision",false);AimStatus off=Aim.Describe(Aim.ConfigurePreset(cfg,defaults,"HID\\FILTER",precisionOff),"HID\\FILTER");
+        Expect(off.Mode=="noaccel" && Aim.Resolve(off,precisionOff.ToMap(),"precision",true).Damping.Enabled,"precision off/on retains micro settings");
+        bool blocked=false;try {Aim.Resolve(off,precisionOff.ToMap(),"damp",true);}catch(InvalidOperationException) {blocked=true;}Expect(blocked,"damping cannot claim an effect with precision off");
+        off.CurveSpeedUnit="in/s";blocked=false;try {Aim.Resolve(off,precisionOff.ToMap(),"precision",true);}catch(InvalidOperationException) {blocked=true;}Expect(blocked,"remembered curves reject changed units even after precision off");
+        AimPreset independent=Aim.Resolve(off,precisionOff.ToMap(),"damp",false);Expect(independent.SpeedUnit=="counts/ms","disabling dormant micro does not reinterpret remembered curve units");
+        AimPreset independentDirections=Aim.Resolve(off,precisionOff.ToMap(),"directions",false);Expect(independentDirections.SpeedUnit=="counts/ms" && independentDirections.Directions.Neutral,"independent directions off does not require dormant curve units to match");
+        AimPreset rebuilt=Aim.Resolve(off,preset.ToMap(),"curve",true,null,null,8,new AimCurve());Expect(!rebuilt.Damping.Enabled && rebuilt.SpeedUnit=="in/s","explicit new-unit curve rebuild resets incompatible micro thresholds off");
+        blocked=false;try {Aim.Resolve(off,preset.ToMap(),"resume",false);}catch(InvalidOperationException) {blocked=true;}Expect(blocked,"resume cannot reinterpret stored speeds after normalization change");
+        Dictionary<string,object> peer=Aim.Configure(cfg,defaults,"HID\\PEER",true,true);
+        Dictionary<string,object> bypass=Aim.ConfigureBypass(peer,"HID\\FILTER",true);
+        Expect(Aim.SameValue(peer["profiles"],bypass["profiles"]) && Aim.SameValue(peer["defaultDeviceConfig"],bypass["defaultDeviceConfig"]) && Aim.SameValue(Aim.Items(peer["devices"])[1],Aim.Items(bypass["devices"])[1]),"bypass changes only selected device disable flag");
+        Expect(Aim.SameValue(peer,Aim.ConfigureBypass(bypass,"HID\\FILTER",false)),"bypass roundtrip preserves the full original configuration");
+        AimConfigGuard.Check(Aim.ConfigureBypass(defaults,"HID\\NEW",true));
+        Dictionary<string,object> alias=Aim.Configure(defaults,defaults,"hid\\filter",true,true);
+        Aim.Map(Aim.Map(Aim.Items(alias["devices"])[0])["config"])["DPI (normalizes input speed unit: counts/ms -> in/s)"]=1600;
+        Dictionary<string,object> canonical=Aim.ConfigureBypass(alias,"HID\\FILTER",true);AimConfigGuard.Check(canonical);
+        Expect(Aim.Items(canonical["devices"]).Count==1 && Aim.Describe(canonical,"HID\\FILTER").CurveSpeedUnit=="counts/ms" && Aim.Describe(canonical,"HID\\FILTER").Enabled==false,"bypass replaces ignored case alias using the effective default calibration");
+        foreach(string field in new string[]{"Whole/combined accel (set false for 'by component' mode)","lpNorm","rotation","domain","range","cap"}) {
+            Dictionary<string,object> external=Aim.Parse(Store.Json.Serialize(cfg)),profile=Aim.Map(Aim.Items(external["profiles"])[1]);
+            if(field=="rotation") profile["Degrees of rotation"]=1;
+            else if(field=="domain") Aim.Map(profile["Stretches domain for horizontal vs vertical inputs"])["x"]=2;
+            else if(field=="range") Aim.Map(profile["Stretches accel range for horizontal vs vertical inputs"])["y"]=2;
+            else if(field=="cap") profile["Input Speed Cap"]=5;
+            else Aim.Map(profile["Input speed calculation parameters"])[field]=field=="lpNorm" ? (object)3 : false;
+            blocked=false;try {Aim.Resolve(Aim.Describe(external,"HID\\FILTER"),preset.ToMap(),"smooth",false);}catch(InvalidOperationException) {blocked=true;}Expect(blocked,"external LUT processing changes cannot be silently replaced");
+            Expect(Aim.Describe(Aim.ConfigureBypass(external,"HID\\FILTER",true),"HID\\FILTER").Enabled==false,"bypass remains available with unrecognized LUT processing");
+        }
+        foreach(object bad in new object[]{null,true,new Dictionary<string,object>{{"left",1},{"right",1},{"up",1},{"down",0}},new Dictionary<string,object>{{"left","1"},{"right",1},{"up",1},{"down",1}}}) {
+            Dictionary<string,object> invalid=preset.ToMap();invalid["directions"]=bad;blocked=false;try {Aim.ReadPreset(invalid);}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid saved directions rejected");
+        }
+        foreach(object bad in new object[]{null,"true",new Dictionary<string,object>{{"enabled",true},{"lowScale",double.NaN},{"recoverySpeed",1}},new Dictionary<string,object>{{"enabled",true},{"lowScale",.75},{"recoverySpeed",0}}}) {
+            Dictionary<string,object> invalid=preset.ToMap();invalid["damping"]=bad;blocked=false;try {Aim.ReadPreset(invalid);}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid saved damping rejected");
+        }
+        AimPreset legacy=Aim.ReadPreset(new Dictionary<string,object>{{"precision",true},{"smooth",false}});Expect(legacy.Directions.Neutral && !legacy.Damping.Enabled && legacy.SnapStrength==1,"legacy presets keep new filters off");
     }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");

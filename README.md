@@ -29,7 +29,7 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 
 **save** — named profiles, a `current -> saved` preview, undo for the last windows change and an original-settings backup.
 
-**aim** — optional raw accel integration. build a personal acceleration curve, preview its response, then apply it with driver readback. independent stability, smoothing and optional angle snapping. [curve controls](docs/curves.md) / [setup](docs/manual.md#aim-tools).
+**aim** — optional raw accel integration. build a personal curve and preview its response before applying. independent stability, smoothing, snapping, direction scales and micro damping; one selected-mouse bypass. [curves](docs/curves.md) / [filters](docs/filters.md) / [setup](docs/manual.md#aim-tools).
 
 **maintain** — check installation, live readback and the selected mouse's driver stack. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
 

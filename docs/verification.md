@@ -64,6 +64,20 @@
 
 ## manual pass
 
+v0.13 filter review additionally checks:
+
+- remembered snapping strength across off/on, legacy presets and strict saved filter validation.
+- rejection of externally changed lookup interpretation/layout and changed saved speed units, including resume and precision off/on.
+- native directional sign/order and diagonal scaling; native float serialization of combined damping tables, sorted knots, capacity and flat tails.
+- native natural formula agreement, a 1025-speed logarithmic approximation sweep for 1.1/1.4/1.8x limits and 0.1/1/20 recovery speeds, and preservation of the personal table above recovery.
+- 36 combinations of smoothing, stability and snapping at 1/8/16 ms example intervals, with damping and asymmetric direction scales. every combination has a bypass comparison.
+- rest behavior and fractional carry for 128 repeated one-count inputs with strong damping.
+- selected-device bypass scope, inherited defaults and ignored case aliases; no saved-preset or backup dependency in the bypass transaction.
+- read-only direction/micro/curve previews, proposed-profile labels, invalid command rejection and menu cancellation. complete live configuration is compared before and after local verification.
+- unavailable/incomplete shutdown journals leave unmatched proximity unknown.
+
+these are calculation and regression checks. no new filter is activated on the user's mouse during tests; physical aim feel and concurrent vanguard/game compatibility require a manual comparison. the signed kernel binary is unchanged.
+
 1. double-click `launch.bat`. confirm white lowercase interface, actual mouse product name and live settings.
 2. run `profile save before`. run `setup`. confirm acceleration is on, existing thresholds/mode are preserved, and the desktop cursor response changes where applicable.
 3. change `set speed 6`, then `set speed 15`. compare desktop response. raw input games should retain their own sensitivity.

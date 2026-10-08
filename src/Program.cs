@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.12.0";
+    internal const string Version="0.13.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -109,7 +109,7 @@ internal static class Program {
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors  0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors 18  direction scales\n 19  micro damping   20  bypass all\n  0  back");
         string choice=Ask("choose");
         if(choice=="1") {
             Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
@@ -143,8 +143,53 @@ internal static class Program {
             else throw new ArgumentException("choose 1..4 or 0");
         }
         else if(choice=="17") PrintShutdown(ShutdownDiagnostics.Read());
-        else throw new ArgumentException("choose 1..17 or 0");
+        else if(choice=="18") DirectionMenu();
+        else if(choice=="19") DampingMenu();
+        else if(choice=="20") {
+            Console.WriteLine("  selected mouse / 1 bypass all    2 enable current profile    0 back");
+            string action=Ask("choose");if(action!="1" && action!="2") throw new ArgumentException("choose 1..2 or 0");
+            AimCommand(new string[]{"aim","bypass",action=="1" ? "on" : "off"});
+        }
+        else throw new ArgumentException("choose 1..20 or 0");
         Finish();
+    }
+    private static void DirectionMenu() {
+        Console.WriteLine("  direction scales / 1x keeps / lower attenuates\n  1 off    2 vertical 0.85x    3 custom    0 back");string choice=Ask("choose");
+        if(choice=="1") {AimCommand(new string[]{"aim","directions","off"});return;}
+        if(choice!="2" && choice!="3") throw new ArgumentException("choose 1..3 or 0");
+        AimDirections draft=new AimDirections();
+        if(choice=="2") draft.Up=draft.Down=.85;
+        else {draft.Left=ReadNumber("left 0.25..1x",1);draft.Right=ReadNumber("right 0.25..1x",1);draft.Up=ReadNumber("up 0.25..1x",1);draft.Down=ReadNumber("down 0.25..1x",1);}
+        draft.Check();FilterDraft("directions",draft,null,null);
+    }
+    private static void DampingMenu() {
+        Console.WriteLine("  micro damping / reduces all slow motion, including corrections\n  1 off    2 light 0.85x    3 balanced 0.75x    4 custom    0 back");string choice=Ask("choose");
+        if(choice=="1") {AimCommand(new string[]{"aim","damp","off"});return;}
+        if(choice!="2" && choice!="3" && choice!="4") throw new ArgumentException("choose 1..4 or 0");
+        Device device=Selected();AimStatus status=Aim.Read(device);if(status.State!="ready") throw new InvalidOperationException(status.Note);
+        AimDamping draft=new AimDamping {Enabled=true,LowScale=choice=="2" ? .85 : .75};
+        if(choice=="4") {draft.LowScale=ReadNumber("low scale 0.25..1x",draft.LowScale);draft.RecoverySpeed=ReadNumber("full recovery 0.1..20 "+status.CurveSpeedUnit,draft.RecoverySpeed);}
+        draft.Check();FilterDraft("damp",null,draft,status.CurveSpeedUnit,device.Path);
+    }
+    private static void FilterDraft(string feature,AimDirections directions,AimDamping damping,string unit,string expectedPath=null) {
+        Device device=Selected();
+        if(expectedPath!=null && !String.Equals(expectedPath,device.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / reopen filters");
+        while(true) {
+            Console.WriteLine("  draft / 1 preview    2 apply    0 back");string action=Ask("choose");
+            Device fresh=Selected();if(!String.Equals(device.Path,fresh.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / reopen filters");
+            if(action=="1") PrintFilterPreview(Aim.PreviewControls(fresh,feature,true,null,directions,damping,unit));
+            else if(action=="2") {Applied(Aim.Set(fresh,feature,true,null,null,null,null,directions,damping,unit));return;}
+            else throw new ArgumentException("choose 1..2 or 0");
+        }
+    }
+    private static void PrintFilterPreview(AimResponse response) {
+        Console.WriteLine("\n  filter preview / official engine / nothing applied");PrintAim(response.Readback);
+        Console.WriteLine("  1-count "+N(response.HorizontalSamples[0].OutputRatio)+"x / 8-count "+N(response.SmallMotionRatio)+"x / 800-count "+N(response.FastMotionRatio)+"x");
+        Console.WriteLine("  example interval "+N(response.ProcessedIntervalMs)+" ms / "+response.IntervalSource);
+        PrintDirections(response);
+    }
+    private static void Applied(AimStatus state) {
+        if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}
     }
     private static void PrintAim(AimStatus status) {
         Console.WriteLine("\n  aim / "+status.State);
@@ -153,6 +198,8 @@ internal static class Program {
             if(status.Enabled!=true) Console.WriteLine("  effects bypassed / values below are configured only");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
             Console.WriteLine("  snap "+(status.SnapDegrees>0 ? F(status.SnapDegrees.Value)+" degrees" : "off"));
+            if(status.Directions!=null && !status.Directions.Neutral) Console.WriteLine("  scales / left "+N(status.Directions.Left)+" / right "+N(status.Directions.Right)+" / up "+N(status.Directions.Up)+" / down "+N(status.Directions.Down));
+            Console.WriteLine("  micro "+(status.DampingEnabled==null ? "unknown / unrecognized table" : status.DampingEnabled==true ? N(status.DampingLowScale.Value)+"x -> 1x at "+N(status.DampingRecoverySpeed.Value)+" "+status.CurveSpeedUnit : "off"));
             if(status.LookupData!=null && status.LookupData.Length>=4) Console.WriteLine(status.LookupIsSensitivity==true ? "  curve table / base "+N(status.LookupData[1])+"x / fast "+N(status.LookupData[status.LookupData.Length-1])+"x / speeds in "+status.CurveSpeedUnit : "  custom velocity table / not a helox sensitivity curve");
         }
         else Console.WriteLine("  "+status.Note);
@@ -162,6 +209,22 @@ internal static class Program {
             ShutdownReport report=ShutdownDiagnostics.Read();if(json) Console.WriteLine(Store.Json.Serialize(report));else PrintShutdown(report);return;
         }
         if(words.Length>=2 && words[1]=="curve") {CurveCommand(words);return;}
+        if(words.Length==3 && words[1]=="bypass") {Applied(Aim.Bypass(Selected(),Toggle(words[2])!=0));return;}
+        if(words.Length>=2 && words[1]=="directions") {
+            if(words.Length==3 && words[2]=="off") {Applied(Aim.Set(Selected(),"directions",false));return;}
+            if(words.Length!=7 || (words[2]!="apply" && words[2]!="preview")) throw new ArgumentException("use aim directions apply|preview <left> <right> <up> <down> or directions off / 0.25..1x");
+            AimDirections draft=new AimDirections {Left=Number(words[3]),Right=Number(words[4]),Up=Number(words[5]),Down=Number(words[6])};draft.Check();
+            if(words[2]=="preview") {AimResponse response=Aim.PreviewControls(Selected(),"directions",true,null,draft);if(json) Console.WriteLine(Store.Json.Serialize(new {applied=false,response=response}));else PrintFilterPreview(response);}
+            else Applied(Aim.Set(Selected(),"directions",true,null,null,null,null,draft));return;
+        }
+        if(words.Length>=2 && words[1]=="damp") {
+            if(words.Length!=3 && words.Length!=5) throw new ArgumentException("use aim damp on [low scale recovery speed]|off or damp preview <low scale> <recovery speed>");
+            bool preview=words[2]=="preview",on=preview || Toggle(words[2])!=0;
+            if(preview && words.Length!=5 || !on && words.Length!=3) throw new ArgumentException("micro strengths require on or preview");
+            AimDamping draft=words.Length==5 ? new AimDamping {Enabled=true,LowScale=Number(words[3]),RecoverySpeed=Number(words[4])} : null;if(draft!=null) draft.Check();
+            if(preview) {AimResponse response=Aim.PreviewControls(Selected(),"damp",true,null,null,draft);if(json) Console.WriteLine(Store.Json.Serialize(new {applied=false,response=response}));else PrintFilterPreview(response);}
+            else Applied(Aim.Set(Selected(),"damp",on,null,null,null,null,null,draft));return;
+        }
         if((words.Length==3 || words.Length==4) && words[1]=="snap") {
             bool on=Toggle(words[2])!=0;double? angle=words.Length==4 ? (double?)Number(words[3]) : null;
             if(angle.HasValue && !on) throw new ArgumentException("angle requires aim snap on");
@@ -178,6 +241,7 @@ internal static class Program {
                 List<string> mid=new List<string>();
                 foreach(AimResponsePoint point in result.HorizontalSamples) if(point.InputCounts==24 || point.InputCounts==80 || point.InputCounts==160) mid.Add(point.InputCounts+": "+point.OutputRatio.ToString("0.000",CultureInfo.InvariantCulture)+"x");
                 Console.WriteLine("  horizontal counts/report / "+String.Join(" / ",mid.ToArray()));
+                PrintDirections(result);
                 if(result.Readback.Enabled!=true) Console.WriteLine("  selected device bypassed / no driver effect");
                 else if(result.Readback.OutputHalfLifeMs>0) Console.WriteLine("  output averaging active / tracking preset disables it");
                 Console.WriteLine("  example motion / not a test inside your game");
@@ -231,7 +295,12 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),words[1],enabled,strength,gain);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|doctor|events|response|tracking|curve|prepare|install|uninstall|restore|resume or aim precision|smooth|stability|snap on|off");
+        throw new ArgumentException("use aim status|doctor|events|response|tracking|curve|directions|prepare|install|uninstall|restore|resume or aim precision|smooth|stability|snap|damp|bypass on|off");
+    }
+    private static void PrintDirections(AimResponse response) {
+        if(response.DirectionSamples==null) return;List<string> parts=new List<string>();
+        foreach(AimDirectionPoint point in response.DirectionSamples) if(point.Name!="diagonal" && point.Name!="near horizontal") parts.Add(point.Name+" "+N(point.OutputRatio)+"x");
+        Console.WriteLine("  8-count directions / "+String.Join(" / ",parts.ToArray()));
     }
     private static double Number(string value) {return double.Parse(value.Replace(',','.'),NumberStyles.Float,CultureInfo.InvariantCulture);}
     private static string N(double value) {return value.ToString("0.###",CultureInfo.InvariantCulture);}
@@ -245,7 +314,7 @@ internal static class Program {
     }
     private static void PrintCurvePreview(AimCurve curve,AimResponse response) {
         Console.WriteLine("\n  curve preview / official engine / nothing applied");
-        Console.WriteLine("  table "+N(curve.Base)+"x -> "+N(curve.Base*curve.Limit)+"x / transition "+N(curve.Start)+".."+N(curve.End)+" "+response.Readback.CurveSpeedUnit);
+        Console.WriteLine("  base curve "+N(curve.Base)+"x -> "+N(curve.Base*curve.Limit)+"x / transition "+N(curve.Start)+".."+N(curve.End)+" "+response.Readback.CurveSpeedUnit);
         foreach(AimResponsePoint point in response.HorizontalSamples) Console.WriteLine("  "+point.InputCounts+" counts/report / "+N(point.OutputRatio)+"x");
         Console.WriteLine("  example "+N(response.ProcessedIntervalMs)+" ms / "+response.IntervalSource+"\n  curve speed unit "+response.Readback.CurveSpeedUnit+" / output smoothing "+N(response.Readback.OutputHalfLifeMs.Value)+" ms\n  flick -> micro / peak "+response.AfterFlickPeakCounts+" counts / "+response.AfterFlickZeroReports+" zero outputs");
     }
@@ -258,9 +327,9 @@ internal static class Program {
             try {
                 if(choice=="6" || choice=="7" || choice=="8") {
                     Device fresh=Selected();RequireCurveContext(device.Path,status.CurveSpeedUnit,fresh,Aim.Read(fresh));
-                    if(choice=="6") PrintCurvePreview(draft,Aim.PreviewCurve(fresh,draft));
-                    else if(choice=="7") {AimStatus applied=Aim.Set(fresh,"curve",true,null,null,draft);Console.WriteLine("  curve applied / driver readback verified");PrintAim(applied);}
-                    else PrintAim(Aim.Set(fresh,"curve",true));
+                    if(choice=="6") PrintCurvePreview(draft,Aim.PreviewCurve(fresh,draft,status.CurveSpeedUnit));
+                    else if(choice=="7") {AimStatus applied=Aim.Set(fresh,"curve",true,null,null,draft,null,null,null,status.CurveSpeedUnit);Console.WriteLine("  curve applied / driver readback verified");PrintAim(applied);}
+                    else PrintAim(Aim.Set(fresh,"curve",true,null,null,null,null,null,null,status.CurveSpeedUnit));
                     continue;
                 }
                 AimCurve next=draft.Copy();
@@ -301,7 +370,7 @@ internal static class Program {
         List<ApplicationCrash> displayed=new List<ApplicationCrash>();
         foreach(ApplicationCrash crash in report.AimApplicationCrashes) if(displayed.Count<8) displayed.Add(crash);
         foreach(ApplicationCrash crash in report.RecentApplicationCrashes) if(displayed.Count<8 && !crash.RelatedToAim) displayed.Add(crash);
-        foreach(ApplicationCrash crash in displayed) Console.WriteLine("  "+crash.Utc+" / "+(crash.Application ?? "unknown").ToLowerInvariant()+" / "+(crash.ExceptionCode ?? "unknown")+(crash.NearShutdown ? " / within 2 min of shutdown" : ""));
+        foreach(ApplicationCrash crash in displayed) Console.WriteLine("  "+crash.Utc+" / "+(crash.Application ?? "unknown").ToLowerInvariant()+" / "+(crash.ExceptionCode ?? "unknown")+(crash.NearShutdown==true ? " / within 2 min of shutdown" : crash.NearShutdown==null ? " / shutdown timing unknown" : ""));
         foreach(string error in report.Errors) Console.WriteLine("  "+error);
         if(report.ScanLimitReached) Console.WriteLine("  scan limit reached / results incomplete");
         Console.WriteLine("  14-day crash history / timing does not prove cause\n  a popup may be unlogged; kernel failures are not covered");
@@ -328,7 +397,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim events             recent application crashes and shutdown timing");
+        Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }

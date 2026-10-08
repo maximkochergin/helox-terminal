@@ -8,6 +8,14 @@ public sealed class AimResponsePoint {
     public double InputCountsPerMs {get;set;}
     public double OutputRatio {get;set;}
 }
+public sealed class AimDirectionPoint {
+    public string Name {get;set;}
+    public int InputX {get;set;}
+    public int InputY {get;set;}
+    public double OutputX {get;set;}
+    public double OutputY {get;set;}
+    public double OutputRatio {get;set;}
+}
 public sealed class AimResponse {
     public AimStatus Readback {get;set;}
     public double ExampleIntervalMs {get;set;}
@@ -18,6 +26,7 @@ public sealed class AimResponse {
     public double SmallMotionRatio {get;set;}
     public double FastMotionRatio {get;set;}
     public AimResponsePoint[] HorizontalSamples {get;set;}
+    public AimDirectionPoint[] DirectionSamples {get;set;}
     public long AfterFlickPeakCounts {get;set;}
     public int AfterFlickZeroReports {get;set;}
     public int[] AfterFlickX {get;set;}
@@ -91,6 +100,14 @@ internal static class AimResponseTest {
                 if(input==8) result.SmallMotionRatio=ratio;else if(input==800) result.FastMotionRatio=ratio;
             }
             result.HorizontalSamples=points.ToArray();
+            List<AimDirectionPoint> directions=new List<AimDirectionPoint>();
+            string[] names={"left","right","up","down","diagonal","near horizontal"};int[,] inputs={{-8,0},{8,0},{0,-8},{0,8},{8,-8},{1000,10}};
+            for(int n=0;n<names.Length;n++) using(Simulation steady=new Simulation(accels[index],device,dt)) {
+                int x=inputs[n,0],y=inputs[n,1];double[] output=null;
+                for(int i=0;i<result.WarmupReports;i++) output=steady.Step(x,y);
+                directions.Add(new AimDirectionPoint {Name=names[n],InputX=x,InputY=y,OutputX=output[0],OutputY=output[1],OutputRatio=Math.Sqrt(output[0]*output[0]+output[1]*output[1])/Math.Sqrt((double)x*x+(double)y*y)});
+            }
+            result.DirectionSamples=directions.ToArray();
             using(Simulation recovery=new Simulation(accels[index],device,dt)) {
                 for(int i=0;i<result.WarmupReports;i++) recovery.Packet(8,0);
                 for(int i=0;i<result.BurstReports;i++) recovery.Packet(800,0);

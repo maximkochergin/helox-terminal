@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.12.0
+  helox / 0.13.0
   ----------------------------------------
   receiver  gxt 929 helox / dpi ? / hz ?
   windows   speed 10/20 / accel on / desktop
@@ -116,6 +116,8 @@ profiles must contain a complete, valid settings snapshot. a damaged original ba
 `8 > 16` offers optional axis angle snapping, initially off. the 0..5 degree range is a helox limit, not riot certification. this direction filter is independent of precision and output smoothing. [behavior and policy limits](curves.md#angle-snapping).
 
 `6 > 7` and `8 > 17` read application crashes and shutdown timing without changing settings. [coverage](curves.md#shutdown-popup).
+
+`8 > 18` attenuates directions independently; `8 > 19` softly reduces all slow movement, including wanted corrections. both offer preview before apply and start off. `8 > 20` bypasses every raw accel effect for the selected mouse, even with damaged saved controls. [filter behavior, interactions and recovery](filters.md).
 
 ```text
 setup
