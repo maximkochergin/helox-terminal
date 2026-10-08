@@ -1,5 +1,12 @@
 # verification
 
+## interrupted preset transactions / 0.14.1
+
+- apply and undo persist a validated complete recovery snapshot before native or preference changes. validation covers previous desktop undo and saved-control metadata; invalid files stop preflight.
+- mocked failures verify independent driver/windows/file recovery, checkpoint retention on any failed component, and no native reset when Windows failed before activation or unchanged-state persistence failed.
+- the local live suite kills actual apply and undo processes after their Windows writes, checks mutation guards, restores each combined snapshot and retries undo. another test measures the synchronous native activation delay and verifies the newly activated configuration immediately after return, without the old extra 1.2-second sleep.
+- all five live apply/repeat/undo paths, persistence-failure recovery and live verification remain covered. the test helper clears recovery evidence only after both native components are restored.
+
 ## live driver and game recipes / 0.14.0
 
 - the native LUT flick reproducer emits three zero reports with legacy input-speed EMA and none after the fix; all five recipes are checked at 1/8/16 ms intervals for finite bounded output and correction direction.

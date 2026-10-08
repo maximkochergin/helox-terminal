@@ -124,11 +124,11 @@ internal static class Store {
         }
     }
     internal static void Apply(Settings settings,bool backup) {
-        Locked(delegate {settings.Validate();if(backup) Backup();Change(settings);});
+        Locked(delegate {GameRecovery.RequireNoRecovery();settings.Validate();if(backup) Backup();Change(settings);});
     }
     internal static void Update(Action<Settings> edit) {
         Locked(delegate {
-            Settings current=Settings.Read();edit(current);current.Validate();Backup();Change(current);
+            GameRecovery.RequireNoRecovery();Settings current=Settings.Read();edit(current);current.Validate();Backup();Change(current);
         });
     }
     internal static void CommitChange(Settings before,Settings after,Action<Settings> apply,Action<Settings> saveUndo) {
@@ -148,6 +148,7 @@ internal static class Store {
     }
     internal static void Undo() {
         Locked(delegate {
+            GameRecovery.RequireNoRecovery();
             string path=Path.Combine(Root,"undo.json");
             if(!File.Exists(path)) throw new InvalidOperationException("nothing to undo yet");
             Settings previous=Load<Settings>(path);Change(previous);

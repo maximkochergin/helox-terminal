@@ -89,7 +89,7 @@ foreach ($recipe in $recipes) {
 }
 $gameCancel = "9`n1`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($gameCancel -join "`n") -notmatch 'windows / speed 10/20' -or ($gameCancel -join "`n") -match 'applied /') { throw 'game recipe cancellation failed' }
-foreach ($arguments in @(@('preset','apply','unknown'),@('preset','apply'),@('preset','list','extra'),@('preset','undo','extra'),@('aim','verify','extra'))) {
+foreach ($arguments in @(@('preset','apply','unknown'),@('preset','apply'),@('preset','list','extra'),@('preset','undo','extra'),@('preset','recover','extra'),@('aim','verify','extra'))) {
     $invalidRecipe = & $executable @arguments --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidRecipe.error -or $invalidRecipe.Applied) { throw 'invalid recipe command accepted' }
 }

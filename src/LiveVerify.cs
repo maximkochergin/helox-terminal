@@ -23,7 +23,7 @@ public sealed class LiveVerifyReport {
 }
 internal static class LiveVerify {
     internal static readonly string RecoveryPath=Path.Combine(Store.Root,"verify-recovery.json");
-    internal static void RequireNoRecovery() {if(File.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");}
+    internal static void RequireNoRecovery() {GameRecovery.RequireNoRecovery();if(File.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");}
     internal static void RequireClosedGames() {
         foreach(string name in new string[]{"VALORANT","VALORANT-Win64-Shipping","FPSAimTrainer","FPSAimTrainer-Win64-Shipping","cs2"}) {
             Process[] processes=Process.GetProcessesByName(name);bool running=processes.Length>0;foreach(Process p in processes) p.Dispose();
@@ -45,7 +45,7 @@ internal static class LiveVerify {
         RequireClosedGames();DeviceStackReport stack=DeviceStack.Read(device);
         if(stack.RawAccelPresent!=true || stack.Started!=true || stack.ProblemCode!=0) throw new InvalidOperationException("selected mouse's started raw accel stack must be confirmed / aim doctor");
         return Aim.Locked(delegate {
-            if(File.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");
+            RequireNoRecovery();
             Dictionary<string,object> before=Aim.Active(),defaults=Aim.Defaults();string id=Aim.Id(device);
             List<KeyValuePair<string,Dictionary<string,object>>> cases=Cases(before,defaults,id);
             // Validate and calculate every request before the first real write.

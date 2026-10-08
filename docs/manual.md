@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.14.0
+  helox / 0.14.1
   ----------------------------------------
   receiver  gxt 929 helox / dpi ? / hz ?
   windows   speed 10/20 / accel on / desktop
@@ -139,6 +139,7 @@ aim verify restore
 preset list
 preset show|preview|apply <name>
 preset undo
+preset recover
 aim tracking
 aim doctor
 aim uninstall

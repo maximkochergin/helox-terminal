@@ -33,6 +33,8 @@ opening the app leaves your settings unchanged. no account, telemetry or backgro
 
 **game presets** — complete input recipes for valorant, cs2 and matched kovaak's training. preview, apply and undo windows + driver settings together. sensitivity and fov steps stay explicit. [recipes](docs/game-presets.md).
 
+an interrupted preset keeps a recovery snapshot. reopen `9 > 6` to restore it, or run `preset recover` with games closed.
+
 **maintain** — check installation, live readback and the selected mouse's driver stack. remove the driver separately, or reset all helox data from `6 more`. [checks and cleanup](docs/manual.md#driver-checks-and-removal).
 
 ## readings

@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.14.0";
+    internal const string Version="0.14.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -170,8 +170,8 @@ internal static class Program {
     private static void GameMenu() {
         GameRecipe[] recipes=GamePresets.List();Console.WriteLine("\n  game presets / complete input recipes");
         for(int i=0;i<recipes.Length;i++) Console.WriteLine("  "+(i+1)+"  "+recipes[i].Id);
-        Console.WriteLine("  6  undo last game preset\n  0  back");int choice=Integer(Ask("choose"));
-        if(choice==6) {PresetCommand(new string[]{"preset","undo"});Finish();return;}
+        Console.WriteLine("  6  "+(GameRecovery.Pending ? "recover interrupted preset" : "undo last game preset")+"\n  0  back");int choice=Integer(Ask("choose"));
+        if(choice==6) {PresetCommand(new string[]{"preset",GameRecovery.Pending ? "recover" : "undo"});Finish();return;}
         if(choice<1 || choice>recipes.Length) throw new ArgumentException("choose 1..6 or 0");
         GameRecipe recipe=recipes[choice-1];PrintRecipe(recipe);
         Console.WriteLine("  1 preview    2 apply    0 back");string action=Ask("choose");
@@ -185,9 +185,10 @@ internal static class Program {
         Console.WriteLine("  game steps / manual");foreach(string step in recipe.GameSteps) Console.WriteLine("  "+step);
     }
     private static void PresetCommand(string[] words) {
+        if(words.Length==2 && words[1]=="recover") {GameRecovery.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  interrupted preset recovered / windows + driver + saved files verified");return;}
         if(words.Length==2 && words[1]=="list") {GameRecipe[] recipes=GamePresets.List();if(json) Console.WriteLine(Store.Json.Serialize(recipes));else foreach(GameRecipe entry in recipes) Console.WriteLine("  "+entry.Id+" / "+entry.Engine);return;}
         if(words.Length==2 && words[1]=="undo") {GamePresets.Undo();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  previous windows + driver settings restored / verified");return;}
-        if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|undo or preset show|preview|apply <name>");
+        if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|undo|recover or preset show|preview|apply <name>");
         GameRecipe recipe=GamePresets.Get(words[2]);
         if(words[1]=="show") {if(json) Console.WriteLine(Store.Json.Serialize(recipe));else PrintRecipe(recipe);return;}
         GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(Selected(),recipe.Id) : GamePresets.Apply(Selected(),recipe.Id);
@@ -226,6 +227,7 @@ internal static class Program {
         if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}
     }
     private static void PrintAim(AimStatus status) {
+        if(GameRecovery.Pending) Console.WriteLine("  recovery pending / preset recover / close games first");
         Console.WriteLine("\n  aim / "+status.State);
         if(status.State=="ready") {
             Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+(status.Mode=="lut" ? "custom" : status.Mode)+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
@@ -438,7 +440,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
-        Console.WriteLine("\n  preset list / show|preview|apply <name> / undo\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
+        Console.WriteLine("\n  preset list / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
         Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
@@ -499,6 +501,7 @@ internal static class Program {
         catch {Console.WriteLine("  receiver  not selected / use more");}
         Settings s=Settings.Read();
         Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+" / desktop");
+        if(GameRecovery.Pending) Console.WriteLine("  recovery  game preset interrupted / 9 > 6");
         AimStatus aim=Aim.Read(d);
         Console.WriteLine(aim.State=="ready" ? "  aim       "+aim.Mode+" / "+(aim.Enabled==true ? "enabled" : "bypassed")+" / smooth "+(aim.OutputHalfLifeMs>0 ? F(aim.OutputHalfLifeMs.Value)+" ms" : "off") : "  aim       "+aim.State+" / see 8");
         DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
@@ -722,7 +725,7 @@ internal static class Program {
                 }return;
             case "help":if(words.Length!=1) break;Help();return;
             case "home":case "clear":if(words.Length!=1 || json) break;Home();return;
-            case "selftest":if(words.Length!=1) break;SelfTest.Run();return;
+            case "selftest":if(words.Length!=1) break;GameRecovery.RequireNoRecovery();SelfTest.Run();return;
             case "check":if(words.Length!=1) break;SelfTest.Run(false);return;
         }throw new ArgumentException("unknown choice / type home or help");
     }

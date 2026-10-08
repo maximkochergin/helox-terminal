@@ -26,7 +26,13 @@ every recipe enables precision and the selected device, sets the personal sensit
 
 windows pointer speed becomes 10/20 and desktop acceleration becomes off. wheel, buttons, double-click timing and remembered thresholds are retained. device **software** dpi normalization and polling override become zero, constant interval becomes off and time bounds become the upstream defaults, 0.0625..100 ms. no hardware dpi or usb polling setting is written. defaults, peer mice and shared profiles are preserved. remembered inactive strengths are saved too, so subsequent controls and resume have a complete definition.
 
-apply verifies windows readback and the complete native driver readback after its activation delay. failure attempts driver, windows and file recovery independently. repeating the same applied recipe preserves useful undo and avoids another native activation. undo stops if either native state or saved choices changed afterward, preserving newer edits. the original windows and aim backups remain separate.
+apply verifies windows readback and the complete native driver readback after its activation delay. failure recovers changed native components and saved files independently; a failure before driver activation leaves the driver untouched. repeating the same applied recipe preserves useful undo and avoids another native activation. undo stops if either native state or saved choices changed afterward, preserving newer edits. the original windows and aim backups remain separate.
+
+from 0.14.1, both apply and undo save `game-recovery.json` **before** changing windows, the driver or saved choices. closing/killing the process or a failed rollback retains this complete checkpoint. opening helox reports pending recovery; `9 > 6` becomes `recover interrupted preset`, also available as `preset recover`. close games first. windows and aim changes, new recipes and live verification are blocked until recovery finishes. recovery restores the full driver state, windows values and exact previous bytes/absence of `aim-presets.json`, `game-undo.json` and `undo.json`; the checkpoint is removed only after every component succeeds.
+
+recovery explicitly writes and verifies the original driver configuration because the outcome of an interrupted write is uncertain. it attempts the other components independently if the driver cannot be restored and retains the checkpoint for retry. malformed prior undo or saved-controls snapshots fail preflight before settings change. the checkpoint covers process interruption; it does not guarantee durability after power loss or disk failure.
+
+the released backend's one-second delay happens inside synchronous `Activate` / `DeviceIoControl`, before the call returns. immediate readback is therefore sufficient after a successful return; helox no longer adds another 1.2-second wait. real kernel write/readback tests cover this behavior. [released I/O implementation](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel-io.hpp) / [driver delay](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/driver/driver.cpp).
 
 **in-game settings are manual.** the recipe screen lists the required sensitivity/fov choices; no game configuration file is edited and JSON reports `GameSettingsApplied: false`. do not copy a guessed dpi value into a sensitivity converter. after reboot, `aim resume` restores the saved driver controls; it does not change windows settings.
 
@@ -36,6 +42,7 @@ preset show valorant
 preset preview cs2
 preset apply kovaaks-valorant
 preset undo
+preset recover
 ```
 
 ## live verification

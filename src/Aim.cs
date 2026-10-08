@@ -55,21 +55,22 @@ internal static class Aim {
     internal static Dictionary<string,object> Saved(string path) {
         if(!File.Exists(path)) return new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
         try {
-            Dictionary<string,object> presets=Parse(File.ReadAllText(path));
-            if(presets==null) throw new ArgumentException();
-            Dictionary<string,object> normalized=new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
-            foreach(KeyValuePair<string,object> entry in presets) {
-                if(String.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length>199 || entry.Key.IndexOf('\0')>=0) throw new ArgumentException();
-                Dictionary<string,object> preset=Map(entry.Value);
-                if(preset==null) throw new ArgumentException();
-                ReadPreset(preset);
-                normalized.Add(entry.Key,entry.Value);
-            }
-            return normalized;
+            return ValidateSaved(Parse(File.ReadAllText(path)));
         }catch(Exception e) {
             if(e is IOException || e is UnauthorizedAccessException) throw;
             throw new ArgumentException("invalid saved aim preset / aim restore to reset it");
         }
+    }
+    internal static Dictionary<string,object> ValidateSaved(Dictionary<string,object> presets) {
+        if(presets==null) throw new ArgumentException("invalid saved aim preset");
+        Dictionary<string,object> normalized=new Dictionary<string,object>(StringComparer.OrdinalIgnoreCase);
+        foreach(KeyValuePair<string,object> entry in presets) {
+            if(String.IsNullOrWhiteSpace(entry.Key) || entry.Key.Length>199 || entry.Key.IndexOf('\0')>=0) throw new ArgumentException("invalid saved aim identity");
+            Dictionary<string,object> preset=Map(entry.Value);
+            if(preset==null) throw new ArgumentException("invalid saved aim preset");
+            ReadPreset(preset);normalized.Add(entry.Key,entry.Value);
+        }
+        return normalized;
     }
     internal static double SavedHalfLife(Dictionary<string,object> preset) {
         object value;if(!preset.TryGetValue("smoothMs",out value)) return 4;
@@ -240,6 +241,7 @@ internal static class Aim {
             AimStatus status=Describe(Active(),Id(device));
             DescribeSavedControls(status);
             if(File.Exists(LiveVerify.RecoveryPath)) status.Note+=" / unfinished verification: aim verify restore";
+            if(GameRecovery.Pending) status.Note+=" / unfinished game preset: preset recover";
             return status;
         }catch(Exception e) {return new AimStatus {State="unavailable",InputTransformed=installed ? (bool?)null : false,Note=e.Message.ToLowerInvariant()+" / install or restart if pending"};}
     }
@@ -345,8 +347,7 @@ internal static class Aim {
     }
     internal static Dictionary<string,object> Write(Dictionary<string,object> cfg) {
         object valid=Validate(cfg);Call(valid,"DriverConfig","Activate");
-        // Driver deliberately delays updates by one second. Never verify against the queued write.
-        Thread.Sleep(1200);
+        // Released Activate uses synchronous DeviceIoControl; its one-second delay finishes before return.
         Dictionary<string,object> read=Active();
         Dictionary<string,object> expected=Parse(Text(valid));
         foreach(string key in new string[]{"defaultDeviceConfig","profiles","devices"})

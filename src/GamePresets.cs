@@ -65,15 +65,22 @@ internal static class GamePresets {
         return new GamePresetPreview {Recipe=recipe,Windows=windows,WindowsChanges=windows.PreviewChanges(windowsBefore),Response=response,Applied=false,GameSettingsApplied=false};
     }
     internal static Dictionary<string,object> CommitPair(Settings beforeWindows,Dictionary<string,object> beforeAim,Settings afterWindows,Dictionary<string,object> afterAim,
-        Action<Settings> applyWindows,Func<Dictionary<string,object>,Dictionary<string,object>> writeAim,Action<Dictionary<string,object>> persist,Action restoreFiles) {
-        try {if(!beforeWindows.Same(afterWindows)) applyWindows(afterWindows);Dictionary<string,object> read=Aim.SameValue(beforeAim,afterAim) ? beforeAim : writeAim(afterAim);persist(read);return read;}
+        Action<Settings> applyWindows,Func<Dictionary<string,object>,Dictionary<string,object>> writeAim,Action<Dictionary<string,object>> persist,Action restoreFiles,Action recovered=null) {
+        bool windowsStarted=false,driverStarted=false;
+        try {
+            if(!beforeWindows.Same(afterWindows)) {windowsStarted=true;applyWindows(afterWindows);}
+            Dictionary<string,object> read=beforeAim;
+            if(!Aim.SameValue(beforeAim,afterAim)) {driverStarted=true;read=writeAim(afterAim);}
+            persist(read);return read;
+        }
         catch(Exception original) {
             List<string> failures=new List<string>();
             // Independent recovery attempts: one failed component must not skip the others.
-            try {writeAim(beforeAim);}catch(Exception e) {failures.Add("driver: "+e.Message);}
-            try {applyWindows(beforeWindows);}catch(Exception e) {failures.Add("windows: "+e.Message);}
+            if(driverStarted) try {writeAim(beforeAim);}catch(Exception e) {failures.Add("driver: "+e.Message);}
+            if(windowsStarted) try {applyWindows(beforeWindows);}catch(Exception e) {failures.Add("windows: "+e.Message);}
             try {restoreFiles();}catch(Exception e) {failures.Add("saved files: "+e.Message);}
-            throw new IOException("game preset failed: "+original.Message+(failures.Count==0 ? "; previous settings and saved files restored" : "; rollback failed: "+String.Join(" / ",failures.ToArray())));
+            if(failures.Count==0 && recovered!=null) try {recovered();}catch(Exception e) {failures.Add("recovery snapshot: "+e.Message);}
+            throw new IOException("game preset failed: "+original.Message+(failures.Count==0 ? "; previous settings and saved files restored" : "; rollback failed: "+String.Join(" / ",failures.ToArray())+" / preset recover"));
         }
     }
     internal static GamePresetPreview Apply(Device device,string name) {
@@ -87,22 +94,30 @@ internal static class GamePresets {
             string aimBackup=Path.Combine(Store.Root,"aim-before.json");if(File.Exists(aimBackup)) Aim.Validate(Aim.Parse(File.ReadAllText(aimBackup)));
             Store.Backup();if(!File.Exists(aimBackup)) Store.Save(aimBackup,before);
             SavedFiles files=new SavedFiles(new string[]{preferences,UndoPath,Path.Combine(Store.Root,"undo.json")});
+            GameRecovery.Begin(beforeWindows,before,files);
             saved[id]=recipe.Controls().ToMap();
             Dictionary<string,object> live=CommitPair(beforeWindows,before,afterWindows,after,delegate(Settings s){s.Apply();},Aim.Write,delegate(Dictionary<string,object> read) {
                 Store.Save(preferences,saved);if(!beforeWindows.Same(afterWindows)) Store.Save(Path.Combine(Store.Root,"undo.json"),beforeWindows);
                 // Preserve the useful undo when applying an identical recipe again.
                 if(!beforeWindows.Same(afterWindows) || !Aim.SameValue(before,read)) Store.Save(UndoPath,new Dictionary<string,object>{{"game",name},{"beforeWindows",beforeWindows},{"beforeAim",before},{"afterWindows",afterWindows},{"afterAim",read},{"afterPresets",saved},{"previousPresets",Encode(files.Bytes(preferences))},{"previousWindowsUndo",Encode(files.Bytes(Path.Combine(Store.Root,"undo.json")))}});
-            },files.Restore);
+                GameRecovery.Complete();
+            },files.Restore,GameRecovery.Complete);
             response.Readback=Aim.Describe(live,id);Aim.DescribeDamping(response.Readback,recipe.Controls());
             return new GamePresetPreview {Recipe=recipe,Windows=afterWindows,WindowsChanges=afterWindows.PreviewChanges(beforeWindows),Response=response,Applied=true,GameSettingsApplied=false};
         });});return result;
     }
     private static Dictionary<string,object> ReadUndo(string path) {
-        Dictionary<string,object> map=Aim.Parse(File.ReadAllText(path));
-        if(map==null || map.Count!=8 || !map.ContainsKey("previousPresets") || !map.ContainsKey("previousWindowsUndo")) throw new ArgumentException("invalid game undo snapshot");
+        Dictionary<string,object> map=ValidateUndo(Aim.Parse(File.ReadAllText(path)));
+        foreach(string key in new string[]{"beforeAim","afterAim"}) Aim.Validate(Aim.Map(map[key]));return map;
+    }
+    internal static Dictionary<string,object> ValidateUndo(Dictionary<string,object> map) {
+        string[] keys={"game","beforeWindows","beforeAim","afterWindows","afterAim","afterPresets","previousPresets","previousWindowsUndo"};
+        if(map==null || map.Count!=keys.Length) throw new ArgumentException("invalid game undo snapshot");
+        foreach(string key in keys) if(!map.ContainsKey(key)) throw new ArgumentException("invalid game undo snapshot");
         Get((string)map["game"]);
         foreach(string key in new string[]{"beforeWindows","afterWindows"}) ReadWindows(map[key]);
-        foreach(string key in new string[]{"beforeAim","afterAim"}) Aim.Validate(Aim.Map(map[key]));
+        foreach(string key in new string[]{"beforeAim","afterAim"}) AimConfigGuard.Check(Aim.Map(map[key]));
+        Aim.ValidateSaved(Aim.Map(map["afterPresets"]));
         ReadBytes(map["previousPresets"]);byte[] windowsUndo=Decode(map["previousWindowsUndo"]);if(windowsUndo!=null) ReadWindows(Aim.Parse(System.Text.Encoding.UTF8.GetString(windowsUndo).TrimStart('\uFEFF')));return map;
     }
     internal static Settings ReadWindows(object value) {
@@ -113,17 +128,15 @@ internal static class GamePresets {
         Settings result=Store.Json.Deserialize<Settings>(Store.Json.Serialize(fields));result.Validate();return result;
     }
     private static string Encode(byte[] bytes) {return bytes==null ? null : Convert.ToBase64String(bytes);}
-    private static byte[] Decode(object value) {
+    internal static byte[] Decode(object value) {
         if(value==null) return null;string encoded=value as string;if(encoded==null || encoded.Length>1400000) throw new ArgumentException("invalid game preset recovery data");
         byte[] bytes;try {bytes=Convert.FromBase64String(encoded);}catch(FormatException) {throw new ArgumentException("invalid game preset recovery data");}
         return bytes;
     }
-    private static byte[] ReadBytes(object value) {
+    internal static byte[] ReadBytes(object value) {
         byte[] bytes=Decode(value);if(bytes==null) return null;
         // Recovery must not import a broken preset file.
-        Dictionary<string,object> presets=Aim.Parse(System.Text.Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'));
-        if(presets==null) throw new ArgumentException("invalid game preset recovery file");HashSet<string> ids=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach(KeyValuePair<string,object> p in presets) {if(String.IsNullOrWhiteSpace(p.Key) || p.Key.Length>199 || p.Key.IndexOf('\0')>=0 || !ids.Add(p.Key)) throw new ArgumentException("invalid game recovery identity");Aim.ReadPreset(Aim.Map(p.Value));}return bytes;
+        Aim.ValidateSaved(Aim.Parse(System.Text.Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF')));return bytes;
     }
     internal static void Undo() {
         Store.Locked(delegate {Aim.Locked(delegate {
@@ -133,15 +146,18 @@ internal static class GamePresets {
             string preferences=Path.Combine(Store.Root,"aim-presets.json");
             if(!Aim.SameValue(Aim.Saved(preferences),undo["afterPresets"])) throw new InvalidOperationException("saved controls changed since preset / undo stopped to preserve newer choices");
             SavedFiles files=new SavedFiles(new string[]{preferences,UndoPath,Path.Combine(Store.Root,"undo.json")});
+            GameRecovery.Begin(current,live,files);
             CommitPair(current,live,ReadWindows(undo["beforeWindows"]),Aim.Map(undo["beforeAim"]),delegate(Settings s){s.Apply();},Aim.Write,delegate(Dictionary<string,object> read) {
                 SavedFiles.Write(preferences,ReadBytes(undo["previousPresets"]));SavedFiles.Write(Path.Combine(Store.Root,"undo.json"),Decode(undo["previousWindowsUndo"]));File.Delete(UndoPath);
-            },files.Restore);return true;
+                GameRecovery.Complete();
+            },files.Restore,GameRecovery.Complete);return true;
         });});
     }
 }
 internal sealed class SavedFiles {
     private readonly Dictionary<string,byte[]> originals=new Dictionary<string,byte[]>();
     internal SavedFiles(string[] paths) {foreach(string path in paths) originals.Add(path,File.Exists(path) ? File.ReadAllBytes(path) : null);}
+    internal SavedFiles(Dictionary<string,byte[]> bytes) {foreach(KeyValuePair<string,byte[]> file in bytes) originals.Add(file.Key,file.Value);}
     internal byte[] Bytes(string path) {return originals[path];}
     internal void Restore() {List<string> errors=new List<string>();foreach(KeyValuePair<string,byte[]> file in originals) try {
         byte[] current=File.Exists(file.Key) ? File.ReadAllBytes(file.Key) : null;if(!Same(current,file.Value)) Write(file.Key,file.Value);

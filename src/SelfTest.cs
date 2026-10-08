@@ -414,10 +414,15 @@ internal static class SelfTest {
                 driverCalls++;liveAim=value;if(driverCalls==1 && (failAt=="driver" || failAt=="rollback")) throw new IOException("driver refused");if(driverCalls==2 && failAt=="rollback") throw new IOException("driver recovery refused");return value;
             },delegate(Dictionary<string,object> value) {if(failAt=="files") throw new IOException("disk full");},delegate {restored=true;});}catch(IOException e) {error=e.Message;}
             Expect(error!=null && original.Same(liveWindows) && Aim.SameValue(before,liveAim) && restored,"combined failure restores both components and files independently");
+            if(failAt=="windows") Expect(driverCalls==0,"windows failure before activation must not reset the driver");
             if(failAt=="rollback") Expect(error.Contains("driver refused") && error.Contains("driver recovery refused") && windowsCalls==2,"failed driver rollback retains both errors without skipping windows recovery");
         }
         int writes=0,saves=0;GamePresets.CommitPair(original,before,original,before,delegate(Settings s){writes++;},delegate(Dictionary<string,object> c){writes++;return c;},delegate(Dictionary<string,object> c){saves++;},delegate {});
         Expect(writes==0 && saves==1,"identical complete preset avoids all native writes");
+        writes=0;bool filesRestored=false;
+        try {GamePresets.CommitPair(original,before,original,before,delegate(Settings s){writes++;},delegate(Dictionary<string,object> c){writes++;return c;},delegate(Dictionary<string,object> c){throw new IOException("disk full");},delegate {filesRestored=true;});}catch(IOException) {}
+        Expect(writes==0 && filesRestored,"failed no-op persistence must not reset either native component");
+        RecoveryRegression(original,defaults);
         string directory=Path.Combine(Path.GetTempPath(),"helox-game-files-"+Guid.NewGuid().ToString("n"));Directory.CreateDirectory(directory);string present=Path.Combine(directory,"present.json"),missing=Path.Combine(directory,"missing.json");
         try {
             byte[] bytes={0xef,0xbb,0xbf,0x7b,0x7d};File.WriteAllBytes(present,bytes);SavedFiles files=new SavedFiles(new string[]{present,missing});
@@ -428,6 +433,23 @@ internal static class SelfTest {
         Expect(!double.IsInfinity(800/5e-306) && double.IsInfinity(1001/5e-306),"direction overflow reproducer escapes the old 800-count guard");
         rejected=false;try {AimResponseTest.Run(tooShort,"HID\\GAME",8);}catch(InvalidOperationException e) {rejected=e.Message=="response interval too small for finite speed examples";}Expect(rejected,"direction example rejects overflow before native calculation");
         Expect(LiveVerify.Cases(defaults,defaults,"HID\\GAME").Count==13,"live verification includes every new filter and built-in game recipe");
+    }
+    private static void RecoveryRegression(Settings windows,Dictionary<string,object> aim) {
+        Dictionary<string,object> files=new Dictionary<string,object>{{"aim-presets.json",Convert.ToBase64String(new byte[]{0xef,0xbb,0xbf,0x7b,0x7d})},{"game-undo.json",null},{"undo.json",null}};
+        Dictionary<string,object> snapshot=GameRecovery.Snapshot(windows,aim,files);
+        foreach(string failure in new string[]{"driver","windows","files","checkpoint"}) {
+            int driverCalls=0,windowsCalls=0,fileCalls=0,completionCalls=0;bool rejected=false;
+            try {GameRecovery.Recover(snapshot,delegate(Dictionary<string,object> c){driverCalls++;if(failure=="driver") throw new IOException("offline");},delegate(Settings s){windowsCalls++;if(failure=="windows") throw new IOException("denied");},delegate(Dictionary<string,object> f){fileCalls++;if(failure=="files") throw new IOException("locked");},delegate {completionCalls++;if(failure=="checkpoint") throw new IOException("locked checkpoint");});}catch(IOException e) {rejected=e.Message.Contains("snapshot retained");}
+            Expect(rejected && driverCalls==1 && windowsCalls==1 && fileCalls==1 && completionCalls==(failure=="checkpoint" ? 1 : 0),"recovery attempts independent components and retains the snapshot after any failure");
+        }
+        int completed=0;GameRecovery.Recover(snapshot,delegate(Dictionary<string,object> c){Expect(Aim.SameValue(aim,c),"recovery uses the complete native snapshot");},delegate(Settings s){Expect(windows.Same(s),"recovery uses all windows values");},delegate(Dictionary<string,object> f){Expect(f["game-undo.json"]==null,"recovery retains prior file absence");},delegate {completed++;});
+        Expect(completed==1,"checkpoint cleared only after successful complete recovery");
+        Dictionary<string,object> invalidFiles=new Dictionary<string,object>(files);invalidFiles["undo.json"]=Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"Speed\":\"10\"}"));
+        bool invalid=false;try {GameRecovery.Snapshot(windows,aim,invalidFiles);}catch(ArgumentException) {invalid=true;}Expect(invalid,"corrupt prior windows undo blocks a preset before any mutation");
+        invalidFiles=new Dictionary<string,object>(files);invalidFiles.Remove("undo.json");invalidFiles.Add("../outside.json",null);
+        invalid=false;try {GameRecovery.Snapshot(windows,aim,invalidFiles);}catch(ArgumentException) {invalid=true;}Expect(invalid,"recovery accepts only fixed tool files");
+        Dictionary<string,object> undo=new Dictionary<string,object>{{"game","valorant"},{"beforeWindows",Aim.Parse(Store.Json.Serialize(windows))},{"afterWindows",Aim.Parse(Store.Json.Serialize(windows))},{"beforeAim",aim},{"afterAim",aim},{"afterPresets",new Dictionary<string,object>{{"HID\\GAME",new Dictionary<string,object>{{"precision","yes"},{"smooth",false}}}}},{"previousPresets",null},{"previousWindowsUndo",null}};
+        invalid=false;try {GamePresets.ValidateUndo(undo);}catch(ArgumentException) {invalid=true;}Expect(invalid,"malformed saved-controls checkpoint is rejected in preflight");
     }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");
