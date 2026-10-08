@@ -1,5 +1,13 @@
 # verification
 
+## personal curves / 0.12.0
+
+- native tests compare lookup interpolation and capped high-speed output against the generated float table, including curve parameter extremes.
+- native serialization retains the table; snapping-off direction and rest behavior are checked separately from optional horizontal/vertical snapping and unaffected diagonals.
+- pure checks cover curve persistence, legacy defaults, component switches, explicit natural reset and rejection of stale externally modified tables.
+- cli checks cover preview/cancel without changing live settings, invalid curves/angles, and journal json.
+- event diagnostics use bounded read-only windows logs. absence of a matching application error is not proof that a shutdown popup or kernel fault did not occur.
+
 ## automated on windows
 
 `launch.bat check` runs analysis, preset validation and recovery checks without native setting changes or an installed aim backend. github actions runs this command on every push and pull request. `selftest` additionally tests native windows preferences and the available aim engine on an interactive desktop.

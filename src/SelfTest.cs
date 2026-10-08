@@ -10,6 +10,7 @@ internal static class SelfTest {
     internal static void Run(bool native=true) {
         ConfigGuardRegression();
         AimRegression();
+        CurveRegression();
         DeviceStackRegression();
         UndoRegression();
         SnapshotRegression();
@@ -257,6 +258,59 @@ internal static class SelfTest {
                     Expect(rejected,"ambiguous snapshot rejected regardless of field order");
                 }
         } finally {if(File.Exists(path)) File.Delete(path);}
+    }
+    private static void CurveRegression() {
+        Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json")));
+        AimCurve curve=new AimCurve {Base=.8,Start=2,End=24,Limit=1.8,Shape=1.5};
+        object[] table=curve.Table();Expect(table.Length<=514 && table.Length%2==0,"curve fits the official table ABI");
+        float last=-1;double previous=0;
+        for(int i=0;i<table.Length;i+=2) {
+            float speed=(float)Convert.ToDouble(table[i]);double scale=Convert.ToDouble(table[i+1]);
+            Expect(speed>last && scale>=previous && scale>0 && scale<=curve.Base*curve.Limit+1e-6,"curve is positive, bounded and native-monotonic");last=speed;previous=scale;
+        }
+        Expect(curve.Sensitivity(1)==.8 && Math.Abs(curve.Sensitivity(30)-1.44)<1e-10,"curve has independent base and capped fast sensitivity");
+        Expect(Math.Abs(curve.Sensitivity(curve.Start+1e-6)-curve.Base)<1e-9 && Math.Abs(curve.Sensitivity(curve.End-1e-6)-curve.Base*curve.Limit)<1e-9,"curve joins both plateaus continuously");
+        foreach(Action<AimCurve> change in new Action<AimCurve>[] {
+            delegate(AimCurve c){c.Base=0;},delegate(AimCurve c){c.Base=double.NaN;},delegate(AimCurve c){c.End=c.Start;},delegate(AimCurve c){c.End=c.Start+.01;},
+            delegate(AimCurve c){c.Limit=4;},delegate(AimCurve c){c.Shape=0;},delegate(AimCurve c){c.Start=double.PositiveInfinity;}
+        }) {AimCurve bad=curve.Copy();change(bad);bool blocked=false;try {bad.Table();}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid curve is rejected before driver access");}
+        AimPreset preset=new AimPreset {Precision=true,Curve=curve,SnapDegrees=1,Stability=true,StabilityMs=10};
+        AimPreset saved=Aim.ReadPreset(Aim.Parse(Store.Json.Serialize(preset.ToMap())));
+        Expect(Aim.SameValue(saved.Curve.ToMap(),curve.ToMap()) && saved.SnapDegrees==1,"curve and optional snapping persist");
+        Dictionary<string,object> configured=Aim.ConfigurePreset(defaults,defaults,"HID\\CURVE",preset,true);AimConfigGuard.Check(configured);
+        AimStatus status=Aim.Describe(configured,"HID\\CURVE");
+        Expect(status.Mode=="lut" && status.GainLimit==null && status.LookupIsSensitivity==true && status.StabilityEnabled==true && status.SnapDegrees==1 && curve.Matches(status.LookupData),"custom curve and independent filters have live readback without an unused natural limit");
+        foreach(string feature in new string[]{"smooth","stability","snap","precision","tracking"}) {
+            AimPreset next=Aim.Resolve(status,preset.ToMap(),feature,feature=="tracking");
+            Expect(next.Curve!=null && Aim.SameValue(next.Curve.ToMap(),curve.ToMap()),"component switches preserve the personal curve");
+            Dictionary<string,object> changed=Aim.ConfigurePreset(configured,defaults,"HID\\CURVE",next);
+            Expect(Aim.SameValue(defaults["defaultDeviceConfig"],changed["defaultDeviceConfig"]),"curve changes preserve the default device");
+        }
+        AimPreset off=Aim.Resolve(status,preset.ToMap(),"precision",false);
+        AimStatus offStatus=Aim.Describe(Aim.ConfigurePreset(configured,defaults,"HID\\CURVE",off),"HID\\CURVE");
+        AimPreset on=Aim.Resolve(offStatus,off.ToMap(),"precision",true);
+        Expect(on.Curve!=null && on.SnapDegrees==1,"precision off/on remembers the custom curve and independent snapping");
+        AimPreset natural=Aim.Resolve(status,preset.ToMap(),"curve",true);Expect(natural.Curve==null && natural.SnapDegrees==1,"natural reset is explicit and preserves snapping");
+        AimPreset gain=Aim.Resolve(status,preset.ToMap(),"precision",true,null,1.6);Expect(gain.Curve==null && gain.GainLimit==1.6,"explicit natural gain switches away from LUT");
+        status.LookupIsSensitivity=false;bool semanticMismatch=false;try {Aim.Resolve(status,preset.ToMap(),"snap",false);}catch(InvalidOperationException) {semanticMismatch=true;}
+        Expect(semanticMismatch,"external LUT interpretation changes are not silently replaced");status.LookupIsSensitivity=true;
+        status.LookupData[3]+=.1;bool mismatch=false;try {Aim.Resolve(status,preset.ToMap(),"smooth",false);}catch(InvalidOperationException) {mismatch=true;}
+        Expect(mismatch,"external LUT changes are not silently overwritten by component switches");
+        foreach(object bad in new object[]{"1",true,-1,6,double.NaN,double.PositiveInfinity}) {
+            Dictionary<string,object> values=preset.ToMap();values["snapDegrees"]=bad;bool blocked=false;try {Aim.ReadPreset(values);}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid saved snapping is blocked");
+        }
+        foreach(object bad in new object[]{"curve",true,new Dictionary<string,object>{{"base",1}},new Dictionary<string,object>{{"base",1},{"start",0},{"end",1},{"limit",2},{"shape",1},{"extra",1}}}) {
+            Dictionary<string,object> values=preset.ToMap();values["curve"]=bad;bool blocked=false;try {Aim.ReadPreset(values);}catch(ArgumentException) {blocked=true;}Expect(blocked,"invalid saved curves are blocked");
+        }
+        Expect(!ShutdownDiagnostics.IsAim("DeviceDriver.exe","ntdll.dll") && ShutdownDiagnostics.IsAim("HELOX.EXE","ntdll.dll"),"shutdown diagnostics do not confuse unrelated device software with helox");
+        DateTime now=DateTime.UtcNow;List<DateTime> times=new List<DateTime>{now};
+        Expect(ShutdownDiagnostics.Near(now.AddSeconds(120),times) && !ShutdownDiagnostics.Near(now.AddSeconds(121),times),"shutdown proximity is bounded");
+        Program.RequireCurveContext("mouse","counts/ms",new Device {Path="MOUSE"},new AimStatus {State="ready",CurveSpeedUnit="counts/ms"});
+        foreach(bool otherMouse in new bool[]{true,false}) {
+            bool blocked=false;try {Program.RequireCurveContext("mouse","counts/ms",new Device {Path=otherMouse ? "other" : "mouse"},new AimStatus {State="ready",CurveSpeedUnit=otherMouse ? "counts/ms" : "in/s"});}catch(InvalidOperationException) {blocked=true;}
+            Expect(blocked,"builder refuses changed mouse identity or curve units");
+        }
+        AimConfigGuard.Check(Aim.ConfigurePreset(defaults,defaults,"HID\\TINY",new AimPreset {Precision=true,Curve=new AimCurve {Start=double.Epsilon}},true));
     }
     private static void ConfigGuardRegression() {
         string path=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json");

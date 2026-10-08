@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.11.0";
+    internal const string Version="0.12.0";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -90,7 +90,7 @@ internal static class Program {
                 else throw new ArgumentException("choose 1..5 or 0");
                 Finish();return;
             case "6":
-                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver     0  back");
+                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver\n  7  shutdown errors  0  back");
                 string more=Ask("choose");
                 if(more=="0") Home();
                 else if(more=="1") {ChooseMouse();Finish();}
@@ -103,12 +103,13 @@ internal static class Program {
                     if(Ask("type reset / 0 back")!="reset") throw new OperationCanceledException();
                     Maintenance.Reset();
                 }
-                else throw new ArgumentException("choose 1..6 or 0");return;
+                else if(more=="7") {PrintShutdown(ShutdownDiagnostics.Read());Finish();}
+                else throw new ArgumentException("choose 1..7 or 0");return;
         }
     }
     private static void AimMenu() {
         AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n  0  back");
+        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors  0  back");
         string choice=Ask("choose");
         if(choice=="1") {
             Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
@@ -132,19 +133,42 @@ internal static class Program {
         else if(choice=="11" || choice=="12") AimCommand(new string[]{"aim","stability",choice=="11" ? "on" : "off"});
         else if(choice=="13") AimCommand(new string[]{"aim","tracking"});
         else if(choice=="14") AimCommand(new string[]{"aim","response"});
-        else throw new ArgumentException("choose 1..14 or 0");
+        else if(choice=="15") {CurveBuilder();Home();return;}
+        else if(choice=="16") {
+            Console.WriteLine("  snap / axis direction filter / optional, not riot certified\n  1  off    2  1 degree    3  2 degrees    4  custom 0..5    0  back");
+            string snap=Ask("choose");
+            if(snap=="1") AimCommand(new string[]{"aim","snap","off"});
+            else if(snap=="2" || snap=="3") AimCommand(new string[]{"aim","snap","on",snap=="2" ? "1" : "2"});
+            else if(snap=="4") AimCommand(new string[]{"aim","snap","on",ReadNumber("angle 0..5 degrees",1).ToString(CultureInfo.InvariantCulture)});
+            else throw new ArgumentException("choose 1..4 or 0");
+        }
+        else if(choice=="17") PrintShutdown(ShutdownDiagnostics.Read());
+        else throw new ArgumentException("choose 1..17 or 0");
         Finish();
     }
     private static void PrintAim(AimStatus status) {
         Console.WriteLine("\n  aim / "+status.State);
         if(status.State=="ready") {
-            Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+status.Mode+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
+            Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+(status.Mode=="lut" ? "custom" : status.Mode)+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
             if(status.Enabled!=true) Console.WriteLine("  effects bypassed / values below are configured only");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
+            Console.WriteLine("  snap "+(status.SnapDegrees>0 ? F(status.SnapDegrees.Value)+" degrees" : "off"));
+            if(status.LookupData!=null && status.LookupData.Length>=4) Console.WriteLine(status.LookupIsSensitivity==true ? "  curve table / base "+N(status.LookupData[1])+"x / fast "+N(status.LookupData[status.LookupData.Length-1])+"x / speeds in "+status.CurveSpeedUnit : "  custom velocity table / not a helox sensitivity curve");
         }
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
+        if(words.Length==2 && words[1]=="events") {
+            ShutdownReport report=ShutdownDiagnostics.Read();if(json) Console.WriteLine(Store.Json.Serialize(report));else PrintShutdown(report);return;
+        }
+        if(words.Length>=2 && words[1]=="curve") {CurveCommand(words);return;}
+        if((words.Length==3 || words.Length==4) && words[1]=="snap") {
+            bool on=Toggle(words[2])!=0;double? angle=words.Length==4 ? (double?)Number(words[3]) : null;
+            if(angle.HasValue && !on) throw new ArgumentException("angle requires aim snap on");
+            if(angle.HasValue) Aim.CheckSnap(angle.Value);
+            AimStatus state=Aim.Set(Selected(),"snap",on,null,null,null,angle);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
+        }
         if(words.Length==2 && words[1]=="response") {
             AimResponse result=Aim.Response(Selected());
             if(json) Console.WriteLine(Store.Json.Serialize(result));
@@ -207,7 +231,80 @@ internal static class Program {
             AimStatus state=Aim.Set(Selected(),words[1],enabled,strength,gain);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|doctor|response|tracking|prepare|install|uninstall|restore|resume or aim precision|smooth|stability on|off");
+        throw new ArgumentException("use aim status|doctor|events|response|tracking|curve|prepare|install|uninstall|restore|resume or aim precision|smooth|stability|snap on|off");
+    }
+    private static double Number(string value) {return double.Parse(value.Replace(',','.'),NumberStyles.Float,CultureInfo.InvariantCulture);}
+    private static string N(double value) {return value.ToString("0.###",CultureInfo.InvariantCulture);}
+    private static double ReadNumber(string label,double current) {
+        Console.Write("  "+label+" ["+N(current)+"] / enter keeps / back cancels > ");string value=Console.ReadLine();
+        if(value==null || value.Trim().Equals("back",StringComparison.OrdinalIgnoreCase)) throw new OperationCanceledException();
+        return String.IsNullOrWhiteSpace(value) ? current : Number(value.Trim());
+    }
+    private static void PrintCurve(AimCurve curve,string unit) {
+        Console.WriteLine("\n  curve draft / speeds in "+unit+"\n  1  base "+N(curve.Base)+"x     2  start "+N(curve.Start)+"\n  3  end "+N(curve.End)+"       4  fast / base "+N(curve.Limit)+"x\n  5  shape "+N(curve.Shape)+" / <1 earlier, >1 later\n  slow "+N(curve.Base)+"x -> fast "+N(curve.Base*curve.Limit)+"x\n  6  preview     7  apply     8  natural curve\n  0  back");
+    }
+    private static void PrintCurvePreview(AimCurve curve,AimResponse response) {
+        Console.WriteLine("\n  curve preview / official engine / nothing applied");
+        Console.WriteLine("  table "+N(curve.Base)+"x -> "+N(curve.Base*curve.Limit)+"x / transition "+N(curve.Start)+".."+N(curve.End)+" "+response.Readback.CurveSpeedUnit);
+        foreach(AimResponsePoint point in response.HorizontalSamples) Console.WriteLine("  "+point.InputCounts+" counts/report / "+N(point.OutputRatio)+"x");
+        Console.WriteLine("  example "+N(response.ProcessedIntervalMs)+" ms / "+response.IntervalSource+"\n  curve speed unit "+response.Readback.CurveSpeedUnit+" / output smoothing "+N(response.Readback.OutputHalfLifeMs.Value)+" ms\n  flick -> micro / peak "+response.AfterFlickPeakCounts+" counts / "+response.AfterFlickZeroReports+" zero outputs");
+    }
+    private static void CurveBuilder() {
+        Device device=Selected();AimCurve draft=Aim.Draft(device);AimStatus status=Aim.Read(device);
+        if(status.State!="ready") throw new InvalidOperationException(status.Note);
+        while(true) {
+            PrintCurve(draft,status.CurveSpeedUnit);string choice;
+            try {choice=Ask("choose");}catch(OperationCanceledException) {return;}
+            try {
+                if(choice=="6" || choice=="7" || choice=="8") {
+                    Device fresh=Selected();RequireCurveContext(device.Path,status.CurveSpeedUnit,fresh,Aim.Read(fresh));
+                    if(choice=="6") PrintCurvePreview(draft,Aim.PreviewCurve(fresh,draft));
+                    else if(choice=="7") {AimStatus applied=Aim.Set(fresh,"curve",true,null,null,draft);Console.WriteLine("  curve applied / driver readback verified");PrintAim(applied);}
+                    else PrintAim(Aim.Set(fresh,"curve",true));
+                    continue;
+                }
+                AimCurve next=draft.Copy();
+                switch(choice) {
+                    case "1":next.Base=ReadNumber("base 0.25..2x",draft.Base);break;
+                    case "2":next.Start=ReadNumber("start 0..1000",draft.Start);break;
+                    case "3":next.End=ReadNumber("end > start / max 2000",draft.End);break;
+                    case "4":next.Limit=ReadNumber("fast / base 1..3x",draft.Limit);break;
+                    case "5":next.Shape=ReadNumber("shape 0.5..3",draft.Shape);break;
+                    default:throw new ArgumentException("choose 1..8 or 0");
+                }
+                next.Check();draft=next;
+            }catch(OperationCanceledException) {}catch(Exception e) {Console.WriteLine("  "+Error(e));}
+        }
+    }
+    internal static void RequireCurveContext(string path,string unit,Device current,AimStatus status) {
+        if(current==null || !String.Equals(path,current.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / reopen curve builder");
+        if(status.State!="ready") throw new InvalidOperationException(status.Note);
+        if(unit!=status.CurveSpeedUnit) throw new InvalidOperationException("curve speed unit changed / reopen curve builder");
+    }
+    private static void CurveCommand(string[] words) {
+        if(words.Length==3 && words[2]=="natural") {
+            AimStatus state=Aim.Set(Selected(),"curve",true);if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else PrintAim(state);return;
+        }
+        if(words.Length==2 && !json) {CurveBuilder();return;}
+        if(words.Length!=8 || (words[2]!="preview" && words[2]!="apply")) throw new ArgumentException("use aim curve preview|apply <base> <start> <end> <limit> <shape> or aim curve natural");
+        AimCurve curve=new AimCurve {Base=Number(words[3]),Start=Number(words[4]),End=Number(words[5]),Limit=Number(words[6]),Shape=Number(words[7])};curve.Check();
+        if(words[2]=="preview") {
+            AimResponse response=Aim.PreviewCurve(Selected(),curve);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=false,curve=curve.ToMap(),response=response}));else PrintCurvePreview(curve,response);
+        }else {
+            AimStatus state=Aim.Set(Selected(),"curve",true,null,null,curve);
+            if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  curve applied / driver readback verified");PrintAim(state);}
+        }
+    }
+    private static void PrintShutdown(ShutdownReport report) {
+        Console.WriteLine("\n  shutdown errors / windows journal / read only\n  last request "+(report.LastShutdownUtc ?? "unknown")+"\n  helox / raw accel application crashes: "+report.AimApplicationCrashes.Length);
+        List<ApplicationCrash> displayed=new List<ApplicationCrash>();
+        foreach(ApplicationCrash crash in report.AimApplicationCrashes) if(displayed.Count<8) displayed.Add(crash);
+        foreach(ApplicationCrash crash in report.RecentApplicationCrashes) if(displayed.Count<8 && !crash.RelatedToAim) displayed.Add(crash);
+        foreach(ApplicationCrash crash in displayed) Console.WriteLine("  "+crash.Utc+" / "+(crash.Application ?? "unknown").ToLowerInvariant()+" / "+(crash.ExceptionCode ?? "unknown")+(crash.NearShutdown ? " / within 2 min of shutdown" : ""));
+        foreach(string error in report.Errors) Console.WriteLine("  "+error);
+        if(report.ScanLimitReached) Console.WriteLine("  scan limit reached / results incomplete");
+        Console.WriteLine("  14-day crash history / timing does not prove cause\n  a popup may be unlogged; kernel failures are not covered");
     }
     private static string DoctorLabel(string key) {
         switch(key) {
@@ -231,6 +328,7 @@ internal static class Program {
         Home();
     }
     private static void Help() {
+        Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
     }
@@ -452,7 +550,7 @@ internal static class Program {
         else throw new ArgumentException("use profile save|show|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > 11 stability averages acceleration changes.\n  8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n  8 > 15 curve builder / preview first, then apply.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > 11 stability averages acceleration changes.\n  8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off, including snap.\n\n  shutdown popup?\n  6 > 7 or aim events / inspect application crashes and timing.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(words[0]=="cleanup") {

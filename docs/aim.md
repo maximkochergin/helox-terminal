@@ -1,6 +1,12 @@
 # aim tools / research notes
 
-checked 2026-10-07. presets change mouse input, not game state or targets. no claim of guaranteed score improvement.
+## personal curve builder / 0.12.0
+
+reviewed 2026-10-08 against the pinned [lookup](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/accel-lookup.hpp) and [modifier](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) implementations. the constructor generates a native sensitivity table with independent base, start/end, fast/base plateau and transition shape. official-engine testing exposed extrapolation beyond the last point during development; a constant tail now enforces the steady plateau. tests include start zero, a narrow high-speed transition, shape extremes, a constant curve and far-above-end speeds. the signed driver binary is unchanged.
+
+preview uses the selected device's proposed profile, existing filters and normalization. curve persistence survives component switches and resume. native serialization is checked after float conversion; an externally changed helox table blocks incidental rebuilding from stale saved parameters. snapping is a separate optional existing-driver control, defaults off and has no claimed riot approval. [controls, limits and event diagnostics](curves.md).
+
+checked 2026-10-08. presets change mouse input, not game state or targets. no claim of guaranteed score improvement.
 
 ## clearer profile diagnostics / 0.11.0
 

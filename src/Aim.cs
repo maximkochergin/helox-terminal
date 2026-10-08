@@ -20,12 +20,18 @@ public sealed class AimStatus {
     public double? GainLimit {get;set;}
     public bool? Enabled {get;set;}
     public bool? InputTransformed {get;set;}
+    public double? SnapDegrees {get;set;}
+    public double[] LookupData {get;set;}
+    public bool? LookupIsSensitivity {get;set;}
+    public string CurveSpeedUnit {get;set;}
 }
 internal sealed class AimPreset {
     internal bool Precision,Smooth,Stability;
     internal double SmoothMs=4,GainLimit=1.4,StabilityMs=8;
+    internal double SnapDegrees;
+    internal AimCurve Curve;
     internal Dictionary<string,object> ToMap() {
-        return new Dictionary<string,object>{{"precision",Precision},{"smooth",Smooth},{"smoothMs",SmoothMs},{"gainLimit",GainLimit},{"stability",Stability},{"stabilityMs",StabilityMs}};
+        return new Dictionary<string,object>{{"precision",Precision},{"smooth",Smooth},{"smoothMs",SmoothMs},{"gainLimit",GainLimit},{"stability",Stability},{"stabilityMs",StabilityMs},{"snapDegrees",SnapDegrees},{"curve",Curve==null ? null : Curve.ToMap()}};
     }
 }
 internal static class Aim {
@@ -71,6 +77,9 @@ internal static class Aim {
     internal static void CheckGain(double gain) {
         if(double.IsNaN(gain) || double.IsInfinity(gain) || gain<1.1 || gain>1.8) throw new ArgumentException("precision gain limit: 1.1..1.8x");
     }
+    internal static void CheckSnap(double degrees) {
+        if(double.IsNaN(degrees) || double.IsInfinity(degrees) || degrees<0 || degrees>5) throw new ArgumentException("snap angle: 0..5 degrees / helox limit, not riot approval");
+    }
     private static void CheckStability(double ms) {
         if(double.IsNaN(ms) || double.IsInfinity(ms) || ms<8 || ms>12) throw new ArgumentException("stability input half-life: 8..12 ms");
     }
@@ -81,7 +90,10 @@ internal static class Aim {
         preset.Precision=(bool)precision;preset.Smooth=(bool)smooth;preset.SmoothMs=SavedHalfLife(saved);
         preset.GainLimit=SavedNumber(saved,"gainLimit",1.4);CheckGain(preset.GainLimit);
         if(saved.TryGetValue("stability",out stability)) {if(!(stability is bool)) throw new ArgumentException("invalid saved stability toggle");preset.Stability=(bool)stability;}
-        preset.StabilityMs=SavedNumber(saved,"stabilityMs",8);CheckStability(preset.StabilityMs);return preset;
+        preset.StabilityMs=SavedNumber(saved,"stabilityMs",8);CheckStability(preset.StabilityMs);
+        preset.SnapDegrees=SavedNumber(saved,"snapDegrees",0);CheckSnap(preset.SnapDegrees);
+        object curve;if(saved.TryGetValue("curve",out curve) && curve!=null) preset.Curve=AimCurve.FromMap(curve);
+        return preset;
     }
     internal static RateResult RecentRate(RateResult history,string devicePath,DateTime now) {
         DateTime measured;
@@ -100,17 +112,23 @@ internal static class Aim {
         return RecentRate(history,device.Path,DateTime.UtcNow);
     }
     internal static void CheckChange(string feature,bool on,double? smoothMs,double? gainLimit) {
-        if(feature!="precision" && feature!="smooth" && feature!="stability" && feature!="resume" && feature!="tracking") throw new ArgumentException("use aim precision|smooth|stability on|off or aim resume|tracking");
+        if(feature!="precision" && feature!="smooth" && feature!="stability" && feature!="resume" && feature!="tracking" && feature!="curve" && feature!="snap") throw new ArgumentException("use aim precision|smooth|stability|snap on|off, curve or resume|tracking");
         if(feature=="tracking" && !on) throw new ArgumentException("use aim tracking / restore components with precision, stability and smooth");
         if(smoothMs.HasValue) {CheckHalfLife(smoothMs.Value);if(feature!="smooth" || !on) throw new ArgumentException("strength requires aim smooth on");}
         if(gainLimit.HasValue) {CheckGain(gainLimit.Value);if(feature!="precision" || !on) throw new ArgumentException("gain limit requires aim precision on");}
     }
-    internal static AimPreset Resolve(AimStatus status,Dictionary<string,object> saved,string feature,bool on,double? smoothMs=null,double? gainLimit=null,double stabilityMs=8) {
+    internal static AimPreset Resolve(AimStatus status,Dictionary<string,object> saved,string feature,bool on,double? smoothMs=null,double? gainLimit=null,double stabilityMs=8,AimCurve curve=null,double? snap=null) {
         CheckChange(feature,on,smoothMs,gainLimit);CheckStability(stabilityMs);
+        if(curve!=null) {curve.Check();if(feature!="curve") throw new ArgumentException("curve definition requires curve apply");}
+        if(snap.HasValue) {CheckSnap(snap.Value);if(feature!="snap" || !on) throw new ArgumentException("angle requires aim snap on");}
         AimPreset preset=ReadPreset(saved);
         if(feature=="resume") {if(saved==null) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");return preset;}
         bool own=status.Profile!=null && status.Profile.StartsWith("helox-",StringComparison.Ordinal);
-        preset.Precision=own && status.Mode=="natural";preset.Smooth=own && status.OutputHalfLifeMs>0;
+        preset.Precision=own && (status.Mode=="natural" || status.Mode=="lut");preset.Smooth=own && status.OutputHalfLifeMs>0;
+        if(own && status.Mode=="lut" && feature!="curve" && !gainLimit.HasValue) {
+            if(status.LookupIsSensitivity!=true || preset.Curve==null || !preset.Curve.Matches(status.LookupData)) throw new InvalidOperationException("custom curve changed / apply a curve or resume saved");
+        }else if(own && status.Mode=="natural") preset.Curve=null;
+        if(own && status.SnapDegrees.HasValue) preset.SnapDegrees=status.SnapDegrees.Value;
         if(preset.Smooth && status.OutputHalfLifeMs>=1 && status.OutputHalfLifeMs<=12) preset.SmoothMs=status.OutputHalfLifeMs.Value;
         if(preset.Precision) {
             if(status.GainLimit>=1.1 && status.GainLimit<=1.8) preset.GainLimit=status.GainLimit.Value;
@@ -120,14 +138,17 @@ internal static class Aim {
         if(feature=="precision") preset.Precision=on;
         else if(feature=="smooth") preset.Smooth=on;
         else if(feature=="tracking") {preset.Precision=true;preset.Smooth=false;preset.Stability=true;preset.StabilityMs=stabilityMs;}
+        else if(feature=="curve") {preset.Precision=true;preset.Curve=curve==null ? null : curve.Copy();}
+        else if(feature=="snap") preset.SnapDegrees=on ? (snap ?? 1) : 0;
         else {
             if(on && !preset.Precision) throw new InvalidOperationException("enable precision first / stability smooths acceleration only");
             preset.Stability=on;if(on) preset.StabilityMs=stabilityMs;
         }
         if(smoothMs.HasValue) preset.SmoothMs=smoothMs.Value;
-        if(gainLimit.HasValue) preset.GainLimit=gainLimit.Value;
+        if(gainLimit.HasValue) {preset.GainLimit=gainLimit.Value;preset.Curve=null;}
         return preset;
     }
+    private static double[] ToDoubles(object[] values) {double[] result=new double[values.Length];for(int i=0;i<values.Length;i++) result[i]=Convert.ToDouble(values[i]);return result;}
     private static void Load() {
         if(bridge!=null) return;
         if(!Environment.Is64BitProcess) throw new InvalidOperationException("aim tools require 64-bit windows");
@@ -219,17 +240,20 @@ internal static class Aim {
             if(profile==null) throw new InvalidOperationException("driver profile not found");
             Dictionary<string,object> config=entry==null ? Map(cfg["defaultDeviceConfig"]) : Map(entry["config"]);
             return new AimStatus {State="ready",DeviceId=id,Profile=name,Enabled=!(bool)config["disable"],Mode=(string)Map(profile[X])["mode"],
-                OutputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Output]),GainLimit=Convert.ToDouble(Map(profile[X])["limit"]),
+                SnapDegrees=Convert.ToDouble(profile["Degrees of angle snapping"]),LookupData=(string)Map(profile[X])["mode"]=="lut" ? ToDoubles((object[])Map(profile[X])["data"]) : null,
+                LookupIsSensitivity=(string)Map(profile[X])["mode"]=="lut" ? (bool?)!(bool)Map(profile[X])["Gain / Velocity"] : null,
+                CurveSpeedUnit=Convert.ToDouble(config["DPI (normalizes input speed unit: counts/ms -> in/s)"])>0 ? "in/s" : "counts/ms",
+                OutputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Output]),GainLimit=(string)Map(profile[X])["mode"]=="lut" ? null : (double?)Convert.ToDouble(Map(profile[X])["limit"]),
                 InputHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Input]),ScaleHalfLifeMs=Convert.ToDouble(Map(profile[Speed])[Scale]),
-                StabilityEnabled=!(bool)config["disable"] && (string)Map(profile[X])["mode"]=="natural" && Convert.ToDouble(Map(profile[Speed])[Input])>=8 && Convert.ToDouble(Map(profile[Speed])[Input])<=12 && Convert.ToDouble(Map(profile[Speed])[Scale])==Convert.ToDouble(Map(profile[Speed])[Input])/2,
+                StabilityEnabled=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]=="natural" || (string)Map(profile[X])["mode"]=="lut") && Convert.ToDouble(Map(profile[Speed])[Input])>=8 && Convert.ToDouble(Map(profile[Speed])[Input])<=12 && Convert.ToDouble(Map(profile[Speed])[Scale])==Convert.ToDouble(Map(profile[Speed])[Input])/2,
                 InputTransformed=!(bool)config["disable"] && ((string)Map(profile[X])["mode"]!="noaccel" || (string)Map(profile["Vertical accel parameters"])["mode"]!="noaccel" || Convert.ToDouble(Map(profile[Speed])[Output])>0 ||
                     Convert.ToDouble(profile["Output DPI"])!=1000 || Convert.ToDouble(config["DPI (normalizes input speed unit: counts/ms -> in/s)"])!=0 ||
                     Convert.ToDouble(profile["Y/X output DPI ratio (vertical sens multiplier)"])!=1 || Convert.ToDouble(profile["L/R output DPI ratio (left sens multiplier)"])!=1 || Convert.ToDouble(profile["U/D output DPI ratio (up sens multiplier)"])!=1 ||
                     Convert.ToDouble(profile["Degrees of rotation"])!=0 || Convert.ToDouble(profile["Degrees of angle snapping"])!=0 || Convert.ToDouble(profile["Input Speed Cap"])>0),Note="live driver readback; profile resets on reboot"};
     }
     // Preserve defaults and other devices; only replace our selected hardware-id override.
-    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4,double gainLimit=1.4,bool stability=false,double stabilityMs=8,bool enable=false) {
-        CheckHalfLife(smoothMs);CheckGain(gainLimit);CheckStability(stabilityMs);
+    internal static Dictionary<string,object> Configure(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,bool precision,bool smooth,double smoothMs=4,double gainLimit=1.4,bool stability=false,double stabilityMs=8,bool enable=false,AimCurve curve=null,double snap=0) {
+        CheckHalfLife(smoothMs);CheckGain(gainLimit);CheckStability(stabilityMs);CheckSnap(snap);if(curve!=null) curve.Check();
         Dictionary<string,object> cfg=Parse(Store.Json.Serialize(current));
         string name="helox-"+id.ToLowerInvariant().Replace('\\','-');
         List<object> profiles=Items(cfg["profiles"]);
@@ -239,6 +263,8 @@ internal static class Aim {
         Dictionary<string,object> profile=Map(Items(defaults["profiles"])[0]);profile=Parse(Store.Json.Serialize(profile));profile["name"]=name;
         Dictionary<string,object> accel=Map(profile[X]);accel["mode"]=precision ? "natural" : "noaccel";
         accel["Gain / Velocity"]=true;accel["inputOffset"]=3.0;accel["decayRate"]=0.05;accel["limit"]=gainLimit;
+        if(precision && curve!=null) {accel["mode"]="lut";accel["Gain / Velocity"]=false;accel["inputOffset"]=0.0;accel["data"]=curve.Table();}
+        profile["Degrees of angle snapping"]=snap;
         Dictionary<string,object> speed=Map(profile[Speed]);speed[Input]=precision ? (stability ? stabilityMs : 4.0) : 0.0;speed[Scale]=precision ? (stability ? stabilityMs/2 : 2.0) : 0.0;speed[Output]=smooth ? smoothMs : 0.0;
         int index=profiles.FindIndex(delegate(object p){return (string)Map(p)["name"]==name;});
         if(index<0) profiles.Add(profile);else profiles[index]=profile;
@@ -281,8 +307,9 @@ internal static class Aim {
             throw new IOException("aim apply failed; previous driver settings restored: "+error.Message);
         }
     }
-    internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null,double? gainLimit=null) {
+    internal static AimStatus Set(Device device,string feature,bool on,double? smoothMs=null,double? gainLimit=null,AimCurve curve=null,double? snap=null) {
         CheckChange(feature,on,smoothMs,gainLimit);
+        if(curve!=null) curve.Check();if(snap.HasValue) CheckSnap(snap.Value);
         using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
@@ -291,14 +318,30 @@ internal static class Aim {
                 string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> presets=Saved(preferences);
                 object existing;Dictionary<string,object> saved=presets.TryGetValue(id,out existing) ? Map(existing) : null;
                 RateResult history=(feature=="stability" && on) || feature=="tracking" ? RecentRate(device) : null;
-                AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs));
-                Dictionary<string,object> after=Configure(before,Defaults(),id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs,on || feature=="resume");Validate(after);
+                AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs),curve,snap);
+                Dictionary<string,object> after=ConfigurePreset(before,Defaults(),id,preset,on || feature=="resume");Validate(after);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=preset.ToMap();
                 return Describe(Commit(before,after,Write,delegate {Store.Save(preferences,presets);}),id);
             }finally {if(held) mutex.ReleaseMutex();}
         }
+    }
+    internal static Dictionary<string,object> ConfigurePreset(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,AimPreset preset,bool enable=false) {
+        return Configure(current,defaults,id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs,enable,preset.Curve,preset.SnapDegrees);
+    }
+    internal static AimCurve Draft(Device device) {
+        string id=Id(device);object value;Dictionary<string,object> saved=Saved(Path.Combine(Store.Root,"aim-presets.json"));
+        return saved.TryGetValue(id,out value) && ReadPreset(Map(value)).Curve!=null ? ReadPreset(Map(value)).Curve.Copy() : new AimCurve();
+    }
+    internal static AimResponse PreviewCurve(Device device,AimCurve curve) {
+        curve.Check();Dictionary<string,object> before=Active();string id=Id(device);object value;
+        Dictionary<string,object> saved=Saved(Path.Combine(Store.Root,"aim-presets.json"));
+        AimPreset preset=Resolve(Describe(before,id),saved.TryGetValue(id,out value) ? Map(value) : null,"curve",true,null,null,8,curve);
+        RateResult history=RecentRate(device);
+        AimResponse result=AimResponseTest.Run(ConfigurePreset(before,Defaults(),id,preset,true),id,history==null ? 8 : history.MedianIntervalMs);
+        result.IntervalSource=history==null ? "8 ms example / no recent matching history" : "recent delivery median / not kernel timing readback";
+        return result;
     }
     internal static Dictionary<string,object> Commit(Dictionary<string,object> before,Dictionary<string,object> after,Func<Dictionary<string,object>,Dictionary<string,object>> write,Action save) {
         // The active configuration already verifies an unchanged request; no activation delay needed.
@@ -325,6 +368,7 @@ internal static class Aim {
     internal static void TestEngine() {
         if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) {Console.WriteLine("  aim engine tests skipped / aim prepare first");return;}
         Dictionary<string,object> defaults=Defaults();
+        TestPersonalCurve(defaults);
         foreach(Device device in Device.List()) if(device.TrustCandidate) {
             if(Id(device).IndexOf("VID_145F&PID_0326",StringComparison.OrdinalIgnoreCase)<0) throw new Exception("aim hardware id mapping failed");
         }
@@ -456,5 +500,49 @@ internal static class Aim {
         Console.WriteLine("  passed / official aim engine: gain choices, steadier acceleration, smoother output, direction preserved; no driver writes");
     }
     private static double Axis(object pair) {return Convert.ToDouble(pair.GetType().GetProperty("Item1").GetValue(pair,null));}
+    private static void WithEngine(Dictionary<string,object> config,Action<object> run) {
+        object valid=Validate(config);IList engines=(IList)valid.GetType().GetField("accels").GetValue(valid);
+        try {run(engines[engines.Count-1]);}finally {foreach(object engine in engines) {IDisposable disposable=engine as IDisposable;if(disposable!=null) disposable.Dispose();}}
+    }
+    private static double TableRatio(object[] table,double speed) {
+        if(speed<=Convert.ToDouble(table[0])) return Convert.ToDouble(table[1]);
+        for(int i=2;i<table.Length;i+=2) if(speed<=Convert.ToDouble(table[i])) {
+            double a=Convert.ToDouble(table[i-2]),b=Convert.ToDouble(table[i]),low=Convert.ToDouble(table[i-1]),high=Convert.ToDouble(table[i+1]);
+            return low+(high-low)*(speed-a)/(b-a);
+        }
+        return Convert.ToDouble(table[table.Length-1]);
+    }
+    private static void TestPersonalCurve(Dictionary<string,object> defaults) {
+        foreach(AimCurve curve in new AimCurve[]{new AimCurve(),new AimCurve {Base=.25,Start=0,End=.1,Limit=3,Shape=.5},new AimCurve {Base=2,Start=1000,End=1000.1,Limit=3,Shape=3},new AimCurve {Base=.8,Start=2,End=24,Limit=1.8,Shape=1.5},new AimCurve {Base=1,Start=0,End=2000,Limit=1,Shape=3}}) {
+            Dictionary<string,object> config=Configure(defaults,Defaults(),"HID\\CURVE",true,false,4,1.4,false,8,true,curve);
+            Dictionary<string,object> speed=Map(Map(Items(config["profiles"])[1])[Speed]);speed[Input]=0.0;speed[Scale]=0.0;
+            object valid=Validate(config);AimStatus roundtrip=Describe(Parse(Text(valid)),"HID\\CURVE");
+            if(!curve.Matches(roundtrip.LookupData)) throw new Exception("native curve serialization changed the table");
+            IList unused=(IList)valid.GetType().GetField("accels").GetValue(valid);foreach(object item in unused) {IDisposable disposable=item as IDisposable;if(disposable!=null) disposable.Dispose();}
+            object[] table=curve.Table();
+            WithEngine(config,delegate(object engine) {
+                foreach(double inputSpeed in new double[]{.0001,curve.Start+.00001,(curve.Start+curve.End)/2,curve.End,curve.End+100}) {
+                    object output=Call(engine,"ManagedAccel","Accelerate",1000,0,1.0,1000/inputSpeed);
+                    if(Math.Abs(Axis(output)/1000-TableRatio(table,inputSpeed))>1e-6) throw new Exception("custom curve disagrees with official engine / speed "+inputSpeed.ToString(CultureInfo.InvariantCulture)+" / actual "+(Axis(output)/1000).ToString(CultureInfo.InvariantCulture)+" / expected "+TableRatio(table,inputSpeed).ToString(CultureInfo.InvariantCulture));
+                }
+                object turn=Call(engine,"ManagedAccel","Accelerate",-200,100,1.0,8.0);double y=Convert.ToDouble(turn.GetType().GetProperty("Item2").GetValue(turn,null));
+                if(Axis(turn)>=0 || y<=0 || Math.Abs(Axis(turn)/y+2)>1e-8) throw new Exception("custom curve changed direction with snapping off");
+                object stop=Call(engine,"ManagedAccel","Accelerate",0,0,1.0,8.0);
+                if(Axis(stop)!=0 || Convert.ToDouble(stop.GetType().GetProperty("Item2").GetValue(stop,null))!=0) throw new Exception("custom curve generated rest motion");
+            });
+        }
+        foreach(double angle in new double[]{0,1,5}) {
+            Dictionary<string,object> config=Configure(defaults,Defaults(),"HID\\CURVE",false,false,4,1.4,false,8,true,null,angle);
+            WithEngine(config,delegate(object engine) {
+                object near=Call(engine,"ManagedAccel","Accelerate",1000,10,1.0,8.0);double x=Axis(near),y=Convert.ToDouble(near.GetType().GetProperty("Item2").GetValue(near,null));
+                if(angle==0 ? (x!=1000 || y!=10) : (y!=0 || Math.Abs(x-Math.Sqrt(1000100))>1e-6)) throw new Exception("angle snap horizontal/off response failed");
+                near=Call(engine,"ManagedAccel","Accelerate",-10,-1000,1.0,8.0);x=Axis(near);y=Convert.ToDouble(near.GetType().GetProperty("Item2").GetValue(near,null));
+                if(angle==0 ? (x!=-10 || y!=-1000) : (x!=0 || y>=0)) throw new Exception("angle snap vertical sign response failed");
+                object diagonal=Call(engine,"ManagedAccel","Accelerate",100,-100,1.0,8.0);
+                if(Axis(diagonal)!=100 || Convert.ToDouble(diagonal.GetType().GetProperty("Item2").GetValue(diagonal,null))!=-100) throw new Exception("angle snap affected motion outside its threshold");
+            });
+        }
+        Console.WriteLine("  passed / personal LUT curves, native serialization, direction/rest and optional snap thresholds / no driver writes");
+    }
 }
 }

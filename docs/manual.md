@@ -7,7 +7,7 @@ minimal white-text windows cli for the trust gxt 929 helox. lowercase controls, 
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.11.0
+  helox / 0.12.0
   ----------------------------------------
   receiver  gxt 929 helox / dpi ? / hz ?
   windows   speed 10/20 / accel on / desktop
@@ -111,11 +111,24 @@ profiles must contain a complete, valid settings snapshot. a damaged original ba
 
 ## advanced commands
 
+`8 > 15` opens the [personal curve builder](curves.md): base sensitivity, start/end speeds, fast/base limit and transition shape. preview runs the proposed profile through the official engine without activation. apply writes, checks and saves the selected device's curve. component switches preserve it; an explicit natural gain returns to natural acceleration.
+
+`8 > 16` offers optional axis angle snapping, initially off. the 0..5 degree range is a helox limit, not riot certification. this direction filter is independent of precision and output smoothing. [behavior and policy limits](curves.md#angle-snapping).
+
+`6 > 7` and `8 > 17` read application crashes and shutdown timing without changing settings. [coverage](curves.md#shutdown-popup).
+
 ```text
 setup
 aim prepare
 aim install
 aim status
+aim events
+aim curve
+aim curve preview 1 3 30 1.4 1
+aim curve apply 1 3 30 1.4 1
+aim curve natural
+aim snap on [0..5]
+aim snap off
 aim response
 aim tracking
 aim doctor

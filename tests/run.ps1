@@ -77,9 +77,17 @@ if ($LASTEXITCODE -ne 0 -or ($dossierScreen -join "`n") -notmatch 'unavailable /
 if ($status.receiver.TrustCandidate -and ($null -eq $status.dossier.Model.LengthMm -or !$status.dossier.Hid)) { throw 'dossier device metadata missing' }
 $aimStatus = & $executable aim status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
+$events = & $executable aim events --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or !$events.Source -or !$events.PSObject.Properties['AimApplicationCrashes'] -or !$events.PSObject.Properties['Errors']) { throw 'event diagnostic contract failed' }
 $badAim = & $executable aim smooth maybe --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$badAim.error) { throw 'aim invalid toggle validation failed' }
 if ($aimStatus.State -eq 'ready') {
+    $curvePreview = & $executable aim curve preview 0.8 2 24 1.8 1.5 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $curvePreview.applied -or $curvePreview.response.Readback.Mode -ne 'lut' -or $curvePreview.response.HorizontalSamples.Count -ne 8 -or $curvePreview.curve.base -ne 0.8) { throw 'personal curve preview failed' }
+    $afterPreview = & $executable aim status --json | ConvertFrom-Json
+    if (($afterPreview | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'curve preview changed the driver' }
+    $builderCancel = "8`n15`n2`n0`n6`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($builderCancel -join "`n") -notmatch 'curve preview / official engine / nothing applied' -or ($builderCancel -join "`n") -match 'curve applied') { throw 'builder zero-start preview/cancel failed' }
     $response = & $executable aim response --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
     $expectedCounts=@(1,8,24,40,80,160,400,800)
@@ -108,6 +116,13 @@ if ($LASTEXITCODE -ne 0 -or ($smoothChoice -join "`n") -notmatch 'light 2 ms' -o
 $precisionChoice = "8`n1`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($precisionChoice -join "`n") -notmatch 'steady 1.2x' -or ($precisionChoice -join "`n") -match 'applied /') { throw 'precision choice or cancellation failed' }
 if (($aimMenu -join "`n") -notmatch '11  stability on' -or ($aimMenu -join "`n") -notmatch '13  tracking preset') { throw 'aim refinement menus missing' }
+if (($aimMenu -join "`n") -notmatch '15  curve builder' -or ($aimMenu -join "`n") -notmatch '16  angle snapping') { throw 'curve and snap menus missing' }
+$snapCancel = "8`n16`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($snapCancel -join "`n") -notmatch 'optional, not riot certified' -or ($snapCancel -join "`n") -match 'applied /') { throw 'snap cancellation failed' }
+foreach ($arguments in @(@('aim','curve','preview','0','3','30','1.4','1'),@('aim','curve','apply','1','30','3','1.4','1'),@('aim','curve','apply','1','3','30','4','1'),@('aim','curve','preview','1','3','30','1.4','0'),@('aim','curve','apply','1','3','30','1.4'),@('aim','curve'),@('aim','snap','on','6'),@('aim','snap','on','-1'),@('aim','snap','off','1'),@('aim','snap','on','NaN'))) {
+    $invalid = & $executable @arguments --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalid.error -or $invalid.applied) { throw 'invalid curve/snap arguments accepted' }
+}
 foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'),@('aim','precision','on','1'),@('aim','precision','on','1.9'),@('aim','precision','on','NaN'),@('aim','precision','on','Infinity'),@('aim','precision','off','1.4'),@('aim','stability','on','8'),@('aim','stability','maybe'),@('aim','tracking','off'),@('aim','response','extra'))) {
     $invalidStrength = & $executable @badStrength --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'aim command validation failed' }
