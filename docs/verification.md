@@ -1,5 +1,9 @@
 # verification
 
+## selected mouse and imported profiles / 0.15.1
+
+regressions cover default selection of a sole non-trust mouse, refusal of ambiguous/disconnected devices, and the preview's mouse identity guard. recipe matching accepts an equivalent renamed profile and ignores unrelated default-profile edits; bypass and altered device timing still fail the match. smoothing rejects changes that would replace imported curve, axis, rotation or cap settings before backups, preferences or driver writes. real integration checks exercise normal smoothing on/off around a recipe and a rejected imported cap with full native and saved-file comparisons.
+
 ## flick recovery and live recipe matching / 0.15.0
 
 the response model now includes a horizontal flick followed by sixteen opposite one-count reports, alongside the perpendicular correction case. removing output averaging preserves settled slow/fast response in the natural curve at 1, 8 and 16 ms intervals. corrected turn peaks are 2, 1 and 1 counts respectively; reversal peaks are 1 count with no wrong-direction output. fractional carry can cancel the first opposite count at 8 and 16 ms, so that is reported explicitly rather than described as zero lost counts.

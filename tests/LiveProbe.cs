@@ -49,6 +49,21 @@ internal static class LiveProbe {
                 Expect((bool)applied["Applied"] && !(bool)applied["GameSettingsApplied"] && (string)read["Mode"]=="lut" && Convert.ToDouble(read["InputHalfLifeMs"])==0 && (int)Map(applied["Windows"])["Acceleration"]==0,"live preset apply failed");
                 Dictionary<string,object> match=Command("preset status");
                 Expect((bool)match["WindowsMatch"] && ((System.Collections.IList)match["DriverMatches"]).Contains(name) && !(bool)match["GameSettingsVerified"],"live preset status missed active recipe");
+                if(name=="valorant") {
+                    object recipeConfig=Call(Aim,"Active");
+                    Command("aim smooth on 2");Command("aim smooth off");
+                    Expect(Same(recipeConfig,Call(Aim,"Active")),"smoothing roundtrip changed the live recipe curve");
+                    string prefsPath=Path.Combine(root,"aim-presets.json");byte[] recipePrefs=File.ReadAllBytes(prefsPath);
+                    Command("aim curve natural");
+                    Dictionary<string,object> imported=Map(Call(Aim,"Parse",Json.Serialize(Call(Aim,"Active"))));
+                    foreach(object value in (System.Collections.IList)imported["profiles"]) if((string)Map(value)["name"]==(string)read["Profile"]) Map(value)["Input Speed Cap"]=10.0;
+                    Call(Aim,"Write",imported);
+                    string prefsBytes=Convert.ToBase64String(File.ReadAllBytes(prefsPath));
+                    Expect(((string)Command("aim smooth off",true)["error"]).Contains("smoothing would replace custom curve settings"),"imported natural profile did not trigger smoothing preservation guard");
+                    Expect(Same(imported,Call(Aim,"Active")) && prefsBytes==Convert.ToBase64String(File.ReadAllBytes(prefsPath)),"blocked smoothing changed native or saved settings");
+                    Call(Aim,"Write",recipeConfig);
+                    File.WriteAllBytes(prefsPath,recipePrefs);
+                }
                 string undoPath=Path.Combine(root,"game-undo.json"),undoBytes=Convert.ToBase64String(File.ReadAllBytes(undoPath));
                 Dictionary<string,object> repeat=Command("preset apply "+name);
                 Expect((bool)repeat["Applied"] && undoBytes==Convert.ToBase64String(File.ReadAllBytes(undoPath)),"identical reapply replaced useful undo");

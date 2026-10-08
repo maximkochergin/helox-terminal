@@ -233,6 +233,20 @@ internal static class Aim {
         foreach(object entry in Items(cfg["profiles"])) if((string)Map(entry)["name"]==name) return Map(entry);
         return null;
     }
+    internal static Dictionary<string,object> EffectiveProfile(Dictionary<string,object> cfg,string id) {
+        Dictionary<string,object> entry=DeviceEntry(cfg,id);
+        string name=entry==null || String.IsNullOrEmpty((string)entry["profile"]) ? (string)Map(Items(cfg["profiles"])[0])["name"] : (string)entry["profile"];
+        Dictionary<string,object> profile=Profile(cfg,name);
+        if(profile==null) throw new InvalidOperationException("driver profile not found");
+        Dictionary<string,object> result=Parse(Store.Json.Serialize(profile));result.Remove("name");return result;
+    }
+    internal static void RequireSmoothingOnly(Dictionary<string,object> before,Dictionary<string,object> after,string id) {
+        Dictionary<string,object> left=EffectiveProfile(before,id),right=EffectiveProfile(after,id);
+        // Speed-estimate filters may migrate, but changing smoothing must not replace a curve,
+        // gain, axis scale, rotation or cap imported from another configuration tool.
+        foreach(string key in new string[]{Input,Scale,Output}) {Map(left[Speed]).Remove(key);Map(right[Speed]).Remove(key);}
+        if(!SameValue(left,right)) throw new InvalidOperationException("smoothing would replace custom curve settings / use the original profile editor, or explicitly apply a helox curve or game preset");
+    }
     internal static AimStatus Read(Device device) {
         bool installed=DriverPresent();
         if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) return new AimStatus {State=installed ? "unavailable" : "not installed",InputTransformed=installed ? (bool?)null : false,Note="8 aim tools / install backend"};
@@ -383,7 +397,8 @@ internal static class Aim {
                 object existing;Dictionary<string,object> saved=presets.TryGetValue(id,out existing) ? Map(existing) : null;
                 RateResult history=(feature=="stability" && on) || feature=="tracking" ? RecentRate(device) : null;
                 AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs),curve,snap,directions,damping);
-                Dictionary<string,object> after=ConfigurePreset(before,Defaults(),id,preset,on || feature=="resume");Validate(after);
+                Dictionary<string,object> after=Canonical(ConfigurePreset(before,Defaults(),id,preset,on || feature=="resume"));
+                if(feature=="smooth") RequireSmoothingOnly(before,after,id);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=preset.ToMap();
@@ -717,6 +732,14 @@ internal static class Aim {
         Dictionary<string,object> legacy=Parse(Store.Json.Serialize(fixedCurve));Dictionary<string,object> speed=Map(Map(Items(legacy["profiles"])[1])[Speed]);speed[Input]=4.0;speed[Scale]=2.0;
         AimResponse old=AimResponseTest.Run(legacy,id,8),current=AimResponseTest.Run(fixedCurve,id,8);
         if(old.AfterFlickZeroReports<1 || current.AfterFlickZeroReports!=0 || current.AfterFlickPeakCounts!=1) throw new Exception("LUT flick recovery regression failed");
+        Dictionary<string,object> renamed=Canonical(fixedCurve);
+        Map(Items(renamed["profiles"])[1])["name"]="renamed training curve";
+        DeviceEntry(renamed,id)["profile"]="renamed training curve";
+        if(Array.IndexOf(GamePresets.Matches(renamed,defaults,id),"valorant")<0) throw new Exception("renamed equivalent recipe was not recognized");
+        Map(Items(renamed["profiles"])[0])["Input Speed Cap"]=10.0;
+        if(Array.IndexOf(GamePresets.Matches(renamed,defaults,id),"valorant")<0) throw new Exception("unrelated default profile affected selected recipe matching");
+        Map(DeviceEntry(renamed,id)["config"])["Polling rate Hz (keep at 0 for automatic adjustment)"]=125.0;
+        if(GamePresets.Matches(renamed,defaults,id).Length!=0) throw new Exception("changed device timing still matched a recipe");
         foreach(GameRecipe recipe in GamePresets.List()) foreach(double interval in new double[]{1,8,16}) {
             Dictionary<string,object> recipeConfig=Canonical(GamePresets.Configure(defaults,defaults,id,recipe));
             if(Array.IndexOf(GamePresets.Matches(recipeConfig,defaults,id),recipe.Id)<0) throw new Exception("live recipe match missed an applied recipe");

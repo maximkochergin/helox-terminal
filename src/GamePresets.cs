@@ -36,14 +36,20 @@ public sealed class GamePresetStatus {
     public bool GameSettingsVerified {get;set;}
 }
 internal static class GamePresets {
-    // Compare effective selected-device configuration, not a remembered preset label.
+    // Names and unrelated devices are not part of the selected mouse's processing.
     internal static string[] Matches(Dictionary<string,object> current,Dictionary<string,object> defaults,string id) {
         List<string> matches=new List<string>();
         foreach(GameRecipe recipe in List()) {
             Dictionary<string,object> expected=Aim.Canonical(Configure(current,defaults,id,recipe));
-            if(Aim.SameValue(current,expected)) matches.Add(recipe.Id);
+            if(SameSelected(current,expected,id)) matches.Add(recipe.Id);
         }
         return matches.ToArray();
+    }
+    internal static bool SameSelected(Dictionary<string,object> current,Dictionary<string,object> expected,string id) {
+        Dictionary<string,object> actualEntry=Aim.DeviceEntry(current,id),expectedEntry=Aim.DeviceEntry(expected,id);
+        object actualConfig=actualEntry==null ? current["defaultDeviceConfig"] : actualEntry["config"];
+        object expectedConfig=expectedEntry==null ? expected["defaultDeviceConfig"] : expectedEntry["config"];
+        return Aim.SameValue(actualConfig,expectedConfig) && Aim.SameValue(Aim.EffectiveProfile(current,id),Aim.EffectiveProfile(expected,id));
     }
     internal static GamePresetStatus Status(Device device) {
         return Aim.Locked(delegate {

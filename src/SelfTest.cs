@@ -24,6 +24,18 @@ internal static class SelfTest {
         }
         Device first=new Device {Path="first"},second=new Device {Path="second"};
         List<Device> displayed=new List<Device>{first,second};
+        Expect(Program.DefaultMouse(new List<Device>{first})==first,"single non-trust mouse is usable without selection");
+        Device trust=new Device {Path="trust",TrustCandidate=true};
+        Expect(Program.DefaultMouse(new List<Device>{first,trust})==trust,"existing trust default selection remains stable");
+        foreach(List<Device> list in new List<Device>[] {new List<Device>(),displayed,new List<Device>{trust,new Device {Path="other-trust",TrustCandidate=true}}}) {
+            bool ambiguous=false;try {Program.DefaultMouse(list);}catch(InvalidOperationException) {ambiguous=true;}
+            Expect(ambiguous,"absent or ambiguous mice require explicit selection");
+        }
+        Program.RequirePresetMouse("FIRST",first);
+        foreach(Device replacement in new Device[]{second,null}) {
+            bool blocked=false;try {Program.RequirePresetMouse(first.Path,replacement);}catch(InvalidOperationException) {blocked=true;}
+            Expect(blocked,"preset draft refuses a replacement or disconnected mouse");
+        }
         Expect(Program.ResolveChoice(displayed,1,new List<Device>{second,first})==first,"first mouse remains selectable after enumeration reorder");
         bool choiceRejected=false;
         try {Program.ResolveChoice(displayed,1,new List<Device>{second});}catch(InvalidOperationException) {choiceRejected=true;}
@@ -392,10 +404,23 @@ internal static class SelfTest {
             Expect(Aim.SameValue(cfg["defaultDeviceConfig"],peer["defaultDeviceConfig"]) && Aim.SameValue(Aim.DeviceEntry(cfg,"HID\\PEER"),Aim.DeviceEntry(peer,"HID\\PEER")),"game recipe preserves defaults and peer mice");
             Aim.DescribeDamping(state,recipe.Controls());Expect(state.DampingEnabled==recipe.MicroDamping,"game recipe damping readback matches composed native table");
             Expect(Aim.SameValue(recipe.Controls().ToMap(),Aim.ReadPreset(Aim.Parse(Store.Json.Serialize(recipe.Controls().ToMap()))).ToMap()),"complete game controls roundtrip for resume");
+            Dictionary<string,object> renamed=Aim.Parse(Store.Json.Serialize(cfg));
+            Aim.Map(Aim.Items(renamed["profiles"])[1])["name"]="renamed curve";Aim.DeviceEntry(renamed,"HID\\GAME")["profile"]="renamed curve";
+            Aim.Map(Aim.Items(renamed["profiles"])[0])["Input Speed Cap"]=10.0;
+            Expect(GamePresets.SameSelected(cfg,renamed,"HID\\GAME"),"equivalent renamed profile and unrelated default edits keep the selected recipe match");
+            Aim.Map(Aim.DeviceEntry(renamed,"HID\\GAME")["config"])["disable"]=true;
+            Expect(!GamePresets.SameSelected(cfg,renamed,"HID\\GAME"),"bypass breaks selected recipe matching");
         }
         Expect(Aim.SameValue(GamePresets.Get("valorant").Controls().ToMap(),GamePresets.Get("kovaaks-valorant").Controls().ToMap()) && Aim.SameValue(GamePresets.Get("cs2").Controls().ToMap(),GamePresets.Get("kovaaks-cs2").Controls().ToMap()),"matched training recipes keep exactly the target game's processing");
         AimPreset trackingRecipe=GamePresets.Get("kovaaks-tracking").Controls();
         Dictionary<string,object> modern=GamePresets.Configure(defaults,defaults,"HID\\GAME",GamePresets.Get("kovaaks-tracking"));
+        Dictionary<string,object> outputOnly=Aim.Parse(Store.Json.Serialize(modern));
+        Dictionary<string,object> outputProfile=Aim.Map(Aim.Items(outputOnly["profiles"])[1]);
+        Aim.Map(outputProfile["Input speed calculation parameters"])["Time in ms after which an output is weighted at half its original value."]=8.0;
+        Aim.RequireSmoothingOnly(modern,outputOnly,"HID\\GAME");
+        outputProfile["Input Speed Cap"]=10.0;
+        bool smoothingBlocked=false;try {Aim.RequireSmoothingOnly(modern,outputOnly,"HID\\GAME");}catch(InvalidOperationException) {smoothingBlocked=true;}
+        Expect(smoothingBlocked,"smoothing cannot silently replace an imported input cap");
         AimPreset retained=Aim.Resolve(Aim.Describe(modern,"HID\\GAME"),trackingRecipe.ToMap(),"smooth",false);
         Expect(retained.Stability && retained.StabilityMs==8,"LUT scale-only stability survives unrelated switches");
         Dictionary<string,object> legacy=Aim.Parse(Store.Json.Serialize(modern));

@@ -24,6 +24,8 @@ type a number and press enter. empty answers, `0` or `back` cancel a prompt. res
 
 `6` > `1` lists mice starting at `1`; `0` goes back. the advanced `devices` / `select <index>` commands use zero-based indices. saving or applying settings keeps the confirmation visible until enter or escape. aim tools remain accessible without a selected mouse for installation and undo; enabling effects still requires a connected selection.
 
+a sole connected raw-input mouse is selected automatically, regardless of brand. with multiple mice, the existing single trust candidate keeps priority; otherwise choose explicitly in `6 > 1`. an explicitly selected mouse is not silently replaced after disconnection.
+
 `1` controls windows acceleration; raw input games bypass it. `8` offers acceleration and smoothing through the official signed raw accel driver. `9` applies [complete game recipes](game-presets.md) for valorant, cs2 and matched kovaak's practice, with combined undo and explicit manual sensitivity/fov steps. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
 
 ## aim tools

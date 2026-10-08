@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.15.0";
+    internal const string Version="0.15.1";
     private static string selectedPath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
@@ -180,16 +180,20 @@ internal static class Program {
         Console.WriteLine("  6  "+(GameRecovery.Pending ? "recover interrupted preset" : "undo last game preset")+"\n  0  back");int choice=Integer(Ask("choose"));
         if(choice==6) {PresetCommand(new string[]{"preset",GameRecovery.Pending ? "recover" : "undo"});Finish();return;}
         if(choice<1 || choice>recipes.Length) throw new ArgumentException("choose 1..6 or 0");
-        GameRecipe recipe=recipes[choice-1];PrintRecipe(recipe);
+        Device device=Selected();GameRecipe recipe=recipes[choice-1];PrintRecipe(recipe);
         while(true) {
             Console.WriteLine("\n  1 preview details    2 apply full setup    0 back");string action=Ask("choose");
             if(action!="1" && action!="2") throw new ArgumentException("choose 1..2 or 0");
-            PresetCommand(new string[]{"preset",action=="1" ? "preview" : "apply",recipe.Id});
+            Device fresh=Selected();RequirePresetMouse(device.Path,fresh);
+            PresetCommand(new string[]{"preset",action=="1" ? "preview" : "apply",recipe.Id},fresh);
             if(action=="2") {Finish();return;}
         }
     }
+    internal static void RequirePresetMouse(string path,Device current) {
+        if(current==null || !String.Equals(path,current.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("mouse changed / reopen game presets");
+    }
     private static void PrintPresetStatus(GamePresetStatus status) {
-        Console.WriteLine("  driver matches / "+(status.DriverMatches.Length==0 ? "custom setup / no game recipe active" : String.Join(" + ",status.DriverMatches)));
+        Console.WriteLine("  driver matches / "+(status.DriverMatches.Length==0 ? "custom setup / no exact recipe match" : String.Join(" + ",status.DriverMatches)));
         Console.WriteLine("  windows setup / "+(status.WindowsMatch ? "matches" : "different / apply sets pointer 10 and acceleration off"));
         Console.WriteLine("  checked now / game sensitivity and fov stay manual");
     }
@@ -200,7 +204,7 @@ internal static class Program {
         Console.WriteLine("\n  "+recipe.Id+" / "+recipe.Engine+"\n  windows / pointer 10/20 + acceleration off / desktop only");
         Console.WriteLine("  game steps / manual");foreach(string step in recipe.GameSteps) Console.WriteLine("  "+step);
     }
-    private static void PresetCommand(string[] words) {
+    private static void PresetCommand(string[] words,Device selected=null) {
         if(words.Length==2 && words[1]=="status") {GamePresetStatus status=GamePresets.Status(Selected());if(json) Console.WriteLine(Store.Json.Serialize(status));else PrintPresetStatus(status);return;}
         if(words.Length==2 && words[1]=="recover") {GameRecovery.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  interrupted preset recovered / windows + driver + saved files verified");return;}
         if(words.Length==2 && words[1]=="list") {GameRecipe[] recipes=GamePresets.List();if(json) Console.WriteLine(Store.Json.Serialize(recipes));else foreach(GameRecipe entry in recipes) Console.WriteLine("  "+entry.Id+" / "+entry.Engine);return;}
@@ -208,7 +212,8 @@ internal static class Program {
         if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|undo|recover or preset show|preview|apply <name>");
         GameRecipe recipe=GamePresets.Get(words[2]);
         if(words[1]=="show") {if(json) Console.WriteLine(Store.Json.Serialize(recipe));else PrintRecipe(recipe);return;}
-        GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(Selected(),recipe.Id) : GamePresets.Apply(Selected(),recipe.Id);
+        Device device=selected ?? Selected();
+        GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(device,recipe.Id) : GamePresets.Apply(device,recipe.Id);
         if(json) Console.WriteLine(Store.Json.Serialize(result));else {
             Console.WriteLine("  "+(result.Applied ? "applied / windows + driver readback verified / aim tools included" : "preview / nothing applied"));
             if(!result.Applied) PrintFilterPreview(result.Response,true);
@@ -471,9 +476,13 @@ internal static class Program {
             foreach(Device d in devices) if(String.Equals(d.Path,selectedPath,StringComparison.OrdinalIgnoreCase)) return d;
             throw new InvalidOperationException("selected mouse disconnected; choose mouse again");
         }
+        return DefaultMouse(devices);
+    }
+    internal static Device DefaultMouse(List<Device> devices) {
+        if(devices.Count==1) return devices[0];
         List<Device> candidates=devices.FindAll(delegate(Device d){return d.TrustCandidate;});
         if(candidates.Count==1) return candidates[0];
-        throw new InvalidOperationException(candidates.Count==0 ? "trust receiver not found; choose mouse in more" : "multiple receivers; choose mouse in more");
+        throw new InvalidOperationException(devices.Count==0 ? "no mouse found / connect a mouse" : "multiple mice / choose mouse in 6 > 1");
     }
     private static Device OptionalSelected() {
         try {return Selected();}catch(InvalidOperationException) {return null;}

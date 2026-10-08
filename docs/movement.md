@@ -10,6 +10,8 @@ the valorant and cs2 recipes also disable output averaging. their acceleration s
 
 ## a sensor spinout is different
 
+smoothing changes verify that the current curve, axis scales, rotation and input cap remain intact. an imported configuration that helox cannot preserve is rejected before writes; use its original editor or explicitly replace it with a helox curve or game preset. changing an averaging toggle must not silently replace another tool's settings.
+
 removing the filter tail prevents additional distortion after a large report; it does not recover the sensor's missing or incorrect direction. abrupt reports can also be real flicks. this version does not guess which motion to discard, clamp your turn speed, inject input or alter the signed kernel binary.
 
 keep dpi and game sensitivity fixed. compare in a repeatable practice scene with the same recipe, then use `8 > 20 bypass all` for a driver-effect comparison. bypass is read back from the selected device; enable again through the same menu. if the same spinout happens with effects bypassed, changing the acceleration curve has not removed the underlying fault. note whether it coincides with lifting the mouse or crossing a particular patch of the pad. inspect the sensor opening and surface, charge the mouse, and compare receiver placement as separate checks, not simultaneous tweaks. [trust's model support](https://support.trust.com/en/support/solutions/articles/9000240009-gxt-929-helox-ultra-lightweight-wireless-gaming-mouse-25307).

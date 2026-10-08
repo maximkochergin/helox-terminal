@@ -2,7 +2,7 @@
 
 open `9 game presets`, choose a recipe, then `1 preview` or `2 apply`. `6 undo last game preset` restores the previous windows settings, complete driver configuration and saved aim choices together. a named profile remains your saved windows configuration; these built-in recipes specify the complete selected-mouse processing chain.
 
-the setup screen lists **on / off / keep**, including every aim component and why tactical filters are off. preview returns to the same recipe so you can apply without starting again. the game menu and `preset status` compare the actual driver against the complete recipes, including the device's enabled flag, normalization and timing. windows matching is reported separately; game files are not inspected. matched training recipes share the same settings, so two names can appear together. a custom setup or a driver reset after reboot does not get an active-preset label just because choices were saved.
+the setup screen lists **on / off / keep**, including every aim component and why tactical filters are off. preview returns to the same recipe so you can apply without starting again. the game menu and `preset status` compare the selected device's effective profile and configuration against the complete recipes, including the enabled flag, normalization and timing. profile names and unrelated mice do not affect matching. windows matching is reported separately; game files are not inspected. matched training recipes share the same settings, so two names can appear together. a custom setup or a driver reset after reboot does not get an active-preset label just because choices were saved. the menu refuses to apply a preview to a replacement mouse after disconnection.
 
 ## engine and game settings
 
