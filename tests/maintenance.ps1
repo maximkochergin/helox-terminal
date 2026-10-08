@@ -66,7 +66,11 @@ try {
     $selection=& $exe status --json | ConvertFrom-Json
     if ($null -ne $selection.receiver) {
         $blockedAim=& $fakeExe aim status --json | ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0 -or $blockedAim.State -ne 'unavailable' -or $blockedAim.Note -notmatch 'unverified') { throw 'aim menu path bypassed backend verification' }
+        if ($LASTEXITCODE -ne 0 -or $blockedAim.State -eq 'ready' -or $null -ne $blockedAim.Profile) { throw 'aim menu path bypassed backend verification' }
+        $backendRoot=Join-Path (Join-Path $env:LOCALAPPDATA 'helox-terminal') 'rawaccel-1.7.1\RawAccel'
+        if ((Test-Path -LiteralPath (Join-Path $backendRoot 'wrapper.dll')) -and (Test-Path -LiteralPath (Join-Path $backendRoot 'Newtonsoft.Json.dll'))) {
+            if ($blockedAim.State -ne 'unavailable' -or $blockedAim.Note -notmatch 'unverified') { throw 'present backend did not enforce hash verification' }
+        } elseif ($blockedAim.Note -notmatch 'install backend|backend incomplete') { throw 'absent backend was not reported correctly' }
     }
     Write-Host 'passed / cleanup boundaries, locked-file preservation, junction rejection, readonly files and session gate'
 } finally {
