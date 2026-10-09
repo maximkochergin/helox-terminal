@@ -170,7 +170,21 @@ $afterAimValidation = & $executable aim status --json | ConvertFrom-Json
 if (($afterAimValidation | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'invalid or cancelled aim choices changed driver settings' }
 $devices = & $executable devices --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'device list failed' }
+$health = & $executable health --json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $health.Vanguard.Count -ne 2 -or $null -ne $health.GameInputVerified -or !$health.Source) { throw 'health report contract failed' }
+$afterHealth = & $executable aim status --json | ConvertFrom-Json
+if (($afterHealth | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'health changed aim configuration' }
+foreach ($badMouse in @(@('status','--mouse','-1'),@('status','--mouse'),@('status','--mouse','2147483647'),@('status','--mouse','0','--mouse','0'))) {
+    $invalidMouse = & $executable @badMouse --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalidMouse.error) { throw 'invalid mouse option accepted' }
+}
 if ($devices.Count -gt 0) {
+    $explicitMouse = & $executable status --mouse 0 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $explicitMouse.receiver.Path -ne $devices[0].Path) { throw 'command mouse selection failed' }
+    $lastMouse = $devices.Count - 1
+    $sessionOutput = "select 0`nstatus --mouse $lastMouse --json`nstatus --json`n0" | & $executable
+    $sessionReports = @($sessionOutput | Where-Object { $_ -match '^  > \{' } | ForEach-Object { $_.Substring(4) | ConvertFrom-Json })
+    if ($sessionReports.Count -ne 2 -or $sessionReports[0].receiver.Path -ne $devices[$lastMouse].Path -or $sessionReports[1].receiver.Path -ne $devices[0].Path) { throw 'command mouse override changed session selection' }
     $selectFirst = "6`n1`n1`nstatus`n0" | & $executable
     $firstName = if ($devices[0].Product) { $devices[0].Product.ToLowerInvariant() } else { 'mouse device' }
     if ($LASTEXITCODE -ne 0 -or ($selectFirst -join "`n") -notmatch ('selected / ' + [regex]::Escape($firstName))) { throw 'first mouse menu selection failed' }

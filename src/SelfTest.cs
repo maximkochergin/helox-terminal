@@ -17,6 +17,15 @@ internal static class SelfTest {
         UndoRegression();
         SnapshotRegression();
         MaintenanceRegression();
+        List<string> mouseArgs=new List<string>{"status","--mouse","0"};
+        Expect(Program.MouseOption(mouseArgs)==0 && mouseArgs.Count==1 && mouseArgs[0]=="status","mouse option leaves command intact");
+        foreach(string[] invalid in new string[][] {new string[]{"--mouse"},new string[]{"--mouse","-1"},new string[]{"--mouse","2147483648"},new string[]{"--mouse","0","--mouse","1"}}) {
+            bool mouseRejected=false;try {Program.MouseOption(new List<string>(invalid));}catch(ArgumentException) {mouseRejected=true;}
+            Expect(mouseRejected,"invalid mouse option rejected before selection");
+        }
+        Expect(ServiceProbe.Failure("vgk",5,false).Installed==null,"service access denied is not absence");
+        Expect(ServiceProbe.Failure("vgk",1060,false).Installed==false,"service missing is explicit");
+        Expect(ServiceProbe.Failure("vgk",5,true).Installed==true,"failed query preserves known service existence");
         Program.RequireDpiInput(false);
         foreach(bool? transformed in new bool?[]{true,null}) {
             bool blocked=false;try {Program.RequireDpiInput(transformed);}catch(InvalidOperationException) {blocked=true;}

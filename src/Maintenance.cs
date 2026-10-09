@@ -38,7 +38,7 @@ internal static class Maintenance {
         Dictionary<string,object> report=FileReport();
         if(!BackendVerified(report)) throw new InvalidOperationException("aim backend unverified or incomplete / run aim prepare and restart helox");
     }
-    private static bool BackendVerified(Dictionary<string,object> report) {
+    internal static bool BackendVerified(Dictionary<string,object> report) {
         foreach(string key in new string[]{"BackendPrepared","PackageVerified","BackendVerified"}) {
             object value;if(!report.TryGetValue(key,out value) || !Object.Equals(value,true)) return false;
         }

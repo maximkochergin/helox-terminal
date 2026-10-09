@@ -51,6 +51,8 @@ settings and backups stay in `%localappdata%\helox-terminal`. [driver removal an
 
 ```text
 launch.bat status --json
+launch.bat health
+launch.bat health --mouse 0 --json
 launch.bat measure 10 --json
 launch.bat calibrate 20
 launch.bat preset status

@@ -63,6 +63,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $fakeApp 'maintenance.ps1'),'Write-Output ''{"BackendPrepared":true,"PackageVerified":true,"BackendVerified":false,"Errors":[]}''')
     $unverified=& $fakeExe aim doctor --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $null -ne $unverified.KernelReadable -or $null -ne $unverified.KernelVersion) { throw 'unverified diagnostic loaded native bridge' }
+    $health=& $fakeExe health --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $health.Aim.State -eq 'ready' -or $null -ne $health.Aim.Profile -or $null -ne $health.GameInputVerified) { throw 'health bypassed backend verification or claimed game testing' }
     $selection=& $exe status --json | ConvertFrom-Json
     if ($null -ne $selection.receiver) {
         $blockedAim=& $fakeExe aim status --json | ConvertFrom-Json

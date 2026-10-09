@@ -171,6 +171,7 @@ devices
 select <index>
 probe
 status
+health
 faq
 home
 ```
@@ -178,6 +179,10 @@ home
 command mode: `launch.bat status --json`, `launch.bat probe --json`, `launch.bat measure 10 --json`. exit code 0 means success; 1 means failure. unsupported hardware values are null. diagnostics include machine-specific device paths; review before sharing.
 
 text commands inside the terminal also accept `--json`; the format applies to that command only. use batch command mode for a pure json stream. repeated aim choices that already match the live driver save the preset without activating the same configuration again.
+
+`health` (menu `6 > 8`) combines backend file verification, selected mouse stack, live aim settings, preset matches, pending recovery and the `vgk` / `vgc` service states. it reads state without starting services or games and reports issues even when the report command succeeds. an inaccessible service is unknown, not missing. service state uses windows' [query service status](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatus); it does not prove vanguard acceptance or game input. `GameInputVerified` remains null.
+
+add `--mouse <index>` to choose a mouse for one command, for example `launch.bat health --mouse 0 --json`. indices are zero-based from `devices`. the option validates that the same device remains connected and does not change the terminal's selected mouse or save a selection.
 
 ## build
 

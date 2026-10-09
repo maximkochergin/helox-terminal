@@ -5,8 +5,9 @@ using System.IO;
 
 namespace Helox {
 internal static class Program {
-    internal const string Version="0.15.1";
+    internal const string Version="0.16.0";
     private static string selectedPath;
+    private static string commandMousePath;
     private static bool json;
     [STAThread] private static int Main(string[] args) {
         try {
@@ -29,7 +30,7 @@ internal static class Program {
                     else Run(Arguments(words));
                 } catch(OperationCanceledException e) {if(menuChoice) Home();if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.WriteLine("  cancelled");}
                 catch(Exception e) {if(menuChoice) Home();if(json) Console.WriteLine(Store.Json.Serialize(new {error=Error(e)}));else Console.WriteLine("  "+Error(e));}
-                finally {json=false;}
+                finally {json=false;commandMousePath=null;}
             }
             return 0;
         } catch(Exception e) {
@@ -42,8 +43,21 @@ internal static class Program {
         foreach(string arg in args) words.Add(arg.ToLowerInvariant());
         json=words.Remove("--json");
         if(words.Contains("--json")) throw new ArgumentException("use --json once");
+        int? mouse=MouseOption(words);
         if(words.Count==0) throw new ArgumentException("choose a command");
+        if(mouse.HasValue) {
+            List<Device> devices=Device.List();
+            if(mouse.Value>=devices.Count) throw new ArgumentException("mouse index out of range / use devices");
+            commandMousePath=ResolveChoice(devices,mouse.Value+1,Device.List()).Path;
+        }
         return words.ToArray();
+    }
+    internal static int? MouseOption(List<string> words) {
+        int position=words.IndexOf("--mouse");if(position<0) return null;
+        int index;
+        if(position+1>=words.Count || !Int32.TryParse(words[position+1],NumberStyles.None,CultureInfo.InvariantCulture,out index)) throw new ArgumentException("use --mouse <index> / indices from devices");
+        words.RemoveRange(position,2);
+        if(words.Contains("--mouse")) throw new ArgumentException("use --mouse once");return index;
     }
     private static string Error(Exception e) {
         if(e is FileNotFoundException) return "file not found; save a profile or change a setting first";
@@ -91,7 +105,7 @@ internal static class Program {
                 else throw new ArgumentException("choose 1..5 or 0");
                 Finish();return;
             case "6":
-                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver\n  7  shutdown errors  0  back");
+                Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver\n  7  shutdown errors  8  health check\n  0  back");
                 string more=Ask("choose");
                 if(more=="0") Home();
                 else if(more=="1") {ChooseMouse();Finish();}
@@ -105,7 +119,8 @@ internal static class Program {
                     Maintenance.Reset();
                 }
                 else if(more=="7") {PrintShutdown(ShutdownDiagnostics.Read());Finish();}
-                else throw new ArgumentException("choose 1..7 or 0");return;
+                else if(more=="8") {HealthCheck();Finish();}
+                else throw new ArgumentException("choose 1..8 or 0");return;
         }
     }
     private static void AimMenu() {
@@ -468,15 +483,29 @@ internal static class Program {
         Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
         Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
-        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  status / home / faq / exit\n\n  export: launch.bat status --json");
+        Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  health / status / home / faq / exit\n  --mouse <index>        one-command selection\n\n  export: launch.bat status --json");
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
-        if(selectedPath!=null) {
-            foreach(Device d in devices) if(String.Equals(d.Path,selectedPath,StringComparison.OrdinalIgnoreCase)) return d;
+        string requested=commandMousePath ?? selectedPath;
+        if(requested!=null) {
+            foreach(Device d in devices) if(String.Equals(d.Path,requested,StringComparison.OrdinalIgnoreCase)) return d;
             throw new InvalidOperationException("selected mouse disconnected; choose mouse again");
         }
         return DefaultMouse(devices);
+    }
+    private static void HealthCheck() {
+        Device device=null;string selection=null;try {device=Selected();}catch(InvalidOperationException e) {selection=e.Message;}
+        HealthReport report=Health.Read(device,selection);
+        if(json) {Console.WriteLine(Store.Json.Serialize(report));return;}
+        Console.WriteLine("\n  health / read only / "+report.CheckedUtc+"\n  mouse / "+(device==null ? "not selected" : (device.Product ?? "mouse device").ToLowerInvariant()));
+        Console.WriteLine("  backend files / "+(report.Driver!=null && Maintenance.BackendVerified(report.Driver) ? "verified" : "not verified"));
+        Console.WriteLine("  aim / "+report.Aim.State+(report.Aim.State=="ready" ? " / "+(report.Aim.Enabled==true ? "enabled" : "bypassed")+" / "+report.Aim.Mode : ""));
+        Console.WriteLine("  mouse stack / "+(report.Stack.RawAccelPresent==true && report.Stack.Started==true && report.Stack.ProblemCode==0 ? "raw accel started" : "not confirmed"));
+        if(report.Presets!=null) Console.WriteLine("  recipe / "+(report.Presets.DriverMatches.Length>0 ? String.Join(" + ",report.Presets.DriverMatches) : "custom setup"));
+        foreach(ServiceReading reading in report.Vanguard) Console.WriteLine("  "+reading.Name+" / "+reading.State+(reading.ErrorCode.HasValue ? " / error "+reading.ErrorCode.Value : ""));
+        foreach(string note in report.Notes) Console.WriteLine("  note / "+note.ToLowerInvariant());
+        foreach(string error in report.Errors) Console.WriteLine("  error / "+error.ToLowerInvariant());
     }
     internal static Device DefaultMouse(List<Device> devices) {
         if(devices.Count==1) return devices[0];
@@ -713,6 +742,7 @@ internal static class Program {
                 else Console.WriteLine("  driver not loaded / aim backup not applied");return;
             case "aim":AimCommand(words);return;
             case "status":if(words.Length!=1) break;Status();return;
+            case "health":if(words.Length!=1) break;HealthCheck();return;
             case "devices":if(words.Length!=1) break;Devices();return;
             case "select":
                 if(words.Length!=2) break;List<Device> devices=Device.List();int index=Integer(words[1]);
