@@ -1,8 +1,18 @@
 # game presets
 
-open `9 game presets`, choose a recipe, then `1 preview` or `2 apply`. `6 undo last game preset` restores the previous windows settings, complete driver configuration and saved aim choices together. a named profile remains your saved windows configuration; these built-in recipes specify the complete selected-mouse processing chain.
+open `1 game setup`, choose your game, then `1 apply`, `2 change style`, `3 preview checks` or `4 in-game checklist`. kovaak's opens a second choice: match valorant, match cs2 or tracking practice. `5 undo or recover` in the game menu restores the previous windows settings, complete driver configuration and saved aim choices together. profiles save windows settings; game recipes specify the complete selected-mouse processing chain.
 
-the setup screen lists **on / off / keep**, including every aim component and why tactical filters are off. preview returns to the same recipe so you can apply without starting again. the game menu and `preset status` compare the selected device's effective profile and configuration against the complete recipes, including the enabled flag, normalization and timing. profile names and unrelated mice do not affect matching. windows matching is reported separately; game files are not inspected. matched training recipes share the same settings, so two names can appear together. a custom setup or a driver reset after reboot does not get an active-preset label just because choices were saved. the menu refuses to apply a preview to a replacement mouse after disconnection.
+each game has three styles. `balanced` uses the table below. `steady` keeps settled slow sensitivity at 1x, disables micro damping, enables 4 ms scale averaging and lowers the fast-turn limit to 1.15x for valorant, 1.2x for cs2 or 1.25x for tracking practice. `linear` disables stability and damping and uses a constant 1x table: a reference for comparison with the same game sensitivity. matched training recipes use identical controls for the same style.
+
+`preset tune` or `game setup > 4` records two eight-second captures: continuous slow corrections and normal fast sweeps. input must be untransformed; bypass effects first through `tune mouse > driver > bypass`. the tool does not change or bypass settings automatically. the personalized ramp starts at 110% of the slow phase's 90th-percentile speed and reaches the existing bounded limit at the fast phase's 75th-percentile speed. short, batched, poorly separated or stale captures are rejected. tuning is tied to the selected device and expires after seven days. repeat after changing the physical dpi stage; the tool cannot detect that stage. the measured interval describes raw delivery, not configured polling. no game process is read.
+
+choose `5 built-in or personal speed range` in the recipe screen, or append `personal` to a command. this changes ramp speeds, keeps the style's limits and preserves matched game/trainer processing. `linear` does not use a speed range. a personalized last-applied recipe is checked against its saved full readback; unrelated mouse selections do not inherit its label.
+
+apply also requires a confirmed started raw accel stack with no device problem for the selected mouse; an accessible global driver endpoint alone is insufficient. preview reports stack state and remains read-only.
+
+preview and apply run the official engine model at 8, 4, 2 and 1 ms intervals. the report checks the flick tail and reversal direction; apply stops before mutation if these checks fail. these are example rates, not measurements of your mouse or game. window/driver application and combined undo retain their durable recovery journal.
+
+the setup screen shows the style, speed range, enabled filters and settings kept unchanged; the in-game checklist stays separate. `preset show` explains each component decision. preview returns to the same recipe so you can apply without starting again. the game menu and `preset status` compare the selected device's effective profile and configuration against the complete recipes, including the enabled flag, normalization and timing. profile names and unrelated mice do not affect matching. windows matching is reported separately; game files are not inspected. matched training recipes share the same settings, so two names can appear together. a custom setup or a driver reset after reboot does not get an active-preset label just because choices were saved. the menu refuses to apply a preview to a replacement mouse after disconnection.
 
 ## engine and game settings
 
@@ -30,7 +40,7 @@ windows pointer speed becomes 10/20 and desktop acceleration becomes off. wheel,
 
 apply verifies windows readback and the complete native driver readback after its activation delay. failure recovers changed native components and saved files independently; a failure before driver activation leaves the driver untouched. repeating the same applied recipe preserves useful undo and avoids another native activation. undo stops if either native state or saved choices changed afterward, preserving newer edits. the original windows and aim backups remain separate.
 
-from 0.14.1, both apply and undo save `game-recovery.json` **before** changing windows, the driver or saved choices. closing/killing the process or a failed rollback retains this complete checkpoint. opening helox reports pending recovery; `9 > 6` becomes `recover interrupted preset`, also available as `preset recover`. close games first. windows and aim changes, new recipes and live verification are blocked until recovery finishes. recovery restores the full driver state, windows values and exact previous bytes/absence of `aim-presets.json`, `game-undo.json` and `undo.json`; the checkpoint is removed only after every component succeeds.
+from 0.14.1, both apply and undo save `game-recovery.json` **before** changing windows, the driver or saved choices. closing/killing the process or a failed rollback retains this complete checkpoint. opening helox reports pending recovery; `1 game setup > 5` becomes `recover interrupted preset`, also available as `preset recover`. close games first. windows and aim changes, new recipes and live verification are blocked until recovery finishes. recovery restores the full driver state, windows values and exact previous bytes/absence of `aim-presets.json`, `game-undo.json` and `undo.json`; the checkpoint is removed only after every component succeeds.
 
 recovery explicitly writes and verifies the original driver configuration because the outcome of an interrupted write is uncertain. it attempts the other components independently if the driver cannot be restored and retains the checkpoint for retry. malformed prior undo or saved-controls snapshots fail preflight before settings change. the checkpoint covers process interruption; it does not guarantee durability after power loss or disk failure.
 
@@ -42,6 +52,10 @@ the released backend's one-second delay happens inside synchronous `Activate` / 
 preset list
 preset show valorant
 preset preview cs2
+preset preview cs2 steady
+preset preview valorant linear
+preset tune
+preset preview valorant steady personal
 preset apply kovaaks-valorant
 preset undo
 preset recover
@@ -49,8 +63,8 @@ preset recover
 
 ## live verification
 
-`8 aim tools > 21 live verify` or `aim verify` requires the supported games to be closed and a confirmed started raw accel stack for the selected mouse. it temporarily activates 13 cases: precision, output smoothing, stability, personal curve, snapping, directions, micro damping, bypass and all five game recipes. each activation is compared with full delayed kernel readback. the original complete driver state is restored before a three-second passive raw-input capture. saved presets and windows preferences are not changed by this diagnostic.
+`3 test mouse > 5 live verification` or `aim verify` requires the supported games to be closed and a confirmed started raw accel stack for the selected mouse. it temporarily activates 13 cases: precision, output smoothing, stability, personal curve, snapping, directions, micro damping, bypass and all five game recipes. each activation is compared with full delayed kernel readback. the original complete driver state is restored before a three-second passive raw-input capture. saved presets and windows preferences are not changed by this diagnostic.
 
-the snapshot is saved before the first write. if verification is interrupted, `aim verify restore` restores it; aim and recipe writes are blocked until recovery finishes. status shows the pending recovery and aim menu item 21 becomes `restore live verify`. closing the terminal does not run restoration code, so restore after an interrupted run. verification ratios come from the released native engine applied to the actual readback. `PhysicalTransformVerified` and `GameInputVerified` remain null: kernel configuration and input registration are verified, actual hand-motion transformation and the game's camera response need a physical comparison. no synthetic input is injected.
+the snapshot is saved before the first write. if verification is interrupted, `aim verify restore` restores it; aim and recipe writes are blocked until recovery finishes. status shows the pending recovery and live verification menu action becomes `restore live verify`. closing the terminal does not run restoration code, so restore after an interrupted run. verification ratios come from the released native engine applied to the actual readback. `PhysicalTransformVerified` and `GameInputVerified` remain null: kernel configuration and input registration are verified, actual hand-motion transformation and the game's camera response need a physical comparison. no synthetic input is injected.
 
 for a game comparison, keep sensitivity and the dpi button stage fixed, use the matching training recipe and compare slow corrections with fast turns. the tactical recipes intentionally preserve 1x settled slow sensitivity, so a small correction alone will not demonstrate the acceleration ramp. [response diagnostics](manual.md#aim-tools) show which example speeds reach it.

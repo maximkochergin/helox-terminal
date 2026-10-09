@@ -24,7 +24,7 @@ if ($null -ne $doctor.SelectedDeviceStack) {
 }
 $afterDoctor=& $executable status --json | ConvertFrom-Json
 if (($afterDoctor.windows | ConvertTo-Json -Compress) -ne ($status.windows | ConvertTo-Json -Compress) -or ($afterDoctor.gameAcceleration | ConvertTo-Json -Compress) -ne ($status.gameAcceleration | ConvertTo-Json -Compress)) { throw 'doctor changed settings' }
-$cancel="6`n5`n0`n6`n6`n0`n8`n10`n0`n0" | & $executable
+$cancel="6`n5`n0`n6`n6`n0`n2`n3`n6`n0`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($cancel -join "`n") -notmatch 'type reset' -or ($cancel -join "`n") -notmatch 'type uninstall') { throw 'cleanup menu cancellation failed' }
 foreach ($arguments in @(@('cleanup'),@('cleanup','--confirm','--json'),@('aim','uninstall','--json'))) {
     & $executable @arguments | Out-Null
@@ -48,21 +48,21 @@ if ($LASTEXITCODE -ne 1) { throw 'invalid argument exit code failed' }
 & $executable set wheel -1 --json | Out-Null
 if ($LASTEXITCODE -ne 1) { throw 'negative wheel must require the page keyword' }
 $menu = "0" | & $executable
-if ($LASTEXITCODE -ne 0 -or ($menu -join "`n") -notmatch '1  acceleration') { throw 'numeric menu failed' }
-if (@($menu).Count -gt 18) { throw 'home screen too long' }
+if ($LASTEXITCODE -ne 0 -or ($menu -join "`n") -notmatch '1  game setup') { throw 'numeric menu failed' }
+if (@($menu).Count -gt 22) { throw 'home screen too long' }
 if (($menu -join "`n") -notmatch '/ desktop' -or ($menu -join "`n") -notmatch 'aim       ') { throw 'home must distinguish desktop settings from aim driver settings' }
 $navigation = "1`n0`n6`n3`nhome`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($navigation -join "`n") -notmatch 'game acceleration\?') { throw 'menu navigation failed' }
-$invalidInput = "2`nwrong`n0" | & $executable
+$invalidInput = "4`n2`nwrong`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($invalidInput -join "`n") -notmatch 'enter a valid number') { throw 'input recovery failed' }
 $cancel = "2`n`n0" | & $executable
-if ($LASTEXITCODE -ne 0 -or @($cancel | Select-String '1  acceleration').Count -ne 2) { throw 'cancel must redraw home menu' }
+if ($LASTEXITCODE -ne 0 -or @($cancel | Select-String '1  game setup').Count -ne 2) { throw 'cancel must redraw home menu' }
 $unsupportedJson = & $executable faq --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 1 -or !$unsupportedJson.error) { throw 'unsupported json command must return a json error' }
 $interactiveJson = "status --JSON`nfaq --json`nstatus --json --json`nhome`n0" | & $executable
 $jsonRecords = @($interactiveJson | ForEach-Object { if ($_ -match '(\{.*\})') { $matches[1] | ConvertFrom-Json } })
 if ($LASTEXITCODE -ne 0 -or $jsonRecords.Count -ne 3 -or !$jsonRecords[0].windows -or $jsonRecords[1].error -ne 'json is not supported for this command' -or $jsonRecords[2].error -ne 'use --json once') { throw 'interactive json commands and errors failed' }
-if (@($interactiveJson | Select-String '1  acceleration').Count -ne 2) { throw 'json format leaked into the next interactive command' }
+if (@($interactiveJson | Select-String '1  game setup').Count -ne 2) { throw 'json format leaked into the next interactive command' }
 $caseInsensitive = & $executable PROFILE LIST --JSON | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'command casing must be consistent' }
 $missingName = 'missing-' + [guid]::NewGuid().ToString('n').Substring(0,20)
@@ -79,9 +79,9 @@ $aimStatus = & $executable aim status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
 $recipes = & $executable preset list --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $recipes.Count -ne 5 -or $recipes[0].Id -ne 'valorant' -or $recipes[1].Engine -ne 'source 2') { throw 'game recipe list failed' }
-$recipeCancel = "9`n1`n0`n0" | & $executable
-if ($LASTEXITCODE -ne 0 -or ($recipeCancel -join "`n") -notmatch 'includes aim tools' -or ($recipeCancel -join "`n") -match 'applied /') { throw 'recipe explanation or cancellation failed' }
-$tailCancel = "8`n22`n0`n0" | & $executable
+$recipeCancel = "1`n1`n0`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($recipeCancel -join "`n") -notmatch 'style / balanced' -or ($recipeCancel -join "`n") -notmatch 'replaces current aim filters' -or ($recipeCancel -join "`n") -match 'applied /') { throw 'recipe explanation or cancellation failed' }
+$tailCancel = "2`n2`n6`n0`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($tailCancel -join "`n") -notmatch 'keep curve, dpi and game sensitivity' -or ($tailCancel -join "`n") -match 'applied /') { throw 'flick tail action cancellation failed' }
 foreach ($recipe in $recipes) {
     $plan = & $executable preset show $recipe.Id --json | ConvertFrom-Json
@@ -89,15 +89,20 @@ foreach ($recipe in $recipes) {
     if ($aimStatus.State -eq 'ready') {
         $gamePreview = & $executable preset preview $recipe.Id --json | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0 -or $gamePreview.Applied -or $gamePreview.GameSettingsApplied -or $gamePreview.Windows.Speed -ne 10 -or $gamePreview.Windows.Acceleration -ne 0 -or $gamePreview.Response.Readback.LookupInputSmoothingRisk -or $gamePreview.Response.Readback.InputHalfLifeMs -ne 0) { throw 'game recipe preview failed' }
+        foreach ($style in @('steady','linear')) {
+            $variant = & $executable preset preview $recipe.Id $style --json | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or !$variant.Assessment.ModelChecksPassed -or $variant.Assessment.Trials.Count -ne 4 -or $null -ne $variant.Assessment.GameInputVerified -or $variant.Applied) { throw 'recipe variant model checks failed' }
+            if ($style -eq 'linear' -and @($variant.Assessment.Trials | Where-Object {$_.SmallMotionRatio -ne 1 -or $_.FastMotionRatio -ne 1}).Count -ne 0) { throw 'linear reference changed sensitivity' }
+        }
     }
 }
 if ($aimStatus.State -eq 'ready') {
-    $gamePreviewFlow = "9`n1`n1`n0`n0" | & $executable
-    if ($LASTEXITCODE -ne 0 -or ([regex]::Matches(($gamePreviewFlow -join "`n"),'2 apply full setup')).Count -ne 2 -or ($gamePreviewFlow -join "`n") -match 'applied /') { throw 'preview did not return to recipe actions' }
+    $gamePreviewFlow = "1`n1`n3`n0`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ([regex]::Matches(($gamePreviewFlow -join "`n"),'1  apply this setup')).Count -ne 2 -or ($gamePreviewFlow -join "`n") -match 'applied /') { throw 'preview did not return to recipe actions' }
     $liveRecipe = & $executable preset status --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$liveRecipe.PSObject.Properties['DriverMatches'] -or !$liveRecipe.Source -or $liveRecipe.GameSettingsVerified) { throw 'live recipe status contract failed' }
 }
-foreach ($arguments in @(@('preset','apply','unknown'),@('preset','apply'),@('preset','list','extra'),@('preset','undo','extra'),@('preset','recover','extra'),@('aim','verify','extra'))) {
+foreach ($arguments in @(@('preset','apply','unknown'),@('preset','apply'),@('preset','list','extra'),@('preset','undo','extra'),@('preset','recover','extra'),@('preset','preview','valorant','steady','linear'),@('preset','show','valorant','personal','personal'),@('preset','tune'),@('aim','verify','extra'))) {
     $invalidRecipe = & $executable @arguments --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidRecipe.error -or $invalidRecipe.Applied) { throw 'invalid recipe command accepted' }
 }
@@ -116,7 +121,7 @@ if ($aimStatus.State -eq 'ready') {
     }
     $afterPreview = & $executable aim status --json | ConvertFrom-Json
     if (($afterPreview | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'curve preview changed the driver' }
-    $builderCancel = "8`n15`n2`n0`n6`n0`n0" | & $executable
+    $builderCancel = "2`n1`n1`n2`n0`n6`n0`n0`n0`n0" | & $executable
     if ($LASTEXITCODE -ne 0 -or ($builderCancel -join "`n") -notmatch 'curve preview / official engine / nothing applied' -or ($builderCancel -join "`n") -match 'curve applied') { throw 'builder zero-start preview/cancel failed' }
     $response = & $executable aim response --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $response.Readback.Profile -ne $aimStatus.Profile -or $response.AfterFlickY.Count -ne 16 -or $response.DirectionSamples.Count -ne 6 -or $response.ProcessedIntervalMs -le 0 -or !$response.Source) { throw 'response simulation contract failed' }
@@ -127,7 +132,7 @@ if ($aimStatus.State -eq 'ready') {
         if ($point.InputCounts -ne $expectedCounts[$pointIndex] -or [Math]::Abs($point.InputCountsPerMs-$point.InputCounts/$response.ProcessedIntervalMs) -gt .000001 -or [double]::IsNaN($point.OutputRatio) -or [double]::IsInfinity($point.OutputRatio)) { throw 'response speed sweep invalid' }
     }
     if ($response.HorizontalSamples[1].OutputRatio -ne $response.SmallMotionRatio -or $response.HorizontalSamples[7].OutputRatio -ne $response.FastMotionRatio) { throw 'response sweep changed legacy ratio contract' }
-    $responseMenu = "8`n14`n0" | & $executable
+    $responseMenu = "3`n4`n0`n0" | & $executable
     if ($LASTEXITCODE -ne 0 -or ($responseMenu -join "`n") -notmatch 'current profile / simulation / read only' -or ($responseMenu -join "`n") -notmatch 'horizontal counts/report') { throw 'response menu failed' }
 } else {
     $response = & $executable aim response --json | ConvertFrom-Json
@@ -139,19 +144,19 @@ if ($aimStatus.State -ne 'ready') {
     $missingResume = & $executable aim resume --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$missingResume.error -or $missingResume.applied) { throw 'resume requires an active driver' }
 }
-$aimMenu = "8`n0`n0" | & $executable
-if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'precision on') { throw 'aim menu navigation failed' }
-$smoothChoice = "8`n3`n0`n0" | & $executable
+$aimMenu = "2`n0`n0" | & $executable
+if ($LASTEXITCODE -ne 0 -or ($aimMenu -join "`n") -notmatch 'acceleration and motion filters') { throw 'aim menu navigation failed' }
+$smoothChoice = "2`n2`n1`n0`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($smoothChoice -join "`n") -notmatch 'light 2 ms' -or ($smoothChoice -join "`n") -match 'applied /') { throw 'smoothing choice or cancellation failed' }
-$precisionChoice = "8`n1`n0`n0" | & $executable
+$precisionChoice = "2`n1`n2`n0`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($precisionChoice -join "`n") -notmatch 'steady 1.2x' -or ($precisionChoice -join "`n") -match 'applied /') { throw 'precision choice or cancellation failed' }
-if (($aimMenu -join "`n") -notmatch '11  stability on' -or ($aimMenu -join "`n") -notmatch '13  tracking preset') { throw 'aim refinement menus missing' }
-if (($aimMenu -join "`n") -notmatch '15  curve builder' -or ($aimMenu -join "`n") -notmatch '16  angle snapping') { throw 'curve and snap menus missing' }
-$snapCancel = "8`n16`n0`n0" | & $executable
+
+
+$snapCancel = "2`n2`n3`n0`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($snapCancel -join "`n") -notmatch 'optional, not riot certified' -or ($snapCancel -join "`n") -match 'applied /') { throw 'snap cancellation failed' }
-if (($aimMenu -join "`n") -notmatch '18  direction scales' -or ($aimMenu -join "`n") -notmatch '19  micro damping' -or ($aimMenu -join "`n") -notmatch '20  bypass all') { throw 'filter menus missing' }
+
 foreach ($selection in @(18,19,20)) {
-    $filterCancel = "8`n$selection`n0`n0" | & $executable
+    $filterCancel = $(if ($selection -eq 20) {"2`n3`n5`n0`n0`n0`n0"} elseif ($selection -eq 18) {"2`n2`n4`n0`n0`n0`n0"} else {"2`n2`n5`n0`n0`n0`n0"}) | & $executable
     if ($LASTEXITCODE -ne 0 -or ($filterCancel -join "`n") -match 'applied /') { throw 'filter menu cancellation failed' }
 }
 foreach ($arguments in @(@('aim','directions','apply','0','1','1','1'),@('aim','directions','preview','1','1','1','NaN'),@('aim','directions','apply','2','1','1','1'),@('aim','directions','off','1'),@('aim','directions','preview','1','1','1'),@('aim','damp','on','0','1'),@('aim','damp','on','0.8','0'),@('aim','damp','on','0.8','21'),@('aim','damp','on','NaN','1'),@('aim','damp','off','0.8','1'),@('aim','damp','preview'),@('aim','damp','on','0.8'),@('aim','bypass','maybe'),@('aim','bypass','on','extra'))) {

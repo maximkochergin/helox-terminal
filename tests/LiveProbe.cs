@@ -32,7 +32,7 @@ internal static class LiveProbe {
         Call(App.GetType("Helox.LiveVerify",true),"RequireClosedGames");
         string root=(string)App.GetType("Helox.Store",true).GetField("Root",Static).GetValue(null);
         Expect(!File.Exists(Path.Combine(root,"verify-recovery.json")) && !File.Exists(Path.Combine(root,"game-recovery.json")),"restore unfinished recovery first");
-        string[] paths={"aim-presets.json","game-undo.json","undo.json","original.json","aim-before.json","verify-recovery.json","game-recovery.json"};
+        string[] paths={"aim-presets.json","game-undo.json","undo.json","original.json","aim-before.json","verify-recovery.json","game-recovery.json","game-tuning.json"};
         for(int i=0;i<paths.Length;i++) paths[i]=Path.Combine(root,paths[i]);
         object files=Files.GetConstructor(Instance,null,new Type[]{typeof(string[])},null).Invoke(new object[]{paths});
         object before=Call(Aim,"Active");Settings windows=Settings.Read();Exception failure=null;
@@ -43,12 +43,17 @@ internal static class LiveProbe {
             Expect(steps.Count==13 && (bool)proof["OriginalDriverStateRestored"] && (bool)proof["RawInputSinkRegistered"] && proof["RawInputError"]==null && proof["GameInputVerified"]==null,"real kernel verification failed");
             foreach(object step in steps) Expect((bool)Map(step)["KernelReadbackMatched"],"kernel readback mismatch");
             int undos=0;
-            foreach(string name in new string[]{"valorant","cs2","kovaaks-valorant","kovaaks-cs2","kovaaks-tracking"}) {
+            List<string> names=new List<string>();
+            foreach(string game in new string[]{"valorant","cs2","kovaaks-valorant","kovaaks-cs2","kovaaks-tracking"}) foreach(string style in new string[]{"","-steady","-linear"}) names.Add(game+style);
+            Dictionary<string,object> status=Command("status");string mousePath=(string)Map(status["receiver"])["Path"];
+            File.WriteAllText(Path.Combine(root,"game-tuning.json"),Json.Serialize(new Dictionary<string,object>{{mousePath,new MovementTuning {DevicePath=mousePath,MeasuredUtc=DateTime.UtcNow.ToString("o"),SlowP90=1,FastP75=10,IntervalMs=8,SlowReports=250,FastReports=250,Source="synthetic test fixture / not measured movement"}}}));
+            names.Add("valorant-personal");names.Add("valorant-steady-personal");names.Add("kovaaks-valorant-personal");
+            foreach(string name in names) {
                 Console.WriteLine("live / apply, repeat and undo "+name);
                 Dictionary<string,object> applied=Command("preset apply "+name),read=Map(Map(applied["Response"])["Readback"]);
                 Expect((bool)applied["Applied"] && !(bool)applied["GameSettingsApplied"] && (string)read["Mode"]=="lut" && Convert.ToDouble(read["InputHalfLifeMs"])==0 && (int)Map(applied["Windows"])["Acceleration"]==0,"live preset apply failed");
                 Dictionary<string,object> match=Command("preset status");
-                Expect((bool)match["WindowsMatch"] && ((System.Collections.IList)match["DriverMatches"]).Contains(name) && !(bool)match["GameSettingsVerified"],"live preset status missed active recipe");
+                Expect((bool)match["WindowsMatch"] && (name.EndsWith("-personal") ? (bool)match["LastAppliedMatches"] : ((System.Collections.IList)match["DriverMatches"]).Contains(name)) && !(bool)match["GameSettingsVerified"],"live preset status missed active recipe");
                 if(name=="valorant") {
                     object recipeConfig=Call(Aim,"Active");
                     Command("aim smooth on 2");Command("aim smooth off");

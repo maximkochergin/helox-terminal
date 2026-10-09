@@ -8,7 +8,7 @@ mouse controls for windows 10/11. a numbered terminal menu, launched from a batc
 
 1. extract the release zip and open `launch.bat`.
 2. select your mouse in `6 more → 1 choose mouse`.
-3. open `9 game presets` for a complete setup, or `8 aim tools` to tune your own curve.
+3. open `1 game setup` for a complete setup, or `2 tune mouse` to tune your own curve.
 
 ![illustration of the helox home menu](docs/assets/terminal.svg)
 
@@ -38,9 +38,9 @@ hardware dpi, configured polling rate and battery are not read automatically. me
 
 basic features use .net framework 4.x. aim tools require 64-bit windows, the raw accel prerequisites, administrator rights for installation and a restart. [installation](docs/manual.md#aim-tools).
 
-after reboot, use `8 → 8 resume saved` to restore saved aim choices. `preset status` checks which recipe matches the live driver. an interrupted preset keeps a recovery snapshot; close games and use `9 → 6` or `preset recover`.
+after reboot, use `2 tune mouse → 3 driver → 3 resume saved` to restore saved aim choices. `preset status` checks which recipe matches the live driver. an interrupted preset keeps a recovery snapshot; close games and use `1 game setup → 5 undo or recover` or `preset recover`.
 
-known-distance dpi estimation is available through `calibrate <cm>`. the mouse-body shortcut in `4 check dpi` currently uses verified gxt 929 dimensions only. [measurement details](docs/manual.md#tests-and-recovery).
+known-distance dpi estimation is available through `calibrate <cm>`. the mouse-body shortcut in `3 test mouse → 3 dpi estimate` currently uses verified gxt 929 dimensions only. [measurement details](docs/manual.md#tests-and-recovery).
 
 settings and backups stay in `%localappdata%\helox-terminal`. [driver removal and cleanup](docs/manual.md#driver-checks-and-removal).
 
@@ -56,7 +56,7 @@ launch.bat health --mouse 0 --json
 launch.bat measure 10 --json
 launch.bat calibrate 20
 launch.bat preset status
-launch.bat preset preview cs2
+launch.bat preset preview cs2 steady
 launch.bat aim response
 launch.bat aim resume
 launch.bat check

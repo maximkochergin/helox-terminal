@@ -4,8 +4,8 @@ using System.Globalization;
 using System.IO;
 
 namespace Helox {
-internal static class Program {
-    internal const string Version="0.16.0";
+internal static partial class Program {
+    internal const string Version="0.17.0";
     private static string selectedPath;
     private static string commandMousePath;
     private static bool json;
@@ -68,14 +68,14 @@ internal static class Program {
     private static void Home() {
         if(!Console.IsOutputRedirected) Console.Clear();
         CompactStatus();
-        Console.WriteLine("\n  1  acceleration     2  pointer speed\n  3  test hz / gaps   4  check dpi\n  5  profiles         6  more\n  7  mouse status     8  aim tools\n  9  game presets     0  exit\n\n  choose a number / enter");
+        Console.WriteLine("\n  1  game setup       choose a game and apply a recipe\n  2  tune mouse       acceleration and motion filters\n  3  test mouse       health, hz, dpi and driver checks\n  4  windows pointer  desktop settings\n  5  saved profiles   windows settings and undo\n  6  more             mouse selection, help and cleanup\n  0  exit\n\n  choose a number / enter");
     }
     private static string Ask(string prompt) {
         Console.Write("\n  "+prompt+" > ");string value=Console.ReadLine();
         if(String.IsNullOrWhiteSpace(value) || value.Trim()=="0" || value.Trim().Equals("back",StringComparison.OrdinalIgnoreCase)) throw new OperationCanceledException();
         return value.Trim().ToLowerInvariant();
     }
-    private static void Menu(string choice) {
+    private static void LegacyMenu(string choice) {
         switch(choice) {
             case "1":
                 Console.WriteLine("\n  windows acceleration / raw input games bypass it\n  1  on     2  off     0  back");
@@ -123,10 +123,7 @@ internal static class Program {
                 else throw new ArgumentException("choose 1..8 or 0");return;
         }
     }
-    private static void AimMenu() {
-        AimStatus status=Aim.Read(OptionalSelected());PrintAim(status);
-        Console.WriteLine("\n  1  precision on     2  precision off\n  3  smooth on        4  smooth off\n  5  install driver   6  undo aim\n  7  test gaps        8  resume saved\n  9  check driver    10  uninstall driver\n 11  stability on    12  stability off\n 13  tracking preset 14  test response\n 15  curve builder   16  angle snapping\n 17  shutdown errors 18  direction scales\n 19  micro damping   20  bypass all\n 21  "+(File.Exists(LiveVerify.RecoveryPath) ? "restore live verify" : "live verify")+"\n 22  remove flick tail\n  0  back");
-        string choice=Ask("choose");
+    private static void AimAction(string choice) {
         if(choice=="1") {
             Console.WriteLine("  precision / slow corrections 1x / fast-motion limit\n  1  steady 1.2x    2  balanced 1.4x    3  flick 1.6x    0  back");
             string strength=Ask("choose");
@@ -149,7 +146,7 @@ internal static class Program {
         else if(choice=="11" || choice=="12") AimCommand(new string[]{"aim","stability",choice=="11" ? "on" : "off"});
         else if(choice=="13") AimCommand(new string[]{"aim","tracking"});
         else if(choice=="14") AimCommand(new string[]{"aim","response"});
-        else if(choice=="15") {CurveBuilder();Home();return;}
+        else if(choice=="15") {CurveBuilder();return;}
         else if(choice=="16") {
             Console.WriteLine("  snap / axis direction filter / optional, not riot certified\n  1  off    2  1 degree    3  2 degrees    4  custom 0..5    0  back");
             string snap=Ask("choose");
@@ -188,20 +185,45 @@ internal static class Program {
         draft.Check();FilterDraft("directions",draft,null,null);
     }
     private static void GameMenu() {
-        GameRecipe[] recipes=GamePresets.List();Console.WriteLine("\n  game presets / complete input recipes");
-        try {PrintPresetStatus(GamePresets.Status(Selected()));}catch(Exception e) {Console.WriteLine("  live match unavailable / "+Error(e));}
-        Console.WriteLine("\n  start here / choose your game, read the setup, then apply");
-        for(int i=0;i<recipes.Length;i++) Console.WriteLine("  "+(i+1)+"  "+recipes[i].Id);
-        Console.WriteLine("  6  "+(GameRecovery.Pending ? "recover interrupted preset" : "undo last game preset")+"\n  0  back");int choice=Integer(Ask("choose"));
-        if(choice==6) {PresetCommand(new string[]{"preset",GameRecovery.Pending ? "recover" : "undo"});Finish();return;}
-        if(choice<1 || choice>recipes.Length) throw new ArgumentException("choose 1..6 or 0");
-        Device device=Selected();GameRecipe recipe=recipes[choice-1];PrintRecipe(recipe);
+        Browse("game setup / complete windows + aim recipes","  1  valorant\n  2  counter-strike 2\n  3  kovaak's\n  4  measure personal speed range\n  5  undo or recover last game setup\n  6  check active recipe",delegate(string c) {
+            if(c=="1" || c=="2") GameActions(c=="1" ? "valorant" : "cs2");
+            else if(c=="3") Browse("kovaak's / match your game or train tracking","  1  match valorant\n  2  match counter-strike 2\n  3  tracking practice",delegate(string n) {GameActions(MapChoice(n,new string[]{"kovaaks-valorant","kovaaks-cs2","kovaaks-tracking"}));});
+            else if(c=="4") TuneMovement();
+            else if(c=="5") {PresetCommand(new string[]{"preset",GameRecovery.Pending ? "recover" : "undo"});Finish();}
+            else if(c=="6") {PrintPresetStatus(GamePresets.Status(Selected()));Finish();}
+            else throw new ArgumentException("choose 1..6 or 0");
+        });
+    }
+    private static void GameActions(string game) {
+        string style="balanced";bool personal=false;Device device=Selected();
         while(true) {
-            Console.WriteLine("\n  1 preview details    2 apply full setup    0 back");string action=Ask("choose");
-            if(action!="1" && action!="2") throw new ArgumentException("choose 1..2 or 0");
-            Device fresh=Selected();RequirePresetMouse(device.Path,fresh);
-            PresetCommand(new string[]{"preset",action=="1" ? "preview" : "apply",recipe.Id},fresh);
-            if(action=="2") {Finish();return;}
+            string name=game+(style=="balanced" ? "" : "-"+style)+(personal ? "-personal" : "");
+            GameRecipe recipe=GamePresets.Build(device,name);Screen("game setup / "+game);PrintRecipe(recipe);
+            AimStatus current=Aim.Read(device);
+            Console.WriteLine(current.State=="ready" ? "  currently / "+(current.Enabled==true ? "effects enabled" : "effects bypassed / apply enables this recipe") : "  driver / "+current.State+" / install through tune mouse > driver");
+            if(current.State=="ready") Console.WriteLine("  this recipe / "+(GamePresets.IsCurrent(device,recipe) ? "matches live driver" : "differs from live driver"));
+            Console.WriteLine("\n  1  apply this setup\n  2  change style\n  3  preview response checks\n  4  in-game checklist\n  5  built-in or personal speed range\n  6  health check\n  0  back");
+            try {
+                string action=Ask("choose");Device fresh=Selected();RequirePresetMouse(device.Path,fresh);
+                if(action=="1" || action=="3") {PresetCommand(new string[]{"preset",action=="1" ? "apply" : "preview",name},fresh);Finish();}
+                else if(action=="2") {
+                    try {
+                        Console.WriteLine("\n  1  balanced / bounded fast turns\n  2  steady / smaller ramp + gain stability\n  3  linear / flat 1x reference\n  0  keep current");
+                        style=MapChoice(Ask("choose"),new string[]{"balanced","steady","linear"});if(style=="linear") personal=false;
+                    }catch(OperationCanceledException) {}
+                }else if(action=="4") {Screen("in-game checklist / manual");PrintGameSteps(GamePresets.Get(name));Finish();}
+                else if(action=="5") {
+                    try {
+                        Console.WriteLine("\n  1  built-in range\n  2  use measured personal range\n  3  record two motion captures\n  0  keep current");string range=Ask("choose");
+                        if(range=="1") personal=false;
+                        else if(range=="2") {if(style=="linear") throw new ArgumentException("choose balanced or steady first");PresetTuning.Read(fresh);personal=true;}
+                        else if(range=="3") TuneMovement();
+                        else throw new ArgumentException("choose 1..3 or 0");
+                    }catch(OperationCanceledException) {}
+                }else if(action=="6") {HealthCheck();Finish();}
+                else throw new ArgumentException("choose 1..6 or 0");
+            }catch(OperationCanceledException) {return;}
+            catch(Exception e) {Console.WriteLine("  "+Error(e));Finish();}
         }
     }
     internal static void RequirePresetMouse(string path,Device current) {
@@ -211,27 +233,45 @@ internal static class Program {
         Console.WriteLine("  driver matches / "+(status.DriverMatches.Length==0 ? "custom setup / no exact recipe match" : String.Join(" + ",status.DriverMatches)));
         Console.WriteLine("  windows setup / "+(status.WindowsMatch ? "matches" : "different / apply sets pointer 10 and acceleration off"));
         Console.WriteLine("  checked now / game sensitivity and fov stay manual");
+        if(status.LastAppliedRecipe!=null) Console.WriteLine("  last applied / "+status.LastAppliedRecipe+" / "+(status.LastAppliedMatches==true ? "selected mouse still matches" : status.LastAppliedMatches==false ? "changed since apply" : "not confirmed"));
     }
     private static void PrintRecipe(GameRecipe recipe) {
-        Console.WriteLine("\n  full setup / includes aim tools\n  on   / personal acceleration / slow 1x, fast up to "+N(recipe.Curve.Limit)+"x");
-        Console.WriteLine("  "+(recipe.Stability ? "on   " : "off  ")+"/ acceleration stability\n  "+(recipe.MicroDamping ? "on   " : "off  ")+"/ micro damping"+(recipe.MicroDamping ? " / also reduces deliberate small corrections" : " / keep small corrections intact"));
-        Console.WriteLine("  off  / output smoothing / avoid a tail after flicks\n  off  / angle snapping + direction reduction / keep free movement\n  keep / hardware dpi + in-game sensitivity\n  replaces current aim filters / undo available after applying");
-        Console.WriteLine("\n  "+recipe.Id+" / "+recipe.Engine+"\n  windows / pointer 10/20 + acceleration off / desktop only");
-        Console.WriteLine("  game steps / manual");foreach(string step in recipe.GameSteps) Console.WriteLine("  "+step);
+        Console.WriteLine("  style / "+recipe.Style+" / settled slow "+(recipe.MicroDamping ? "0.9" : "1")+"x / fast "+N(recipe.Curve.Limit)+"x");
+        Console.WriteLine("  range / "+(recipe.Personal ? "measured" : "built-in starting point")+" / "+N(recipe.Curve.Start)+".."+N(recipe.Curve.End)+" counts/ms");
+        Console.WriteLine("  gain stability / "+(recipe.Stability ? "4 ms" : "off")+" / micro damping "+(recipe.MicroDamping ? "0.9x" : "off"));
+        Console.WriteLine("  smoothing + snap + direction reduction / off\n  dpi + game sens / kept / replaces current aim filters\n  windows pointer / 10 of 20 + accel off / desktop only");
+        if(recipe.Personal) Console.WriteLine("  personal / repeat if physical dpi changes / stage is unknown");
+    }
+    private static void PrintGameSteps(GameRecipe recipe) {
+        Console.WriteLine("  "+recipe.Game+" / "+recipe.Engine+"\n  "+recipe.InputPath+"\n");
+        foreach(string step in recipe.GameSteps) Console.WriteLine("  - "+step);
+        Console.WriteLine("\n  after applying / slow corrections, flick stop, then tracking\n  compare linear with your chosen style / same game sens and dpi\n  input gaps: test mouse > hz / frame-time or network issues: game telemetry\n  undo full setup / game setup > 5 / preset undo");
     }
     private static void PresetCommand(string[] words,Device selected=null) {
+        if(words.Length==2 && words[1]=="tune") {TuneMovement();return;}
         if(words.Length==2 && words[1]=="status") {GamePresetStatus status=GamePresets.Status(Selected());if(json) Console.WriteLine(Store.Json.Serialize(status));else PrintPresetStatus(status);return;}
         if(words.Length==2 && words[1]=="recover") {GameRecovery.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  interrupted preset recovered / windows + driver + saved files verified");return;}
         if(words.Length==2 && words[1]=="list") {GameRecipe[] recipes=GamePresets.List();if(json) Console.WriteLine(Store.Json.Serialize(recipes));else foreach(GameRecipe entry in recipes) Console.WriteLine("  "+entry.Id+" / "+entry.Engine);return;}
         if(words.Length==2 && words[1]=="undo") {GamePresets.Undo();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  previous windows + driver settings restored / verified");return;}
-        if(words.Length!=3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|undo|recover or preset show|preview|apply <name>");
-        GameRecipe recipe=GamePresets.Get(words[2]);
-        if(words[1]=="show") {if(json) Console.WriteLine(Store.Json.Serialize(recipe));else PrintRecipe(recipe);return;}
+        if(words.Length<3 || words.Length>5 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|tune|undo|recover or preset show|preview|apply <name> [balanced|steady|linear] [personal]");
+        string name=words[2];bool hasStyle=false,hasPersonal=false;
+        for(int i=3;i<words.Length;i++) {
+            if(words[i]=="personal" && !hasPersonal) hasPersonal=true;
+            else if((words[i]=="balanced" || words[i]=="steady" || words[i]=="linear") && !hasStyle) {hasStyle=true;if(words[i]!="balanced") name+="-"+words[i];}
+            else throw new ArgumentException("use one style and optional personal");
+        }
+        if(hasPersonal) name+="-personal";
+        GameRecipe recipe=GamePresets.Get(name);
+        if(words[1]=="show") {if(recipe.Personal) recipe=GamePresets.Build(selected ?? Selected(),name);if(json) Console.WriteLine(Store.Json.Serialize(recipe));else {PrintRecipe(recipe);foreach(string decision in recipe.Decisions) Console.WriteLine("  "+decision);PrintGameSteps(recipe);}return;}
         Device device=selected ?? Selected();
         GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(device,recipe.Id) : GamePresets.Apply(device,recipe.Id);
         if(json) Console.WriteLine(Store.Json.Serialize(result));else {
             Console.WriteLine("  "+(result.Applied ? "applied / windows + driver readback verified / aim tools included" : "preview / nothing applied"));
-            if(!result.Applied) PrintFilterPreview(result.Response,true);
+            if(!result.Applied) {
+                Console.WriteLine("  selected mouse stack / "+(result.Stack.RawAccelPresent==true && result.Stack.Started==true && result.Stack.ProblemCode==0 ? "driver started" : "not confirmed / apply blocked until checked"));
+                Console.WriteLine("  official engine checks / "+(result.Assessment.ModelChecksPassed ? "passed" : "failed")+" / simulation");
+                foreach(PresetTrial trial in result.Assessment.Trials) Console.WriteLine("  "+N(trial.IntervalMs)+" ms / small "+N(trial.SmallMotionRatio)+"x / fast "+N(trial.FastMotionRatio)+"x / tail "+trial.FlickTailPeakCounts+" counts / wrong-way "+trial.WrongWayReports);
+            }
             Console.WriteLine("  in-game settings remain manual / preset show "+recipe.Id+"\n  undo both / preset undo");
         }
     }
@@ -270,7 +310,7 @@ internal static class Program {
         if(status.State=="ready") {
             Console.WriteLine("  enabled "+(status.Enabled==true ? "on" : "off")+" / curve "+(status.Mode=="lut" ? "custom" : status.Mode)+(status.Mode=="natural" ? " / limit "+status.GainLimit.Value.ToString(CultureInfo.InvariantCulture)+"x" : ""));
             if(status.Enabled!=true) Console.WriteLine("  effects bypassed / values below are configured only");
-            if(status.Enabled==true && status.OutputHalfLifeMs>0) Console.WriteLine("  output averaging can magnify corrections after flicks / aim tools > 22");
+            if(status.Enabled==true && status.OutputHalfLifeMs>0) Console.WriteLine("  output averaging can magnify corrections after flicks / tune mouse > motion filters > remove flick tail");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
             Console.WriteLine("  snap "+(status.SnapDegrees>0 ? F(status.SnapDegrees.Value)+" degrees" : "off"));
             if(status.Enabled==true && status.LookupInputSmoothingRisk==true) Console.WriteLine("  legacy lut speed smoothing / may suppress flick corrections / reapply curve or preset");
@@ -477,7 +517,6 @@ internal static class Program {
         if(Console.IsInputRedirected || Console.IsOutputRedirected) return;
         Console.Write("\n  enter / back ");
         while(true) {ConsoleKey key=Console.ReadKey(true).Key;if(key==ConsoleKey.Enter || key==ConsoleKey.Escape) break;}
-        Home();
     }
     private static void Help() {
         Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
@@ -555,13 +594,13 @@ internal static class Program {
     }
     private static void CompactStatus() {
         Header();Device d=null;
-        try {d=Selected();Console.WriteLine("  receiver  "+(d.Product ?? "mouse device").ToLowerInvariant()+" / dpi ? / hz ?");}
-        catch {Console.WriteLine("  receiver  not selected / use more");}
+        try {d=Selected();Console.WriteLine("  mouse     "+(d.Product ?? "mouse device").ToLowerInvariant());}
+        catch {Console.WriteLine("  mouse     not selected / more > choose mouse");}
         Settings s=Settings.Read();
         Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+" / desktop");
-        if(GameRecovery.Pending) Console.WriteLine("  recovery  game preset interrupted / 9 > 6");
+        if(GameRecovery.Pending) Console.WriteLine("  recovery  game preset interrupted / game setup > 5");
         AimStatus aim=Aim.Read(d);
-        Console.WriteLine(aim.State=="ready" ? "  aim       "+aim.Mode+" / "+(aim.Enabled==true ? "enabled" : "bypassed")+" / smooth "+(aim.OutputHalfLifeMs>0 ? F(aim.OutputHalfLifeMs.Value)+" ms" : "off") : "  aim       "+aim.State+" / see 8");
+        Console.WriteLine(aim.State=="ready" ? "  aim       "+(aim.Mode=="lut" ? "custom curve" : aim.Mode=="noaccel" ? "linear" : "acceleration")+" / "+(aim.Enabled==true ? "enabled" : "bypassed")+" / smooth "+(aim.OutputHalfLifeMs>0 ? F(aim.OutputHalfLifeMs.Value)+" ms" : "off") : "  aim       "+aim.State+" / tune mouse > driver");
         DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
         if(dpi!=null || rate!=null) Console.WriteLine("  last test "+(dpi!=null ? "~"+F(dpi.EstimatedDpi)+" dpi" : "")+(dpi!=null && rate!=null ? " / " : "")+(rate!=null ? "~"+F(rate.ActiveHz)+" hz" : "")+" / history");
     }
@@ -722,7 +761,7 @@ internal static class Program {
         else throw new ArgumentException("use profile save|show|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  8 aim tools / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n  8 > 15 curve builder / preview first, then apply.\n\n  mouse jerks?\n  3 test hz / gaps. 8 > 11 stability averages acceleration changes.\n  8 > smooth averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off, including snap.\n\n  shutdown popup?\n  6 > 7 or aim events / inspect application crashes and timing.\n\n  undo settings?\n  8 > undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 3 restores original.\n  aim resets on reboot; 8 > resume saved restores your preset.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  2 tune mouse > 3 driver / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n  2 > 1 > 1 curve builder / preview first, then apply.\n\n  mouse jerks?\n  3 > 2 test hz / gaps. 2 > 1 > 4 stability averages acceleration changes.\n  2 > 2 output smoothing averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off, including snap.\n\n  shutdown popup?\n  6 > 7 or aim events / inspect application crashes and timing.\n\n  undo settings?\n  2 > 3 > 4 undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 5 > 3 restores original.\n  aim resets on reboot; 2 > 3 > 3 resume saved restores your preset.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(words[0]=="cleanup") {

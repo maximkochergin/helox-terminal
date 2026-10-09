@@ -1,6 +1,6 @@
 # personal curves
 
-open `8 aim tools > 15 curve builder`. the draft does not change the mouse until you choose `7 apply`.
+open `2 tune mouse > 1 acceleration > 1 curve builder`. the draft does not change the mouse until you choose `7 apply`.
 
 | control | meaning | range |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ these values demonstrate syntax; they are not a personalized recommendation.
 
 ## angle snapping
 
-`8 > 16` controls the existing signed driver's axis snapping. it defaults off. menu choices offer off, 1 degree, 2 degrees and a custom angle within 0..5 degrees. commands: `aim snap on [degrees]` and `aim snap off`; omitting the angle retains the last chosen nonzero strength, with 1 degree as the initial fallback. off/on no longer resets a chosen angle.
+`2 > 2 > 3` controls the existing signed driver's axis snapping. it defaults off. menu choices offer off, 1 degree, 2 degrees and a custom angle within 0..5 degrees. commands: `aim snap on [degrees]` and `aim snap off`; omitting the angle retains the last chosen nonzero strength, with 1 degree as the initial fallback. off/on no longer resets a chosen angle.
 
 the [official implementation](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) snaps near-horizontal or near-vertical input to that axis while retaining magnitude and sign. diagonal motion outside the threshold is unaffected. it uses mouse input only, with no game, target, screen or weapon information. unlike acceleration, it changes direction and can suppress intended small corrections near an axis. precision off does not disable this separate filter; use snap off.
 
@@ -44,7 +44,7 @@ five degrees is a helox limit, not an established permissible level for vanguard
 
 ## shutdown popup
 
-`6 more > 7`, `8 aim tools > 17`, or `aim events --json` reads the windows journals without changing settings. it lists recent application crashes and whether they occurred within two minutes of a shutdown request. times are utc. coverage is the last 14 days, at most 128 application errors and 64 shutdown requests; scan limits and access errors are reported.
+`6 more > 7`, `3 test mouse > 6`, or `aim events --json` reads the windows journals without changing settings. it lists recent application crashes and whether they occurred within two minutes of a shutdown request. times are utc. coverage is the last 14 days, at most 128 application errors and 64 shutdown requests; scan limits and access errors are reported.
 
 the report covers application error event 1000 and user32 shutdown request event 1074. it does not rule out unlogged popups, .net-runtime-only events, hangs or kernel failures. unmatched timing stays unknown if the shutdown journal is unavailable or its scan is incomplete. timing proximity is not proof of the cause. filenames are reported without full executable paths or account details. no third-party program is removed or disabled.
 

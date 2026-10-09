@@ -17,6 +17,31 @@ internal static class SelfTest {
         UndoRegression();
         SnapshotRegression();
         MaintenanceRegression();
+        List<Sample> slowTuning=new List<Sample>(),fastTuning=new List<Sample>();
+        for(int n=0;n<251;n++) {slowTuning.Add(new Sample(n*8,8,0));fastTuning.Add(new Sample(n*8,80,0));}
+        MovementTuning tuning=PresetTuning.Analyze("mouse",slowTuning,fastTuning);
+        GamePresets.RequireStartedStack(new DeviceStackReport {RawAccelPresent=true,Started=true,ProblemCode=0});
+        foreach(DeviceStackReport uncertain in new DeviceStackReport[]{null,new DeviceStackReport {Started=true,ProblemCode=0},new DeviceStackReport {RawAccelPresent=true,Started=false,ProblemCode=0},new DeviceStackReport {RawAccelPresent=true,Started=true,ProblemCode=10}}) {
+            bool stackRejected=false;try {GamePresets.RequireStartedStack(uncertain);}catch(InvalidOperationException) {stackRejected=true;}
+            Expect(stackRejected,"game recipe cannot claim an applied effect with an unconfirmed mouse stack");
+        }
+        Expect(tuning.SlowP90==1 && tuning.FastP75==10 && tuning.IntervalMs==8,"personal range measures counts per time without guessing dpi");
+        foreach(List<Sample> invalidSamples in new List<Sample>[] {new List<Sample>{new Sample(0,1,0)},new List<Sample>{new Sample(1,1,0),new Sample(0,1,0)},new List<Sample>{new Sample(0,1,0),new Sample(Double.NaN,1,0)}}) {
+            bool samplesRejected=false;try {PresetTuning.Analyze("mouse",invalidSamples,fastTuning);}catch(ArgumentException) {samplesRejected=true;}catch(InvalidOperationException) {samplesRejected=true;}
+            Expect(samplesRejected,"invalid or too short movement capture cannot become a personal preset");
+        }
+        foreach(string style in new string[]{"-steady","-linear"}) {
+            Expect(Aim.SameValue(GamePresets.Get("valorant"+style).Controls().ToMap(),GamePresets.Get("kovaaks-valorant"+style).Controls().ToMap()),"valorant trainer style matches target processing");
+            Expect(Aim.SameValue(GamePresets.Get("cs2"+style).Controls().ToMap(),GamePresets.Get("kovaaks-cs2"+style).Controls().ToMap()),"cs2 trainer style matches target processing");
+        }
+        foreach(string fault in new string[]{"same speed","different mouse","expired","nan"}) {
+            bool tuningRejected=false;
+            try {
+                if(fault=="same speed") PresetTuning.Analyze("mouse",slowTuning,slowTuning);
+                else {MovementTuning invalidTuning=Store.Json.Deserialize<MovementTuning>(Store.Json.Serialize(tuning));if(fault=="expired") invalidTuning.MeasuredUtc=DateTime.UtcNow.AddDays(-8).ToString("o");if(fault=="nan") invalidTuning.FastP75=Double.NaN;PresetTuning.Validate(invalidTuning,fault=="different mouse" ? "other" : "mouse",DateTime.UtcNow);}
+            }catch(InvalidOperationException) {tuningRejected=true;}
+            Expect(tuningRejected,"ambiguous or stale personal movement range rejected");
+        }
         List<string> mouseArgs=new List<string>{"status","--mouse","0"};
         Expect(Program.MouseOption(mouseArgs)==0 && mouseArgs.Count==1 && mouseArgs[0]=="status","mouse option leaves command intact");
         foreach(string[] invalid in new string[][] {new string[]{"--mouse"},new string[]{"--mouse","-1"},new string[]{"--mouse","2147483648"},new string[]{"--mouse","0","--mouse","1"}}) {

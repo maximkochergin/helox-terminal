@@ -1,6 +1,6 @@
 # input filters
 
-open `8 aim tools`. new filters start off; opening this release does not apply them. these controls configure the unchanged, signed raw accel 1.7.1 driver. they use mouse input only. there is no screen capture, game process access, target detection or input injection.
+open `2 tune mouse > 2 motion filters`. new filters start off; opening this release does not apply them. these controls configure the unchanged, signed raw accel 1.7.1 driver. they use mouse input only. there is no screen capture, game process access, target detection or input injection.
 
 | menu | control | effect |
 | --- | --- | --- |

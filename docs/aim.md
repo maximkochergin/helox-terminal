@@ -80,6 +80,6 @@ the complete original driver snapshot is restored by `aim restore`; it also rest
 
 ## saved presets
 
-after a verified aim change, helox atomically stores precision, gain limit, stability/half-life, smooth and output half-life by hardware id in `aim-presets.json`. `aim resume` or menu `8 > 8 resume saved` applies these choices in one driver update, preserving other devices. it requires the driver to be installed and active, and never runs automatically when opening the app. older boolean-only presets retain a 1.4x limit, baseline acceleration filters and 4 ms output strength. malformed new fields block application too.
+after a verified aim change, helox atomically stores precision, gain limit, stability/half-life, smooth and output half-life by hardware id in `aim-presets.json`. `aim resume` or menu `2 > 3 > 3 resume saved` applies these choices in one driver update, preserving other devices. it requires the driver to be installed and active, and never runs automatically when opening the app. older boolean-only presets retain a 1.4x limit, baseline acceleration filters and 4 ms output strength. malformed new fields block application too.
 
 malformed preset files block changes before activation. a persistence failure triggers driver rollback. `aim restore` clears saved helox choices after restoring the original driver snapshot; a later resume cannot silently reinstate an undone preset.

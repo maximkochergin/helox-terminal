@@ -7,17 +7,19 @@ mouse controls for windows, with lowercase text, a numbered menu and a batch lau
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.14.1
+  helox / 0.17.0
   ----------------------------------------
-  receiver  gxt 929 helox / dpi ? / hz ?
+  mouse     selected mouse
   windows   speed 10/20 / accel on / desktop
-  aim       natural / enabled / smooth 8.0 ms
+  aim       custom curve / enabled / smooth off
 
-  1  acceleration     2  pointer speed
-  3  test hz / gaps   4  check dpi
-  5  profiles         6  more
-  7  mouse status     8  aim tools
-  9  game presets     0  exit
+  1  game setup       choose a game and apply a recipe
+  2  tune mouse       acceleration and motion filters
+  3  test mouse       health, hz, dpi and driver checks
+  4  windows pointer  desktop settings
+  5  saved profiles   windows settings and undo
+  6  more             mouse selection, help and cleanup
+  0  exit
 ```
 
 type a number and press enter. empty answers, `0` or `back` cancel a prompt. result screens return to the menu with enter or escape. launching alone never changes settings.
@@ -26,24 +28,24 @@ type a number and press enter. empty answers, `0` or `back` cancel a prompt. res
 
 a sole connected raw-input mouse is selected automatically, regardless of brand. with multiple mice, the existing single trust candidate keeps priority; otherwise choose explicitly in `6 > 1`. an explicitly selected mouse is not silently replaced after disconnection.
 
-`1` controls windows acceleration; raw input games bypass it. `8` offers acceleration and smoothing through the official signed raw accel driver. `9` applies [complete game recipes](game-presets.md) for valorant, cs2 and matched kovaak's practice, with combined undo and explicit manual sensitivity/fov steps. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
+`4 windows pointer` controls desktop settings; raw input games bypass windows acceleration. `2 tune mouse` offers acceleration and filters through the official signed raw accel driver. `1 game setup` applies [complete game recipes](game-presets.md) for valorant, cs2 and matched kovaak's practice, with combined undo and explicit manual sensitivity/fov steps. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
 
 ## aim tools
 
-open `8` > `5 install driver`, approve windows uac, close the official installer with a keypress, then restart windows once. reopen `launch.bat` > `8`:
+open `2 tune mouse > 3 driver > 1 install driver`, approve windows uac, close the official installer with a keypress, then restart windows once. reopen `launch.bat` and use `1 game setup` for a complete recipe, or `2 tune mouse` for individual controls. submenus return one level with `0`; opening a screen does not apply settings.
 
-- `13 tracking preset`: precision + stability, output smoothing off. keeps your live helox gain limit (or the saved limit / 1.4x fallback) and remembered smooth strength. recent delivery history selects stability just as in `11`; enabling the preset is one verified driver transaction. advanced command: `aim tracking`. this targets correction after fast motion: output averaging can briefly magnify a tiny new-direction step, then suppress subsequent movement. `aim smooth on` restores the remembered output strength if preferred. existing raw accel users do not need to reinstall the driver for these profile changes.
-- `14 test response`: reads the current selected profile and simulates example motion without applying settings. shows ratios after 120 repeated 8-count and 800-count inputs, plus a flick-to-micro sequence: 120 horizontal 8-count steps, eight horizontal 800-count steps, then sixteen vertical 1-count steps. output is calculated by the official engine and an integer truncation/fractional-carry model matching the released callback. it reports peak counts and zero outputs; these are simulated counts, not missing radio packets. advanced command: `aim response`; `--json` also exports both output axes, timing, warmup/burst counts and actual profile readback. recent matching delivery history supplies the example interval, with an explicit 8 ms fallback. configured dpi normalization, disabled state, constant interval and time clamps are respected. this does not prove a game's input path or measure physical latency.
+- `2 > 1 > 6 tracking starting point`: precision + stability, output smoothing off. keeps your live helox gain limit (or the saved limit / 1.4x fallback) and remembered smooth strength. recent delivery history selects stability just as in `gain stability on`; enabling the preset is one verified driver transaction. advanced command: `aim tracking`. this targets correction after fast motion: output averaging can briefly magnify a tiny new-direction step, then suppress subsequent movement. `aim smooth on` restores the remembered output strength if preferred. existing raw accel users do not need to reinstall the driver for these profile changes.
+- `3 > 4 response model`: reads the current selected profile and simulates example motion without applying settings. shows ratios after 120 repeated 8-count and 800-count inputs, plus a flick-to-micro sequence: 120 horizontal 8-count steps, eight horizontal 800-count steps, then sixteen vertical 1-count steps. output is calculated by the official engine and an integer truncation/fractional-carry model matching the released callback. it reports peak counts and zero outputs; these are simulated counts, not missing radio packets. advanced command: `aim response`; `--json` also exports both output axes, timing, warmup/burst counts and actual profile readback. recent matching delivery history supplies the example interval, with an explicit 8 ms fallback. configured dpi normalization, disabled state, constant interval and time clamps are respected. this does not prove a game's input path or measure physical latency.
 
 response also shows intermediate horizontal examples at 24/80/160 counts per report. json exports `HorizontalSamples` for 1/8/24/40/80/160/400/800 counts, including input counts per processed millisecond and the final floating-point output ratio after 120 repeated reports. every speed starts with fresh simulation state. a 1.4x limit does not mean every motion is multiplied by 1.4: the natural curve stays at 1x below its offset and approaches the limit gradually. physical dpi and in-game sensitivity are not inferred from these examples.
-- `1 precision on`: choose steady (1.2x), balanced (1.4x), or flick (1.6x). the natural gain curve stays at 1x at settled slow speeds and progressively approaches the selected fast-motion limit. input offset 3 counts/ms, decay 0.05, baseline input/sensitivity half-lives 4/2 ms. advanced command: `aim precision on <1.1..1.8>`; comma and dot decimals work. `aim precision on` reuses the remembered limit, or 1.4x for older presets. dpi is unknown, so no assumed dpi normalization is applied; your physical dpi and game sensitivity determine the useful transition speeds.
-- `11 stability on`: steadier acceleration coefficient. precision must already be on. the chosen strength uses recent same-device delivery history, clamped to 8..12 ms and rounded to 0.5 ms; sensitivity half-life is half that value. natural mode also uses the full value for input-speed half-life. LUT curves keep input-speed averaging off to prevent post-flick correction suppression. missing, stale (>24 h), future (>5 min) or invalid history uses strength 8 ms. `12` restores natural 4/2 ms or LUT 0/0 ms without changing output smoothing. these are helox heuristics, not hardware polling overrides. command: `aim stability on|off`.
-- `3 smooth on`: choose light (2 ms), balanced (4 ms), or strong (8 ms). these are output magnitude smoothing half-lives; higher values trade more smoothing for more delay. direction is preserved. half-life is a decay parameter, not an exact latency measurement. `4` switches it off without removing precision or forgetting the strength. advanced command: `aim smooth on 1..12` (integer milliseconds); `aim smooth on` reuses the remembered strength, or 4 ms for older presets. resume also restores the strength.
+- `2 > 1 > 2 simple acceleration`: choose steady (1.2x), balanced (1.4x), or flick (1.6x). the natural gain curve stays at 1x at settled slow speeds and progressively approaches the selected fast-motion limit. input offset 3 counts/ms, decay 0.05, baseline input/sensitivity half-lives 4/2 ms. advanced command: `aim precision on <1.1..1.8>`; comma and dot decimals work. `aim precision on` reuses the remembered limit, or 1.4x for older presets. dpi is unknown, so no assumed dpi normalization is applied; your physical dpi and game sensitivity determine the useful transition speeds.
+- `2 > 1 > 4 gain stability on`: steadier acceleration coefficient. precision must already be on. the chosen strength uses recent same-device delivery history, clamped to 8..12 ms and rounded to 0.5 ms; sensitivity half-life is half that value. natural mode also uses the full value for input-speed half-life. LUT curves keep input-speed averaging off to prevent post-flick correction suppression. missing, stale (>24 h), future (>5 min) or invalid history uses strength 8 ms. `2 > 1 > 5 gain stability off` restores natural 4/2 ms or LUT 0/0 ms without changing output smoothing. these are helox heuristics, not hardware polling overrides. command: `aim stability on|off`.
+- `2 > 2 > 1 output smoothing on`: choose light (2 ms), balanced (4 ms), or strong (8 ms). these are output magnitude smoothing half-lives; higher values trade more smoothing for more delay. direction is preserved. half-life is a decay parameter, not an exact latency measurement. `2 > 2 > 2` switches it off without removing precision or forgetting the strength. advanced command: `aim smooth on 1..12` (integer milliseconds); `aim smooth on` reuses the remembered strength, or 4 ms for older presets. resume also restores the strength.
 
 stability filters the amount of acceleration and delays its response to speed changes, including a return to slow motion after a flick. it preserves current movement direction and does not generate motion at rest. `smooth` separately averages output magnitude and adds movement delay. a sudden small correction after fast movement can inherit a larger magnitude from that average, followed by very small or zero outputs; reduced alternating spread alone does not establish good recovery. neither filter can recover wireless gaps. gain limit, stability and output strength survive precision off/on and resume. precision off bypasses acceleration filters while remembering stability. `aim status` reads all three half-lives; `StabilityEnabled` recognizes natural/legacy 8..12 ms input with half-size scale, or modern LUT input 0 with scale 4..6 ms. `LookupInputSmoothingRisk` flags the older LUT input-speed filter. an explicit curve edit, resume or game recipe rebuilds it with input half-life zero.
 
-- `21 live verify`: temporary actual kernel writes and delayed readback for all filters and game recipes, then full restoration. close games first. interrupted runs retain a snapshot for `aim verify restore`. [scope and recovery](game-presets.md#live-verification).
-- `22 remove flick tail`: disables output averaging while keeping the current curve and game sensitivity. this targets the filter's overshoot after fast movement; it does not reconstruct sensor tracking. [movement checks](movement.md).
+- `3 > 5 live verification`: temporary actual kernel writes and delayed readback for all filters and game recipes, then full restoration. close games first. interrupted runs retain a snapshot for `aim verify restore`. [scope and recovery](game-presets.md#live-verification).
+- `2 > 2 > 6 remove flick tail`: disables output averaging while keeping the current curve and game sensitivity. this targets the filter's overshoot after fast movement; it does not reconstruct sensor tracking. [movement checks](movement.md).
 
 valorant has used raw input since launch according to [riot's 3.07 notes](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-3-07/); the raw input buffer toggle was removed and made always enabled in [11.06](https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-11-06/). there is no toggle to enable as a helox fix. compare tracking against your previous profile in the practice range with the same dpi button stage and game sensitivity. this tool does not edit game configuration or certify whether a particular match consumed the transformed stream.
 
@@ -59,11 +61,11 @@ the optional installer downloads [raw accel 1.7.1 from its official release](htt
 
 ### driver checks and removal
 
-`8 > 9 check driver`, `6 > 4`, or `aim doctor` checks backend files against the pinned official archive, service registration, the mouse class filter, installed driver hash/signature, pending driver file, control endpoint and live protocol readback. no selected mouse is needed and no settings are applied. `aim doctor --json` exports the same checks. native readback runs only after backend preparation and both archive/backend verification succeed; otherwise `KernelReadable` is null and the endpoint check remains independent. every first aim bridge load also verifies its files, including menu/status paths. missing or inaccessible evidence remains unknown; a registered service alone does not establish that the driver is active. the upstream 1.7.1 package uses protocol 1.7.0.
+`2 tune mouse > 3 driver > 2 check driver`, `6 > 4`, or `aim doctor` checks backend files against the pinned official archive, service registration, the mouse class filter, installed driver hash/signature, pending driver file, control endpoint and live protocol readback. no selected mouse is needed and no settings are applied. `aim doctor --json` exports the same checks. native readback runs only after backend preparation and both archive/backend verification succeed; otherwise `KernelReadable` is null and the endpoint check remains independent. every first aim bridge load also verifies its files, including menu/status paths. missing or inaccessible evidence remains unknown; a registered service alone does not establish that the driver is active. the upstream 1.7.1 package uses protocol 1.7.0.
 
 with a selected mouse, doctor and status also read its pnp instance id, started/problem state and windows-reported device stack through configuration manager. `raw accel listed` refers to that stack, rather than just a global service or class-filter registration. json exposes `SelectedDeviceStack` in doctor and `selectedDeviceStack` in status. missing selection gives null; unavailable, unsupported or malformed stack properties leave presence unknown. this check does not certify vanguard compatibility, game consumption or wireless mouse power. instance resolution uses the interface property instead of assuming every mouse is a hid instance.
 
-`8 > 10 uninstall driver` and `6 > 5` perform the same removal. type `uninstall` to continue, or `0` to cancel. advanced command: `aim uninstall`. this affects raw accel for all mice and other raw accel apps; helox profiles, backups and downloads stay available. the verified official uninstaller removes the filter and driver file. helox then removes the remaining service only if its type and image match the expected raw accel driver. windows uac and the official keypress window are required. the filter/file/service results are checked rather than trusting the upstream exit code alone.
+`2 > 3 > 6 uninstall driver` and `6 > 5` perform the same removal. type `uninstall` to continue, or `0` to cancel. advanced command: `aim uninstall`. this affects raw accel for all mice and other raw accel apps; helox profiles, backups and downloads stay available. the verified official uninstaller removes the filter and driver file. helox then removes the remaining service only if its type and image match the expected raw accel driver. windows uac and the official keypress window are required. the filter/file/service results are checked rather than trusting the upstream exit code alone.
 
 restart windows after removal: a loaded driver and files queued for deletion can remain until then, as described in the [official guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md#installation). `aim doctor` can report an open endpoint even after removal. no force-unload or automatic restart is attempted.
 
@@ -116,13 +118,13 @@ profiles must contain a complete, valid settings snapshot. a damaged original ba
 
 ## advanced commands
 
-`8 > 15` opens the [personal curve builder](curves.md): base sensitivity, start/end speeds, fast/base limit and transition shape. preview runs the proposed profile through the official engine without activation. apply writes, checks and saves the selected device's curve. component switches preserve it; an explicit natural gain returns to natural acceleration.
+`2 > 1 > 1` opens the [personal curve builder](curves.md): base sensitivity, start/end speeds, fast/base limit and transition shape. preview runs the proposed profile through the official engine without activation. apply writes, checks and saves the selected device's curve. component switches preserve it; an explicit natural gain returns to natural acceleration.
 
-`8 > 16` offers optional axis angle snapping, initially off. the 0..5 degree range is a helox limit, not riot certification. this direction filter is independent of precision and output smoothing. [behavior and policy limits](curves.md#angle-snapping).
+`2 > 2 > 3` offers optional axis angle snapping, initially off. the 0..5 degree range is a helox limit, not riot certification. this direction filter is independent of precision and output smoothing. [behavior and policy limits](curves.md#angle-snapping).
 
-`6 > 7` and `8 > 17` read application crashes and shutdown timing without changing settings. [coverage](curves.md#shutdown-popup).
+`6 > 7` and `3 test mouse > 6 shutdown errors` read application crashes and shutdown timing without changing settings. [coverage](curves.md#shutdown-popup).
 
-`8 > 18` attenuates directions independently; `8 > 19` softly reduces all slow movement, including wanted corrections. both offer preview before apply and start off. `8 > 20` bypasses every raw accel effect for the selected mouse, even with damaged saved controls. [filter behavior, interactions and recovery](filters.md).
+`2 > 2 > 4` attenuates directions independently; `2 > 2 > 5` softly reduces all slow movement, including wanted corrections. both offer preview before apply and start off. `2 > 3 > 5` bypasses every raw accel effect for the selected mouse, even with damaged saved controls. [filter behavior, interactions and recovery](filters.md).
 
 ```text
 setup
@@ -140,7 +142,9 @@ aim response
 aim verify
 aim verify restore
 preset list
-preset show|preview|apply <name>
+preset status
+preset tune
+preset show|preview|apply <name> [balanced|steady|linear] [personal]
 preset undo
 preset recover
 aim tracking
@@ -180,7 +184,7 @@ command mode: `launch.bat status --json`, `launch.bat probe --json`, `launch.bat
 
 text commands inside the terminal also accept `--json`; the format applies to that command only. use batch command mode for a pure json stream. repeated aim choices that already match the live driver save the preset without activating the same configuration again.
 
-`health` (menu `6 > 8`) combines backend file verification, selected mouse stack, live aim settings, preset matches, pending recovery and the `vgk` / `vgc` service states. it reads state without starting services or games and reports issues even when the report command succeeds. an inaccessible service is unknown, not missing. service state uses windows' [query service status](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatus); it does not prove vanguard acceptance or game input. `GameInputVerified` remains null.
+`health` (menu `3 test mouse > 1 health overview`, also `6 > 8`) combines backend file verification, selected mouse stack, live aim settings, preset matches, pending recovery and the `vgk` / `vgc` service states. it reads state without starting services or games and reports issues even when the report command succeeds. an inaccessible service is unknown, not missing. service state uses windows' [query service status](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatus); it does not prove vanguard acceptance or game input. `GameInputVerified` remains null.
 
 add `--mouse <index>` to choose a mouse for one command, for example `launch.bat health --mouse 0 --json`. indices are zero-based from `devices`. the option validates that the same device remains connected and does not change the terminal's selected mouse or save a selection.
 

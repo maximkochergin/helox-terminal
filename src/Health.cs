@@ -71,8 +71,8 @@ internal static class Health {
             new AimStatus {State="unavailable",Note="backend verification not confirmed / aim doctor"};
         if(report.Aim.State=="ready") {
             try {report.Presets=GamePresets.Status(device);}catch(Exception e) {errors.Add("preset check: "+e.Message);}
-            if(report.Aim.Enabled!=true) notes.Add("aim effects bypassed / enable through aim tools > 20");
-            if(report.Aim.OutputHalfLifeMs>0) notes.Add("output averaging active / flick tail check: aim tools > 22");
+            if(report.Aim.Enabled!=true) notes.Add("aim effects bypassed / apply a game recipe or tune mouse > driver > bypass");
+            if(report.Aim.OutputHalfLifeMs>0) notes.Add("output averaging active / tune mouse > motion filters > remove flick tail");
             if(report.Aim.LookupInputSmoothingRisk==true) notes.Add("legacy curve speed smoothing / reapply curve or preset");
             if(report.Stack.RawAccelPresent!=true || report.Stack.Started!=true || report.Stack.ProblemCode!=0) notes.Add("selected mouse's started raw accel stack is not confirmed / aim doctor");
         }else notes.Add(report.Aim.Note);
