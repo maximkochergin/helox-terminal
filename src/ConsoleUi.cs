@@ -33,7 +33,7 @@ internal static partial class Program {
         Browse("tune mouse / driver effects","  1  acceleration     curve and fast-turn response\n  2  motion filters   smoothing, snapping and damping\n  3  driver           install, restore and bypass\n  4  current setup    full live readback",delegate(string c) {
             if(c=="1") Browse("acceleration / slow sensitivity stays 1x","  1  curve builder\n  2  simple acceleration\n  3  acceleration off\n  4  gain stability on\n  5  gain stability off\n  6  tracking starting point",delegate(string n) {AimAction(MapChoice(n,new string[]{"15","1","2","11","12","13"}));});
             else if(c=="2") Browse("motion filters / optional / preview where offered","  1  output smoothing on\n  2  output smoothing off\n  3  angle snapping\n  4  direction scales\n  5  micro damping\n  6  remove flick tail",delegate(string n) {AimAction(MapChoice(n,new string[]{"3","4","16","18","19","22"}));});
-            else if(c=="3") Browse("driver / selected mouse","  1  install driver\n  2  check driver\n  3  resume saved settings\n  4  undo last aim change\n  5  bypass or enable effects\n  6  uninstall shared driver",delegate(string n) {AimAction(MapChoice(n,new string[]{"5","9","8","6","20","10"}));});
+            else if(c=="3") Browse("driver / selected mouse","  1  install driver\n  2  check driver\n  3  resume saved settings\n  4  undo last aim change\n  5  bypass or enable effects\n  6  uninstall shared driver\n  7  recover saved controls",delegate(string n) {AimAction(MapChoice(n,new string[]{"5","9","8","6","20","10","23"}));});
             else if(c=="4") {PrintAim(Aim.Read(OptionalSelected()));Finish();}
             else throw new ArgumentException("choose 1..4 or 0");
         });
@@ -75,6 +75,28 @@ internal static partial class Program {
     private static void CheckTuningInput(Device device) {
         AimStatus status=Aim.Read(device);
         if(status.InputTransformed!=false) throw new InvalidOperationException(status.State=="ready" ? "bypass effects first / tune mouse > driver > bypass / settings are not changed automatically" : "input transform state unknown / check driver before movement tuning");
+    }
+    private static void PrintControlsRecovery(AimControlsRecovery result) {
+        Console.WriteLine("\n  saved controls / "+(result.Applied ? "recovered" : "preview"));
+        if(result.Available) Console.WriteLine("  matches / "+String.Join(" + ",result.Matches));
+        Console.WriteLine("  "+result.Note);
+    }
+    private static void RecoverControlsMenu() {
+        Device device=Selected();AimControlsRecovery preview=Aim.RecoverControls(device,false);PrintControlsRecovery(preview);
+        if(!preview.Available) {Finish();return;}
+        if(Ask("1 save controls / 0 back")!="1") throw new ArgumentException("choose 1 or 0");
+        Device fresh=Selected();RequirePresetMouse(device.Path,fresh);PrintControlsRecovery(Aim.RecoverControls(fresh,true,preview.SourceState));Finish();
+    }
+    private static void PrintTailRepair(AimTailRepair result) {
+        Console.WriteLine("\n  flick-tail repair / "+(result.Applied ? "applied / readback verified" : "preview / nothing applied"));
+        Console.WriteLine(result.Changes.Length==0 ? "  already clear / no filter changes" : "  "+String.Join(" / ",result.Changes));
+        Console.WriteLine("  curve table, calibration, snapping and scale stability kept\n  example tail peak / "+result.BeforeResponse.AfterFlickPeakCounts+" -> "+result.Response.AfterFlickPeakCounts+" counts\n  engine model / sensor tracking and game response not measured");
+    }
+    private static void TailRepairMenu() {
+        Device device=Selected();AimTailRepair preview=Aim.RepairTail(device,false);PrintTailRepair(preview);
+        if(!preview.Changed) {Finish();return;}
+        if(Ask("1 apply / 0 back")!="1") throw new ArgumentException("choose 1 or 0");
+        Device fresh=Selected();RequirePresetMouse(device.Path,fresh);PrintTailRepair(Aim.RepairTail(fresh,true,preview.SourceState));Finish();
     }
 }
 }

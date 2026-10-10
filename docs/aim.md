@@ -1,5 +1,13 @@
 # aim tools / research notes
 
+## independent filter controls / 0.18.0
+
+output smoothing now edits the live selected-mouse profile instead of rebuilding its curve from saved parameters. imported curves, native caps, rotation, direction scales, calibration and input timing stay intact. shared/default profiles are copied before editing. the output toggle leaves input and sensitivity-scale averaging untouched; stale or missing curve metadata no longer prevents this independent edit.
+
+the released [processing implementation](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) and [filter guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md) separate input-speed, sensitivity-scale and output-magnitude averaging. `aim flick-tail preview|apply` therefore removes output averaging and legacy LUT input averaging, while retaining scale stability and the exact curve table. mixed per-axis modes retain input averaging. the comparison runs the native calculation engine; it does not measure physical spinout reduction or input inside a game.
+
+`aim controls preview|recover` can restore missing controls when the entire selected native configuration exactly matches a built-in recipe. equivalent target-game and trainer configurations are safe aliases when their saved controls are identical. personal or changed curves are not guessed. saving controls never activates the driver or changes windows settings. filter activation uses the existing durable recovery checkpoint and full readback/rollback path.
+
 ## LUT correction recovery and game recipes / 0.14.0
 
 the [released lookup](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/accel-lookup.hpp) returns zero sensitivity at nonpositive speed. the [input linear EMA](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel.hpp) includes a trend term that can clamp estimated speed to zero after a flick despite a nonzero current correction. official-engine testing reproduced three zero outputs among sixteen vertical one-count corrections after eight horizontal 800-count inputs at 8 ms, using a valorant example LUT with the old 4/2 ms filters. disabling input-speed EMA eliminates those three zero outputs in that test. output averaging is independent and can still distort recovery when explicitly enabled.

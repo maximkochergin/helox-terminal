@@ -12,6 +12,7 @@ internal static class SelfTest {
         AimRegression();
         CurveRegression();
         FilterRegression();
+        AdjustmentRegression();
         GameRegression();
         DeviceStackRegression();
         UndoRegression();
@@ -433,6 +434,43 @@ internal static class SelfTest {
         }
         AimPreset legacy=Aim.ReadPreset(new Dictionary<string,object>{{"precision",true},{"smooth",false}});Expect(legacy.Directions.Neutral && !legacy.Damping.Enabled && legacy.SnapStrength==1,"legacy presets keep new filters off");
     }
+    private static void AdjustmentRegression() {
+        Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"tests","fixtures","rawaccel-default.json")));
+        const string id="HID\\ADJUST";AimPreset preset=new AimPreset {Precision=true,Curve=new AimCurve {Base=.8,Start=2,End=24,Limit=1.6},Stability=true,Smooth=true,SmoothMs=8,SnapDegrees=2};
+        Dictionary<string,object> original=Aim.ConfigurePreset(defaults,defaults,id,preset);
+        Dictionary<string,object> entry=Aim.DeviceEntry(original,id),config=Aim.Map(entry["config"]);config["DPI (normalizes input speed unit: counts/ms -> in/s)"]=800;config["Polling rate Hz (keep at 0 for automatic adjustment)"]=125;config["Use constant time interval based on polling rate"]=true;
+        Dictionary<string,object> activeProfile=Aim.Map(Aim.Items(original["profiles"])[1]);activeProfile["Input Speed Cap"]=15.0;activeProfile["Degrees of rotation"]=3.0;
+        string originalJson=Store.Json.Serialize(original);
+        foreach(bool tail in new bool[]{false,true}) {
+            Dictionary<string,object> after=Aim.ConfigureSmoothing(original,id,false,4,tail),expected=Aim.EffectiveProfile(original,id);
+            Aim.Map(expected["Input speed calculation parameters"])["Time in ms after which an output is weighted at half its original value."]=0.0;
+            Expect(Aim.SameValue(expected,Aim.EffectiveProfile(after,id)) && Aim.SameValue(config,Aim.Map(Aim.DeviceEntry(after,id)["config"])),"filter edit preserves curve, calibration, rotation, cap and independent filters");
+            Expect(Store.Json.Serialize(original)==originalJson,"filter edit never mutates its source");AimConfigGuard.Check(after);
+        }
+        Dictionary<string,object> bypass=Aim.ConfigureBypass(original,id,true),off=Aim.ConfigureSmoothing(bypass,id,false,4,false),on=Aim.ConfigureSmoothing(off,id,true,2,false);
+        Expect(Aim.Describe(off,id).Enabled==false && Aim.Describe(on,id).Enabled==true && Aim.Describe(on,id).OutputHalfLifeMs==2,"smoothing off retains bypass and explicit on enables only selected mouse");
+        Expect(Aim.SameValue(off,Aim.ConfigureSmoothing(off,id,false,4,false)),"identical smoothing change keeps profile identity and full state");
+        Dictionary<string,object> legacy=Aim.Parse(originalJson),speed=Aim.Map(Aim.Map(Aim.Items(legacy["profiles"])[1])["Input speed calculation parameters"]);
+        speed["Time in ms after which an input is weighted at half its original value."]=4.0;
+        Dictionary<string,object> repaired=Aim.ConfigureSmoothing(legacy,id,false,4,true);
+        Expect(Aim.Describe(repaired,id).InputHalfLifeMs==0 && Aim.Describe(repaired,id).ScaleHalfLifeMs==4,"tail repair migrates LUT speed averaging without removing scale stability");
+        speed["Whole/combined accel (set false for 'by component' mode)"]=false;
+        Dictionary<string,object> mixed=Aim.ConfigureSmoothing(legacy,id,false,4,true);
+        Expect(Aim.Describe(mixed,id).InputHalfLifeMs==4,"mixed per-axis curves retain their shared input timing");
+        Dictionary<string,object> shared=Aim.Parse(originalJson);List<object> devices=Aim.Items(shared["devices"]);devices.Add(new Dictionary<string,object>{{"id","HID\\PEER"},{"name","peer"},{"profile",entry["profile"]},{"config",Aim.Parse(Store.Json.Serialize(config))}});shared["devices"]=devices.ToArray();
+        Dictionary<string,object> isolated=Aim.ConfigureSmoothing(shared,id,false,4,true);
+        Expect(Aim.SameValue(shared["defaultDeviceConfig"],isolated["defaultDeviceConfig"]) && Aim.SameValue(Aim.EffectiveProfile(shared,"HID\\PEER"),Aim.EffectiveProfile(isolated,"HID\\PEER")) && (string)Aim.DeviceEntry(isolated,id)["profile"]!=(string)entry["profile"],"shared filter profile cloned before editing selected mouse");
+        Dictionary<string,object> defaultEdit=Aim.ConfigureSmoothing(defaults,id,true,2,false);
+        Expect(Aim.SameValue(defaults["profiles"],new object[]{Aim.Items(defaultEdit["profiles"])[0]}) && Aim.SameValue(defaults["defaultDeviceConfig"],defaultEdit["defaultDeviceConfig"]),"default filter edits preserve unmatched mice");
+        Expect(!Aim.Describe(defaultEdit,id).Profile.StartsWith("helox-",StringComparison.Ordinal),"filter editing never relabels an imported default as a helox curve");
+        foreach(GameRecipe recipe in GamePresets.List()) foreach(string style in new string[]{"","-steady","-linear"}) {
+            Dictionary<string,object> known=GamePresets.Configure(defaults,defaults,id,GamePresets.Get(recipe.Id+style));
+            AimControlsRecovery recovered=Aim.RecoverableControls(known,defaults,id,delegate(Dictionary<string,object> cfg){return cfg;});
+            Expect(recovered.Available && Array.IndexOf(recovered.Matches,recipe.Id+style)>=0 && !recovered.DriverChanged,"exact built-in control recovery identifies complete selected setup");
+            Expect(Aim.RecoverableControls(Aim.ConfigureBypass(known,id,true),defaults,id,delegate(Dictionary<string,object> cfg){return cfg;}).Available,"control recovery works while effects are bypassed");
+        }
+        Expect(!Aim.RecoverableControls(original,defaults,id,delegate(Dictionary<string,object> cfg){return cfg;}).Available,"imported or personal curve is not guessed as a built-in recipe");
+    }
     private static void GameRegression() {
         Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));
         Settings original=new Settings {Speed=15,Acceleration=2,Threshold1=7,Threshold2=13,WheelLines=4,DoubleClickMs=450,SwapButtons=1};
@@ -463,6 +501,10 @@ internal static class SelfTest {
         Dictionary<string,object> outputProfile=Aim.Map(Aim.Items(outputOnly["profiles"])[1]);
         Aim.Map(outputProfile["Input speed calculation parameters"])["Time in ms after which an output is weighted at half its original value."]=8.0;
         Aim.RequireSmoothingOnly(modern,outputOnly,"HID\\GAME");
+        Dictionary<string,object> scaleChange=Aim.Parse(Store.Json.Serialize(outputOnly));
+        Aim.Map(Aim.Map(Aim.Items(scaleChange["profiles"])[1])["Input speed calculation parameters"])["Time in ms after which scale is weighted at half its original value."]=6.0;
+        bool scaleBlocked=false;try {Aim.RequireSmoothingOnly(modern,scaleChange,"HID\\GAME",true);}catch(InvalidOperationException) {scaleBlocked=true;}
+        Expect(scaleBlocked,"independent filter changes cannot replace scale stability");
         outputProfile["Input Speed Cap"]=10.0;
         bool smoothingBlocked=false;try {Aim.RequireSmoothingOnly(modern,outputOnly,"HID\\GAME");}catch(InvalidOperationException) {smoothingBlocked=true;}
         Expect(smoothingBlocked,"smoothing cannot silently replace an imported input cap");

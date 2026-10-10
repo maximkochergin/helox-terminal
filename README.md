@@ -38,7 +38,7 @@ hardware dpi, configured polling rate and battery are not read automatically. me
 
 basic features use .net framework 4.x. aim tools require 64-bit windows, the raw accel prerequisites, administrator rights for installation and a restart. [installation](docs/manual.md#aim-tools).
 
-after reboot, use `2 tune mouse → 3 driver → 3 resume saved` to restore saved aim choices. `preset status` checks which recipe matches the live driver. an interrupted preset keeps a recovery snapshot; close games and use `1 game setup → 5 undo or recover` or `preset recover`.
+after reboot, use `2 tune mouse → 3 driver → 3 resume saved` to restore saved aim choices. if an active built-in curve has lost its saved controls, `2 → 3 → 7 recover saved controls` can recognize it without changing the driver. `preset status` checks which recipe matches the live driver. interrupted preset/filter writes keep a recovery snapshot; close games and use `1 game setup → 5 undo or recover` or `preset recover`.
 
 known-distance dpi estimation is available through `calibrate <cm>`. the mouse-body shortcut in `3 test mouse → 3 dpi estimate` currently uses verified gxt 929 dimensions only. [measurement details](docs/manual.md#tests-and-recovery).
 

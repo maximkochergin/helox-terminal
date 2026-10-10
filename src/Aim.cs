@@ -44,7 +44,7 @@ internal sealed class AimPreset {
         return new Dictionary<string,object>{{"precision",Precision},{"smooth",Smooth},{"smoothMs",SmoothMs},{"gainLimit",GainLimit},{"stability",Stability},{"stabilityMs",StabilityMs},{"snapDegrees",SnapDegrees},{"snapStrength",SnapStrength},{"curve",Curve==null ? null : Curve.ToMap()},{"directions",Directions.ToMap()},{"damping",Damping.ToMap()},{"speedUnit",SpeedUnit}};
     }
 }
-internal static class Aim {
+internal static partial class Aim {
     internal static readonly string Root=Path.Combine(Store.Root,"rawaccel-1.7.1","RawAccel");
     private static Assembly bridge;
     private const string Speed="Input speed calculation parameters";
@@ -240,11 +240,11 @@ internal static class Aim {
         if(profile==null) throw new InvalidOperationException("driver profile not found");
         Dictionary<string,object> result=Parse(Store.Json.Serialize(profile));result.Remove("name");return result;
     }
-    internal static void RequireSmoothingOnly(Dictionary<string,object> before,Dictionary<string,object> after,string id) {
+    internal static void RequireSmoothingOnly(Dictionary<string,object> before,Dictionary<string,object> after,string id,bool tail=false) {
         Dictionary<string,object> left=EffectiveProfile(before,id),right=EffectiveProfile(after,id);
-        // Speed-estimate filters may migrate, but changing smoothing must not replace a curve,
-        // gain, axis scale, rotation or cap imported from another configuration tool.
-        foreach(string key in new string[]{Input,Scale,Output}) {Map(left[Speed]).Remove(key);Map(right[Speed]).Remove(key);}
+        // Output averaging is independent. Only explicit flick-tail repair may also change input averaging.
+        Map(left[Speed]).Remove(Output);Map(right[Speed]).Remove(Output);
+        if(tail) {Map(left[Speed]).Remove(Input);Map(right[Speed]).Remove(Input);}
         if(!SameValue(left,right)) throw new InvalidOperationException("smoothing would replace custom curve settings / use the original profile editor, or explicitly apply a helox curve or game preset");
     }
     internal static AimStatus Read(Device device) {
@@ -386,6 +386,10 @@ internal static class Aim {
         CheckChange(feature,on,smoothMs,gainLimit);
         if(curve!=null) curve.Check();if(snap.HasValue) CheckSnap(snap.Value);
         if(directions!=null) directions.Check();if(damping!=null) damping.Check();
+        if(feature=="smooth") {
+            if(curve!=null || snap.HasValue || directions!=null || damping!=null) throw new ArgumentException("smoothing changes output averaging only");
+            return AdjustSmoothing(device,on,smoothMs,false);
+        }
         using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
             bool held=false;try {
                 try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
@@ -398,7 +402,6 @@ internal static class Aim {
                 RateResult history=(feature=="stability" && on) || feature=="tracking" ? RecentRate(device) : null;
                 AimPreset preset=Resolve(status,saved,feature,on,smoothMs,gainLimit,history==null ? 8 : BoundedStability(history.MedianIntervalMs),curve,snap,directions,damping);
                 Dictionary<string,object> after=Canonical(ConfigurePreset(before,Defaults(),id,preset,on || feature=="resume"));
-                if(feature=="smooth") RequireSmoothingOnly(before,after,id);
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=preset.ToMap();

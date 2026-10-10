@@ -78,12 +78,21 @@ if ($LASTEXITCODE -ne 0 -or ($dossierScreen -join "`n") -notmatch 'unavailable /
 if ($status.receiver.TrustCandidate -and ($null -eq $status.dossier.Model.LengthMm -or !$status.dossier.Hid)) { throw 'dossier device metadata missing' }
 $aimStatus = & $executable aim status --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or !$aimStatus.State) { throw 'aim status contract failed' }
+if ($aimStatus.State -eq 'ready') {
+    $controlsPreview = & $executable aim controls preview --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $controlsPreview.Applied -or $controlsPreview.DriverChanged -or !$controlsPreview.PSObject.Properties['Available'] -or !$controlsPreview.Note) { throw 'control recovery preview contract failed' }
+    if ($controlsPreview.Available -and (!$controlsPreview.Matches -or !$controlsPreview.Controls)) { throw 'exact control recovery match missing' }
+    $tailPreview = & $executable aim flick-tail preview --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $tailPreview.Applied -or !$tailPreview.BeforeResponse -or !$tailPreview.Response -or $tailPreview.Readback.Note -ne 'proposed flick-tail repair / not activated' -or !$tailPreview.PSObject.Properties['Changed']) { throw 'flick-tail preview contract failed' }
+    $recoveryCancel = "2`n3`n7`n0`n0`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($recoveryCancel -join "`n") -notmatch 'saved controls / preview' -or ($recoveryCancel -join "`n") -match 'saved controls / recovered') { throw 'control recovery menu cancellation failed' }
+    $tailCancel = "2`n2`n6`n0`n0`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($tailCancel -join "`n") -notmatch 'flick-tail repair / preview' -or ($tailCancel -join "`n") -match 'flick-tail repair / applied') { throw 'flick-tail menu cancellation failed' }
+}
 $recipes = & $executable preset list --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $recipes.Count -ne 5 -or $recipes[0].Id -ne 'valorant' -or $recipes[1].Engine -ne 'source 2') { throw 'game recipe list failed' }
 $recipeCancel = "1`n1`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($recipeCancel -join "`n") -notmatch 'style / balanced' -or ($recipeCancel -join "`n") -notmatch 'replaces current aim filters' -or ($recipeCancel -join "`n") -match 'applied /') { throw 'recipe explanation or cancellation failed' }
-$tailCancel = "2`n2`n6`n0`n0`n0`n0" | & $executable
-if ($LASTEXITCODE -ne 0 -or ($tailCancel -join "`n") -notmatch 'keep curve, dpi and game sensitivity' -or ($tailCancel -join "`n") -match 'applied /') { throw 'flick tail action cancellation failed' }
 foreach ($recipe in $recipes) {
     $plan = & $executable preset show $recipe.Id --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$plan.DriverControls.precision -or $plan.DriverControls.smooth -or $plan.DriverControls.snapDegrees -ne 0 -or !$plan.GameSteps -or !$plan.Sources) { throw 'complete game recipe definition failed' }
@@ -175,6 +184,10 @@ foreach ($arguments in @(@('aim','curve','preview','0','3','30','1.4','1'),@('ai
 foreach ($badStrength in @(@('aim','smooth','on','0'),@('aim','smooth','on','13'),@('aim','smooth','off','4'),@('aim','precision','on','4'),@('aim','precision','on','1'),@('aim','precision','on','1.9'),@('aim','precision','on','NaN'),@('aim','precision','on','Infinity'),@('aim','precision','off','1.4'),@('aim','stability','on','8'),@('aim','stability','maybe'),@('aim','tracking','off'),@('aim','response','extra'))) {
     $invalidStrength = & $executable @badStrength --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 1 -or !$invalidStrength.error -or $invalidStrength.applied) { throw 'aim command validation failed' }
+}
+foreach ($arguments in @(@('aim','controls'),@('aim','controls','apply'),@('aim','controls','recover','extra'),@('aim','flick-tail'),@('aim','flick-tail','recover'),@('aim','flick-tail','apply','extra'))) {
+    $invalidAdjustment = & $executable @arguments --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalidAdjustment.error -or $invalidAdjustment.Applied) { throw 'invalid adjustment command accepted' }
 }
 $afterAimValidation = & $executable aim status --json | ConvertFrom-Json
 if (($afterAimValidation | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'invalid or cancelled aim choices changed driver settings' }

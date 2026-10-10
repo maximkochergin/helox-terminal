@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static partial class Program {
-    internal const string Version="0.17.1";
+    internal const string Version="0.18.0";
     private static string selectedPath;
     private static string commandMousePath;
     private static bool json;
@@ -168,11 +168,10 @@ internal static partial class Program {
             else {Console.WriteLine("  temporary driver writes / original state restored / close games first");AimCommand(new string[]{"aim","verify"});}
         }
         else if(choice=="22") {
-            Console.WriteLine("  remove output averaging / keep curve, dpi and game sensitivity\n  reduces the filter's flick tail / cannot reconstruct sensor tracking\n  1 apply    0 back");
-            if(Ask("choose")!="1") throw new ArgumentException("choose 1 or 0");
-            AimCommand(new string[]{"aim","smooth","off"});
+            TailRepairMenu();return;
         }
-        else throw new ArgumentException("choose 1..22 or 0");
+        else if(choice=="23") {RecoverControlsMenu();return;}
+        else throw new ArgumentException("choose 1..23 or 0");
         Finish();
     }
     private static void DirectionMenu() {
@@ -323,10 +322,21 @@ internal static partial class Program {
             if(status.Directions!=null && !status.Directions.Neutral) Console.WriteLine("  scales / left "+N(status.Directions.Left)+" / right "+N(status.Directions.Right)+" / up "+N(status.Directions.Up)+" / down "+N(status.Directions.Down));
             Console.WriteLine("  micro "+(status.DampingEnabled==null ? "unknown / unrecognized table" : status.DampingEnabled==true ? N(status.DampingLowScale.Value)+"x -> 1x at "+N(status.DampingRecoverySpeed.Value)+" "+status.CurveSpeedUnit : "off"));
             if(status.LookupData!=null && status.LookupData.Length>=4) Console.WriteLine(status.LookupIsSensitivity==true ? "  curve table / base "+N(status.LookupData[1])+"x / fast "+N(status.LookupData[status.LookupData.Length-1])+"x / speeds in "+status.CurveSpeedUnit : "  custom velocity table / not a helox sensitivity curve");
+            if(status.Mode=="lut" && status.DampingEnabled==null && status.Profile!=null && status.Profile.StartsWith("helox-",StringComparison.Ordinal)) Console.WriteLine("  saved curve controls / missing or changed / driver > 7 recover controls\n  smoothing and flick-tail repair remain available");
         }
         else Console.WriteLine("  "+status.Note);
     }
     private static void AimCommand(string[] words) {
+        if(words.Length>=2 && words[1]=="controls") {
+            if(words.Length!=3 || (words[2]!="preview" && words[2]!="recover")) throw new ArgumentException("use aim controls preview|recover / exact recipe match only");
+            AimControlsRecovery recovery=Aim.RecoverControls(Selected(),words[2]=="recover");
+            if(json) Console.WriteLine(Store.Json.Serialize(recovery));else PrintControlsRecovery(recovery);return;
+        }
+        if(words.Length>=2 && words[1]=="flick-tail") {
+            if(words.Length!=3 || (words[2]!="preview" && words[2]!="apply")) throw new ArgumentException("use aim flick-tail preview|apply");
+            AimTailRepair repair=Aim.RepairTail(Selected(),words[2]=="apply");
+            if(json) Console.WriteLine(Store.Json.Serialize(repair));else PrintTailRepair(repair);return;
+        }
         if(words.Length>=2 && words[1]=="verify") {
             if(words.Length==3 && words[2]=="restore") {LiveVerify.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  live verification snapshot restored / verified");return;}
             if(words.Length!=2) throw new ArgumentException("use aim verify or aim verify restore");
@@ -422,7 +432,7 @@ internal static partial class Program {
             AimStatus state=Aim.Set(Selected(),words[1],enabled,strength,gain);
             if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=state}));else {Console.WriteLine("  applied / driver readback verified");PrintAim(state);}return;
         }
-        throw new ArgumentException("use aim status|doctor|events|response|tracking|curve|directions|prepare|install|uninstall|restore|resume or aim precision|smooth|stability|snap|damp|bypass on|off");
+        throw new ArgumentException("use aim status|doctor|events|response|tracking|curve|directions|controls|flick-tail|prepare|install|uninstall|restore|resume or aim precision|smooth|stability|snap|damp|bypass on|off");
     }
     private static void PrintDirections(AimResponse response) {
         if(response.DirectionSamples==null) return;List<string> parts=new List<string>();
@@ -524,6 +534,7 @@ internal static partial class Program {
     }
     private static void Help() {
         Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
+        Console.WriteLine("\n  aim controls preview|recover   recover exact recipe controls / no driver write\n  aim flick-tail preview|apply   remove output and legacy lut speed averaging");
         Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
         Console.WriteLine("\n  aim prepare / install / status / doctor / uninstall / restore / resume\n  aim precision on [1.1..1.8] / off   gradual fast-motion gain limit\n  aim stability on|off   steadier acceleration / precision required\n  aim tracking           precision + stability / output smoothing off\n  aim response           current-profile simulation / read only\n  aim smooth on [1..12] / off   output half-life ms / adds lag\n  check                  analysis checks / no settings changes");
         Console.WriteLine("\n  setup                  speed 10/20 + windows accel on\n  set acceleration on|off\n  set speed 1..20\n  set wheel 0..100|page\n  set doubleclick 200..900\n  set swap on|off\n  measure 3..30          observed input hz\n  dpi                    three-pass check, no ruler\n  calibrate <cm>         known-distance dpi estimate\n  profile save|show|apply <name>\n  profile list / undo / restore\n  cleanup --confirm      reset data + shared driver\n  devices / select <index> / probe\n  health / status / home / faq / exit\n  --mouse <index>        one-command selection\n\n  export: launch.bat status --json");

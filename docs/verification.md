@@ -1,5 +1,13 @@
 # verification
 
+## independent smoothing and exact control recovery / 0.18.0
+
+pure regressions check curve-table preservation, native caps, rotation, snapping, direction scales, normalization, constant timing, shared/default profile isolation, bypass, no-op identity and all 15 built-in recipe matches. unknown curves are refused by metadata recovery. output smoothing changes only its half-life; flick-tail repair additionally clears legacy input averaging for LUT curves, retaining scale stability. mixed per-axis timing is preserved.
+
+local live integration checks passed 13 driver cases and 18 game-recipe apply/undo cycles. an imported natural curve with a native input cap now accepts smoothing on/off while retaining the cap and all other fields. legacy LUT input/output averaging is cleared with unchanged curve, scale stability and windows settings; the native engine model shows the corresponding tail reduction. stale previews are refused before changes. exact metadata recovery leaves the full native/windows state unchanged and preserves peer saved controls. read-only preference-file failures roll back driver writes and restore saved files. pending recovery blocks new filter/recovery writes; forced process exits and explicit recovery are covered by the shared transaction tests.
+
+these are configuration and processing checks. 68 raw-input motion reports were captured during the final live run; no physical before/after sensor comparison was performed and no game was launched. sensor improvement and game input remain unverified.
+
 ## personal range, saved choices and shell setup / 0.17.1
 
 personal tuning previously discarded report intervals below 0.25 ms. it now sums path length over windows of at least 1 ms, retaining high-rate reports, reversals and same-timestamp batches. synthetic 125 / 1000 / 4000 / 8000 hz examples check counts per elapsed time and contributing report counts; these are fixtures, not hardware-rate measurements. non-monotonic, non-finite, empty and insufficient captures remain rejected.
