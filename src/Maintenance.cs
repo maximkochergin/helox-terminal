@@ -20,7 +20,7 @@ internal static class Maintenance {
         if(!File.Exists(path)) throw new InvalidOperationException(name+" missing / extract the complete release archive");
         return path;
     }
-    private static ProcessStartInfo Start(string script,string arguments) {
+    internal static ProcessStartInfo Start(string script,string arguments) {
         return new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32","WindowsPowerShell","v1.0","powershell.exe"),
             "-noprofile -executionpolicy bypass -file \""+Script(script)+"\" "+arguments);
     }

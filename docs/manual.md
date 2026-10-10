@@ -7,7 +7,7 @@ mouse controls for windows, with lowercase text, a numbered menu and a batch lau
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.17.0
+  helox / 0.17.1
   ----------------------------------------
   mouse     selected mouse
   windows   speed 10/20 / accel on / desktop
@@ -55,7 +55,7 @@ settings target the selected hardware id. identical receivers with the same id s
 
 effect switches retain the selected device's existing dpi normalization and timing parameters, including settings inherited from the driver's defaults. off keeps a bypassed device bypassed; on, tracking and resume explicitly enable it. bypassed status labels the displayed values as configured only. readback and response use the kernel's exact hardware-id match. repeating an already restored undo clears saved choices without another activation or filter reset.
 
-driver settings reset on reboot: use `8 resume saved` in aim tools or `aim resume` to reapply the last choices for this mouse. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
+driver settings reset on reboot: use `2 tune mouse > 3 driver > 3 resume saved settings` or `aim resume` to reapply the last choices for this mouse. if saved choices are missing, explicitly apply a curve or game setup first. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
 
 the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. [mechanics, research and verification](aim.md).
 

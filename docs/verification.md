@@ -1,5 +1,15 @@
 # verification
 
+## personal range, saved choices and shell setup / 0.17.1
+
+personal tuning previously discarded report intervals below 0.25 ms. it now sums path length over windows of at least 1 ms, retaining high-rate reports, reversals and same-timestamp batches. synthetic 125 / 1000 / 4000 / 8000 hz examples check counts per elapsed time and contributing report counts; these are fixtures, not hardware-rate measurements. non-monotonic, non-finite, empty and insufficient captures remain rejected.
+
+reapplying a recipe when native settings already matched could overwrite saved choices without replacing undo. live integration checks cover both altered and missing selected-mouse preferences, exact byte restoration, unchanged native settings and preservation of undo on a subsequent true no-op. a pending recovery now takes precedence over missing personal tuning. the menu reports invalid personal tuning and returns to a built-in draft without applying it.
+
+when an active helox LUT has lost its saved metadata, status now explains why component switches are blocked and lists explicit curve/recipe recovery and bypass. the guards remain in place; the command suite accepts this expected refusal and compares the live driver before and after previews.
+
+Windows PowerShell launched through a non-PowerShell process can inherit PowerShell 7 module paths, breaking hash and signature commands. setup and maintenance prefer their host's built-in modules. a separate regression reproduces the inherited environment when PowerShell 7 is available and checks hash, signature and archive command recovery; driver installation/removal is not part of that test.
+
 ## selected mouse and imported profiles / 0.15.1
 
 regressions cover default selection of a sole non-trust mouse, refusal of ambiguous/disconnected devices, and the preview's mouse identity guard. recipe matching accepts an equivalent renamed profile and ignores unrelated default-profile edits; bypass and altered device timing still fail the match. smoothing rejects changes that would replace imported curve, axis, rotation or cap settings before backups, preferences or driver writes. real integration checks exercise normal smoothing on/off around a recipe and a rejected imported cap with full native and saved-file comparisons.

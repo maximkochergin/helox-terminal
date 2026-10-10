@@ -30,6 +30,9 @@ jobs:
       - name: uninstall orchestration checks
         shell: powershell
         run: .\tests\uninstall.ps1
+      - name: inherited shell module checks
+        shell: powershell
+        run: .\tests\shell.ps1
       - name: package
         shell: powershell
         run: .\package.ps1

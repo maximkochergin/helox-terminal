@@ -26,7 +26,18 @@ internal static class SelfTest {
             Expect(stackRejected,"game recipe cannot claim an applied effect with an unconfirmed mouse stack");
         }
         Expect(tuning.SlowP90==1 && tuning.FastP75==10 && tuning.IntervalMs==8,"personal range measures counts per time without guessing dpi");
-        foreach(List<Sample> invalidSamples in new List<Sample>[] {new List<Sample>{new Sample(0,1,0)},new List<Sample>{new Sample(1,1,0),new Sample(0,1,0)},new List<Sample>{new Sample(0,1,0),new Sample(Double.NaN,1,0)}}) {
+        foreach(double interval in new double[]{.125,.25,1,8}) {
+            List<Sample> slowRate=new List<Sample>(),fastRate=new List<Sample>();int count=(int)(2000/interval);
+            for(int n=0;n<=count;n++) {slowRate.Add(new Sample(n*interval,n%2==0 ? 1 : -1,0));fastRate.Add(new Sample(n*interval,10,0));}
+            MovementTuning highRate=PresetTuning.Analyze("mouse",slowRate,fastRate);
+            Expect(highRate.SlowP90==1/interval && highRate.FastP75==10/interval && highRate.IntervalMs==interval && highRate.SlowReports==count && highRate.FastReports==count,"personal tuning retains high-rate and reversing reports");
+            if(interval<1) {
+                for(int n=0;n<=count;n++) {slowRate[n].Ms=Math.Floor(n/2.0)*interval*2;fastRate[n].Ms=slowRate[n].Ms;}
+                MovementTuning batchedTuning=PresetTuning.Analyze("mouse",slowRate,fastRate);
+                Expect(batchedTuning.SlowP90==highRate.SlowP90 && batchedTuning.FastP75==highRate.FastP75 && batchedTuning.SlowReports==count,"same-timestamp batches retain motion without inflating speed");
+            }
+        }
+        foreach(List<Sample> invalidSamples in new List<Sample>[] {null,new List<Sample>(),new List<Sample>{new Sample(0,1,0)},new List<Sample>{null,new Sample(1,1,0)},new List<Sample>{new Sample(1,1,0),new Sample(0,1,0)},new List<Sample>{new Sample(0,1,0),new Sample(Double.NaN,1,0)},new List<Sample>{new Sample(Double.NaN,1,0)},new List<Sample>{new Sample(0,1,0),new Sample(0,10,0)}}) {
             bool samplesRejected=false;try {PresetTuning.Analyze("mouse",invalidSamples,fastTuning);}catch(ArgumentException) {samplesRejected=true;}catch(InvalidOperationException) {samplesRejected=true;}
             Expect(samplesRejected,"invalid or too short movement capture cannot become a personal preset");
         }

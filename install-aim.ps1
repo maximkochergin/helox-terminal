@@ -1,5 +1,9 @@
 param([switch]$PrepareOnly,[switch]$Uninstall)
 $ErrorActionPreference = 'Stop'
+# Prefer this host's built-ins when a parent passes PowerShell 7 module paths.
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    $env:PSModulePath=(Join-Path $PSHOME 'Modules')+[IO.Path]::PathSeparator+$env:PSModulePath
+}
 $release = 'https://github.com/RawAccelOfficial/rawaccel/releases/download/v1.7.1/RawAccel_v1.7.1.zip'
 $expected = '770FE3AE0919CA3C4D412F58C985EB27F5434DECAD809F7E8206DE4E8852EEC4'
 $root = Join-Path $env:LOCALAPPDATA 'helox-terminal\rawaccel-1.7.1'
@@ -104,7 +108,7 @@ $installedDriver = Join-Path $env:WINDIR 'System32\drivers\rawaccel.sys'
 $filters = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e96f-e325-11ce-bfc1-08002be10318}' -Name UpperFilters).UpperFilters
 if (!(Test-Path -LiteralPath $installedDriver) -or !(Get-Service rawaccel -ErrorAction SilentlyContinue) -or $filters -notcontains 'rawaccel') { throw 'installation incomplete' }
 if ((Get-FileHash -LiteralPath $installedDriver).Hash -ne (Get-FileHash -LiteralPath $driver).Hash) { throw 'installed driver does not match verified package' }
-Write-Host 'installed / restart windows, then 8 aim tools / choose a feature'
+Write-Host 'installed / restart windows, then 2 tune mouse / choose a feature'
 } finally {
     if ($aimHeld) { $aimGate.ReleaseMutex() };if ($null -ne $aimGate) { $aimGate.Dispose() }
     if ($held) { $gate.ReleaseMutex() }; $gate.Dispose()

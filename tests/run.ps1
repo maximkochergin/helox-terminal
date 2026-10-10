@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'build.ps1')
 & (Join-Path (Split-Path $PSScriptRoot -Parent) 'build.ps1')
 & (Join-Path $PSScriptRoot 'maintenance.ps1')
+& (Join-Path $PSScriptRoot 'shell.ps1')
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'uninstall.ps1')
 if ($LASTEXITCODE -ne 0) { throw 'uninstall regression tests failed' }
 $executable = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\helox.exe'
@@ -114,10 +115,14 @@ if ($aimStatus.State -eq 'ready') {
     $curvePreview = & $executable aim curve preview 0.8 2 24 1.8 1.5 --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $curvePreview.applied -or $curvePreview.response.Readback.Mode -ne 'lut' -or $curvePreview.response.Readback.Note -ne 'proposed profile / not activated' -or $curvePreview.response.HorizontalSamples.Count -ne 8 -or $curvePreview.curve.base -ne 0.8) { throw 'personal curve preview failed' }
     $directionPreview = & $executable aim directions preview 0.8 1 0.9 0.9 --json | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $directionPreview.applied -or $directionPreview.response.DirectionSamples.Count -ne 6 -or [Math]::Abs($directionPreview.response.Readback.Directions.Left - 0.8) -gt 1e-12) { throw 'direction preview contract failed' }
+    if ($LASTEXITCODE -eq 1 -and $aimStatus.Mode -eq 'lut' -and $directionPreview.error -eq 'custom curve changed / apply a curve, resume saved or bypass on') {
+        if ($directionPreview.applied) { throw 'unknown custom curve preview claimed application' }
+    } elseif ($LASTEXITCODE -ne 0 -or $directionPreview.applied -or $directionPreview.response.DirectionSamples.Count -ne 6 -or [Math]::Abs($directionPreview.response.Readback.Directions.Left - 0.8) -gt 1e-12) { throw 'direction preview contract failed' }
     if ($aimStatus.Mode -eq 'natural' -or $aimStatus.Mode -eq 'lut') {
         $microPreview = & $executable aim damp preview 0.85 1 --json | ConvertFrom-Json
-        if ($LASTEXITCODE -ne 0 -or $microPreview.applied -or !$microPreview.response.Readback.DampingEnabled -or $microPreview.response.Readback.Mode -ne 'lut' -or $microPreview.response.Readback.DampingLowScale -ne 0.85) { throw 'micro preview contract failed' }
+        if ($LASTEXITCODE -eq 1 -and $aimStatus.Mode -eq 'lut' -and $microPreview.error -eq 'custom curve changed / apply a curve, resume saved or bypass on') {
+            if ($microPreview.applied) { throw 'unknown custom curve preview claimed application' }
+        } elseif ($LASTEXITCODE -ne 0 -or $microPreview.applied -or !$microPreview.response.Readback.DampingEnabled -or $microPreview.response.Readback.Mode -ne 'lut' -or $microPreview.response.Readback.DampingLowScale -ne 0.85) { throw 'micro preview contract failed' }
     }
     $afterPreview = & $executable aim status --json | ConvertFrom-Json
     if (($afterPreview | ConvertTo-Json -Compress) -ne ($aimStatus | ConvertTo-Json -Compress)) { throw 'curve preview changed the driver' }

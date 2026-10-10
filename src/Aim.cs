@@ -139,7 +139,7 @@ internal static class Aim {
         if(directions!=null) {directions.Check();if(feature!="directions") throw new ArgumentException("direction weights require directions apply");}
         if(damping!=null) {damping.Check();if(feature!="damp" || !on) throw new ArgumentException("micro strength requires damp on");}
         AimPreset preset=ReadPreset(saved);
-        if(feature=="resume") {if(saved==null) throw new InvalidOperationException("no saved aim preset for this mouse / enable precision or smooth first");if(preset.Curve!=null || preset.Damping.Active) CheckUnit(status,preset.SpeedUnit);return preset;}
+        if(feature=="resume") {if(saved==null) throw new InvalidOperationException("no saved aim preset for this mouse / apply a curve or game setup first");if(preset.Curve!=null || preset.Damping.Active) CheckUnit(status,preset.SpeedUnit);return preset;}
         bool own=status.Profile!=null && status.Profile.StartsWith("helox-",StringComparison.Ordinal);
         preset.Precision=own && (status.Mode=="natural" || status.Mode=="lut");preset.Smooth=own && status.OutputHalfLifeMs>0;
         if(own && status.Mode=="lut" && feature!="curve" && !gainLimit.HasValue) {
@@ -249,7 +249,7 @@ internal static class Aim {
     }
     internal static AimStatus Read(Device device) {
         bool installed=DriverPresent();
-        if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) return new AimStatus {State=installed ? "unavailable" : "not installed",InputTransformed=installed ? (bool?)null : false,Note="8 aim tools / install backend"};
+        if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) return new AimStatus {State=installed ? "unavailable" : "not installed",InputTransformed=installed ? (bool?)null : false,Note="2 tune mouse > 3 driver / install backend"};
         if(device==null) return new AimStatus {State="unavailable",InputTransformed=installed ? (bool?)null : false,Note="choose a connected mouse in 6 > 1 / install and undo remain available"};
         try {
             AimStatus status=Describe(Active(),Id(device));
@@ -462,7 +462,9 @@ internal static class Aim {
     private static void DescribeSavedControls(AimStatus status) {
         if(status.Mode!="lut") return;
         try {object saved;Dictionary<string,object> presets=Saved(Path.Combine(Store.Root,"aim-presets.json"));if(presets.TryGetValue(status.DeviceId,out saved)) DescribeDamping(status,ReadPreset(Map(saved)));}
-        catch {status.Note+=" / saved controls unavailable";}
+        catch {status.Note+=" / saved controls unavailable / reapply a curve or game setup; bypass remains available";return;}
+        if(status.DampingEnabled==null && status.Profile!=null && status.Profile.StartsWith("helox-",StringComparison.Ordinal))
+            status.Note+=" / saved curve controls missing or changed / reapply a curve or game setup; bypass remains available";
     }
     internal static Dictionary<string,object> Commit(Dictionary<string,object> before,Dictionary<string,object> after,Func<Dictionary<string,object>,Dictionary<string,object>> write,Action save) {
         // The active configuration already verifies an unchanged request; no activation delay needed.

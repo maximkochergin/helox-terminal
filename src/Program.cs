@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static partial class Program {
-    internal const string Version="0.17.0";
+    internal const string Version="0.17.1";
     private static string selectedPath;
     private static string commandMousePath;
     private static bool json;
@@ -198,7 +198,13 @@ internal static partial class Program {
         string style="balanced";bool personal=false;Device device=Selected();
         while(true) {
             string name=game+(style=="balanced" ? "" : "-"+style)+(personal ? "-personal" : "");
-            GameRecipe recipe=GamePresets.Build(device,name);Screen("game setup / "+game);PrintRecipe(recipe);
+            Screen("game setup / "+game);GameRecipe recipe;
+            try {recipe=GamePresets.Build(device,name);}
+            catch(Exception e) {
+                if(!personal) throw;
+                Console.WriteLine("  "+Error(e)+"\n  returning to built-in range / nothing applied");personal=false;Finish();continue;
+            }
+            PrintRecipe(recipe);
             AimStatus current=Aim.Read(device);
             Console.WriteLine(current.State=="ready" ? "  currently / "+(current.Enabled==true ? "effects enabled" : "effects bypassed / apply enables this recipe") : "  driver / "+current.State+" / install through tune mouse > driver");
             if(current.State=="ready") Console.WriteLine("  this recipe / "+(GamePresets.IsCurrent(device,recipe) ? "matches live driver" : "differs from live driver"));
@@ -401,9 +407,7 @@ internal static partial class Program {
         if(words.Length==2 && words[1]=="restore") {Aim.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  aim restored / driver readback verified");return;}
         if(words.Length==2 && (words[1]=="install" || words[1]=="prepare")) {
             if(json) throw new ArgumentException("backend setup does not support json");
-            string script=Path.Combine(Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..")),"install-aim.ps1");
-            if(!File.Exists(script)) throw new InvalidOperationException("install-aim.ps1 missing / extract the complete release archive");
-            System.Diagnostics.ProcessStartInfo start=new System.Diagnostics.ProcessStartInfo("powershell.exe","-noprofile -executionpolicy bypass -file \""+script+"\""+(words[1]=="prepare" ? " -PrepareOnly" : ""));
+            System.Diagnostics.ProcessStartInfo start=Maintenance.Start("install-aim.ps1",words[1]=="prepare" ? "-PrepareOnly" : "");
             start.UseShellExecute=false;
             using(System.Diagnostics.Process process=System.Diagnostics.Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new InvalidOperationException("aim backend setup failed / see message above");}
             return;

@@ -1,5 +1,8 @@
 param([ValidateSet('Check','Reset')][string]$Action='Check',[int]$ParentId=0,[switch]$Interactive,[switch]$FunctionsOnly)
 $ErrorActionPreference='Stop'
+if ($PSVersionTable.PSEdition -eq 'Desktop') {
+    $env:PSModulePath=(Join-Path $PSHOME 'Modules')+[IO.Path]::PathSeparator+$env:PSModulePath
+}
 $dataRoot=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'helox-terminal'
 
 function Get-DataTree([string]$Target,[string]$Expected) {

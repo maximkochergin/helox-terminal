@@ -15,26 +15,30 @@ public sealed class MovementTuning {
 }
 internal static class PresetTuning {
     internal static readonly string PathName=Path.Combine(Store.Root,"game-tuning.json");
-    private static List<double> Speeds(List<Sample> samples) {
-        List<double> speeds=new List<double>();double active=0;int skipped=0;
-        for(int i=1;i<samples.Count;i++) {
-            Sample a=samples[i-1],b=samples[i];
-            if(a==null || b==null || Double.IsNaN(a.Ms) || Double.IsNaN(b.Ms) || Double.IsInfinity(a.Ms) || Double.IsInfinity(b.Ms) || a.Ms<0 || b.Ms<a.Ms)
+    private static List<double> Speeds(List<Sample> samples,out int reports) {
+        if(samples==null || samples.Count==0) throw new ArgumentException("invalid movement samples");
+        List<double> speeds=new List<double>();double active=0,anchor=0,distance=0;int skipped=0,pending=0;reports=0;
+        for(int i=0;i<samples.Count;i++) {
+            Sample b=samples[i];
+            if(b==null || !Finite(b.Ms) || b.Ms<0 || (i>0 && b.Ms<samples[i-1].Ms))
                 throw new ArgumentException("invalid movement samples");
-            double dt=b.Ms-a.Ms;
-            if(dt<.25 || dt>35) {skipped++;continue;}
-            double speed=Math.Sqrt((double)b.X*b.X+(double)b.Y*b.Y)/dt;
-            if(speed<=0) continue;
-            speeds.Add(speed);active+=dt;
+            if(i==0) {anchor=b.Ms;continue;}
+            if(b.Ms-samples[i-1].Ms>35) {skipped++;anchor=b.Ms;distance=0;pending=0;continue;}
+            // Keep sub-ms and batched reports; measure path length over at least 1 ms.
+            // Summing magnitudes also keeps opposite movements from cancelling each other.
+            distance+=Math.Sqrt((double)b.X*b.X+(double)b.Y*b.Y);if(b.X!=0 || b.Y!=0) pending++;
+            double elapsed=b.Ms-anchor;if(elapsed<1) continue;
+            if(distance>0) {speeds.Add(distance/elapsed);active+=elapsed;reports+=pending;}
+            anchor=b.Ms;distance=0;pending=0;
         }
         if(speeds.Count<100 || active<1500 || skipped>samples.Count*.3) throw new InvalidOperationException("not enough clean continuous motion / repeat without lifting the mouse");
         speeds.Sort();return speeds;
     }
     internal static MovementTuning Analyze(string device,List<Sample> slow,List<Sample> fast) {
-        List<double> s=Speeds(slow),f=Speeds(fast);
+        int slowReports,fastReports;List<double> s=Speeds(slow,out slowReports),f=Speeds(fast,out fastReports);
         MovementTuning result=new MovementTuning {DevicePath=device,MeasuredUtc=DateTime.UtcNow.ToString("o"),SlowP90=Analysis.Percentile(s,.9),FastP75=Analysis.Percentile(f,.75),
-            IntervalMs=(Analysis.Rate(slow).MedianIntervalMs+Analysis.Rate(fast).MedianIntervalMs)/2,SlowReports=s.Count,FastReports=f.Count,
-            Source="two manual raw input captures / untransformed input / counts per ms / not game telemetry"};
+            IntervalMs=(Analysis.Rate(slow).MedianIntervalMs+Analysis.Rate(fast).MedianIntervalMs)/2,SlowReports=slowReports,FastReports=fastReports,
+            Source="two manual raw input captures / untransformed input / >=1 ms path windows / counts per ms / not game telemetry"};
         Validate(result,device,DateTime.UtcNow);return result;
     }
     internal static void Validate(MovementTuning value,string device,DateTime now) {
@@ -43,7 +47,7 @@ internal static class PresetTuning {
             !DateTime.TryParse(value.MeasuredUtc,System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.RoundtripKind,out measured) ||
             measured.ToUniversalTime()>now.AddMinutes(1) || measured.ToUniversalTime()<now.AddDays(-7) || value.SlowReports<100 || value.FastReports<100 ||
             !Finite(value.SlowP90) || !Finite(value.FastP75) || !Finite(value.IntervalMs) || value.SlowP90<.01 || value.SlowP90>800 || value.FastP75>1800 ||
-            value.FastP75<value.SlowP90*1.5 || value.IntervalMs<.25 || value.IntervalMs>35)
+            value.FastP75<value.SlowP90*1.5 || value.IntervalMs<=0 || value.IntervalMs>35)
             throw new InvalidOperationException("movement tuning missing, stale or unclear / preset tune / keep the same physical dpi stage");
     }
     private static bool Finite(double value) {return !Double.IsNaN(value) && !Double.IsInfinity(value);}

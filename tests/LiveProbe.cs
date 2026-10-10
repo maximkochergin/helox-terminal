@@ -68,6 +68,20 @@ internal static class LiveProbe {
                     Expect(Same(imported,Call(Aim,"Active")) && prefsBytes==Convert.ToBase64String(File.ReadAllBytes(prefsPath)),"blocked smoothing changed native or saved settings");
                     Call(Aim,"Write",recipeConfig);
                     File.WriteAllBytes(prefsPath,recipePrefs);
+                    // The kernel already matches; changing only saved choices still needs undo.
+                    string gameUndo=Path.Combine(root,"game-undo.json");byte[] recipeUndo=File.ReadAllBytes(gameUndo);
+                    Settings recipeWindows=Settings.Read();string id=(string)read["DeviceId"];
+                    foreach(bool missing in new bool[]{false,true}) {
+                        Dictionary<string,object> changedPrefs=Map(Call(Aim,"Parse",System.Text.Encoding.UTF8.GetString(recipePrefs).TrimStart('\uFEFF')));
+                        if(missing) changedPrefs.Remove(id);else Map(changedPrefs[id])["gainLimit"]=1.6;
+                        byte[] changedBytes=System.Text.Encoding.UTF8.GetBytes(Json.Serialize(changedPrefs));File.WriteAllBytes(prefsPath,changedBytes);
+                        if(missing) Expect(((string)Command("aim status")["Note"]).Contains("saved curve controls missing or changed"),"missing saved curve controls hidden from status");
+                        Command("preset apply valorant");string preferenceUndo=Convert.ToBase64String(File.ReadAllBytes(gameUndo));
+                        Expect(Same(recipeConfig,Call(Aim,"Active")) && recipeWindows.Same(Settings.Read()) && preferenceUndo!=Convert.ToBase64String(recipeUndo),"preference-only apply lost undo or changed native settings");
+                        Command("preset apply valorant");Expect(preferenceUndo==Convert.ToBase64String(File.ReadAllBytes(gameUndo)),"preference-only no-op replaced undo");
+                        Command("preset undo");Expect(Convert.ToBase64String(changedBytes)==Convert.ToBase64String(File.ReadAllBytes(prefsPath)) && Same(recipeConfig,Call(Aim,"Active")) && recipeWindows.Same(Settings.Read()),"preference-only undo failed exact restoration");
+                        File.WriteAllBytes(prefsPath,recipePrefs);File.WriteAllBytes(gameUndo,recipeUndo);
+                    }
                 }
                 string undoPath=Path.Combine(root,"game-undo.json"),undoBytes=Convert.ToBase64String(File.ReadAllBytes(undoPath));
                 Dictionary<string,object> repeat=Command("preset apply "+name);
@@ -87,11 +101,14 @@ internal static class LiveProbe {
             string recoveryPath=Path.Combine(root,"verify-recovery.json");File.WriteAllText(recoveryPath,Json.Serialize(before));
             Expect(((string)Command("aim precision on",true)["error"]).Contains("unfinished live verification"),"unfinished verification allowed an aim write");
             Expect(((string)Command("preset apply valorant",true)["error"]).Contains("unfinished live verification"),"unfinished verification allowed a recipe write");
+            string tuningPath=Path.Combine(root,"game-tuning.json");byte[] tuningBytes=File.ReadAllBytes(tuningPath);File.Delete(tuningPath);
+            try {Expect(((string)Command("preset apply valorant personal",true)["error"]).Contains("unfinished live verification"),"missing calibration hid a pending recovery");}
+            finally {File.WriteAllBytes(tuningPath,tuningBytes);}
             Expect(Same(before,Call(Aim,"Active")),"recovery guard changed the driver");
             Expect(((string)Command("aim status")["Note"]).Contains("unfinished verification"),"recovery status missing");
             Expect((bool)Command("aim verify restore")["restored"] && !File.Exists(recoveryPath) && Same(before,Call(Aim,"Active")),"snapshot restoration failed");
             CrashAndActivation(root,before);
-            summary=new Dictionary<string,object>{{"DriverCases",steps.Count},{"PresetsAppliedAndUndone",undos},{"IdempotentReapply",true},{"PersistenceFailureRecovered",true},{"RecoveryGuardAndRestore",true},{"ForcedExitRecovered",true},{"BlockingActivationVerified",true},{"CorruptUndoBlocked",true},{"RawReports",proof["CapturedMotionReports"]},{"GameInputVerified",null}};
+            summary=new Dictionary<string,object>{{"DriverCases",steps.Count},{"PresetsAppliedAndUndone",undos},{"IdempotentReapply",true},{"PreferenceOnlyUndo",true},{"PersistenceFailureRecovered",true},{"RecoveryGuardAndRestore",true},{"ForcedExitRecovered",true},{"BlockingActivationVerified",true},{"CorruptUndoBlocked",true},{"RawReports",proof["CapturedMotionReports"]},{"GameInputVerified",null}};
         }catch(Exception e) {failure=e;}
         // Attempt independent native recovery. Preserve recovery evidence if the driver cannot be restored.
         List<string> recovery=new List<string>();bool driverRestored=false,windowsRestored=false;

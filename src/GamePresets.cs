@@ -175,9 +175,10 @@ internal static class GamePresets {
     internal static GamePresetPreview Apply(Device device,string name) {
         Get(name);GamePresetPreview result=null;
         Store.Locked(delegate {result=Aim.Locked(delegate {
+            LiveVerify.RequireNoRecovery();
             GameRecipe recipe=Build(device,name);
             DeviceStackReport stack=DeviceStack.Read(device);RequireStartedStack(stack);
-            LiveVerify.RequireNoRecovery();Dictionary<string,object> before=Aim.Active();string id=Aim.Id(device);Settings beforeWindows=Settings.Read(),afterWindows=Windows(beforeWindows);
+            Dictionary<string,object> before=Aim.Active();string id=Aim.Id(device);Settings beforeWindows=Settings.Read(),afterWindows=Windows(beforeWindows);
             Dictionary<string,object> after=Aim.Canonical(Configure(before,Aim.Defaults(),id,recipe));
             AimResponse response=AimResponseTest.Run(after,id,8);response.IntervalSource="8 ms example / not measured hardware polling";
             PresetAssessment assessment=PresetAssessment.Run(after,id);
@@ -188,11 +189,13 @@ internal static class GamePresets {
             Store.Backup();if(!File.Exists(aimBackup)) Store.Save(aimBackup,before);
             SavedFiles files=new SavedFiles(new string[]{preferences,UndoPath,Path.Combine(Store.Root,"undo.json")});
             GameRecovery.Begin(beforeWindows,before,files);
-            saved[id]=recipe.Controls().ToMap();
+            Dictionary<string,object> controls=recipe.Controls().ToMap();object previousControls;
+            bool preferencesChanged=!saved.TryGetValue(id,out previousControls) || !Aim.SameValue(previousControls,controls);
+            saved[id]=controls;
             Dictionary<string,object> live=CommitPair(beforeWindows,before,afterWindows,after,delegate(Settings s){s.Apply();},Aim.Write,delegate(Dictionary<string,object> read) {
                 Store.Save(preferences,saved);if(!beforeWindows.Same(afterWindows)) Store.Save(Path.Combine(Store.Root,"undo.json"),beforeWindows);
                 // Preserve the useful undo when applying an identical recipe again.
-                if(!beforeWindows.Same(afterWindows) || !Aim.SameValue(before,read)) Store.Save(UndoPath,new Dictionary<string,object>{{"game",name},{"deviceId",id},{"beforeWindows",beforeWindows},{"beforeAim",before},{"afterWindows",afterWindows},{"afterAim",read},{"afterPresets",saved},{"previousPresets",Encode(files.Bytes(preferences))},{"previousWindowsUndo",Encode(files.Bytes(Path.Combine(Store.Root,"undo.json")))}});
+                if(preferencesChanged || !beforeWindows.Same(afterWindows) || !Aim.SameValue(before,read)) Store.Save(UndoPath,new Dictionary<string,object>{{"game",name},{"deviceId",id},{"beforeWindows",beforeWindows},{"beforeAim",before},{"afterWindows",afterWindows},{"afterAim",read},{"afterPresets",saved},{"previousPresets",Encode(files.Bytes(preferences))},{"previousWindowsUndo",Encode(files.Bytes(Path.Combine(Store.Root,"undo.json")))}});
                 GameRecovery.Complete();
             },files.Restore,GameRecovery.Complete);
             response.Readback=Aim.Describe(live,id);Aim.DescribeDamping(response.Readback,recipe.Controls());
