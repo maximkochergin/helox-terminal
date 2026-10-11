@@ -25,10 +25,9 @@ internal static class LiveVerify {
     internal static readonly string RecoveryPath=Path.Combine(Store.Root,"verify-recovery.json");
     internal static void RequireNoRecovery() {GameRecovery.RequireNoRecovery();if(File.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");}
     internal static void RequireClosedGames() {
-        foreach(string name in new string[]{"VALORANT","VALORANT-Win64-Shipping","FPSAimTrainer","FPSAimTrainer-Win64-Shipping","cs2"}) {
-            Process[] processes=Process.GetProcessesByName(name);bool running=processes.Length>0;foreach(Process p in processes) p.Dispose();
-            if(running) throw new InvalidOperationException("close games before temporary live verification / "+name.ToLowerInvariant());
-        }
+        GameSessionReport session=GameSession.Read();
+        if(!session.QuerySucceeded) throw new InvalidOperationException("running games could not be checked / temporary verification stopped");
+        if(session.RunningGames.Length>0) throw new InvalidOperationException("close games before temporary live verification / "+String.Join(" + ",session.RunningGames));
     }
     internal static List<KeyValuePair<string,Dictionary<string,object>>> Cases(Dictionary<string,object> before,Dictionary<string,object> defaults,string id) {
         List<KeyValuePair<string,Dictionary<string,object>>> cases=new List<KeyValuePair<string,Dictionary<string,object>>>();

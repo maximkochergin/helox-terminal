@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static partial class Program {
-    internal const string Version="0.18.0";
+    internal const string Version="0.19.0";
     private static string selectedPath;
     private static string commandMousePath;
     private static bool json;
@@ -194,11 +194,11 @@ internal static partial class Program {
         });
     }
     private static void GameActions(string game) {
-        string style="balanced";bool personal=false;Device device=Selected();
+        string style="balanced";bool personal=false;Device device=Selected();GameEffects effects=new GameEffects();
         while(true) {
             string name=game+(style=="balanced" ? "" : "-"+style)+(personal ? "-personal" : "");
             Screen("game setup / "+game);GameRecipe recipe;
-            try {recipe=GamePresets.Build(device,name);}
+            try {recipe=GamePresets.Build(device,name,effects);}
             catch(Exception e) {
                 if(!personal) throw;
                 Console.WriteLine("  "+Error(e)+"\n  returning to built-in range / nothing applied");personal=false;Finish();continue;
@@ -207,16 +207,29 @@ internal static partial class Program {
             AimStatus current=Aim.Read(device);
             Console.WriteLine(current.State=="ready" ? "  currently / "+(current.Enabled==true ? "effects enabled" : "effects bypassed / apply enables this recipe") : "  driver / "+current.State+" / install through tune mouse > driver");
             if(current.State=="ready") Console.WriteLine("  this recipe / "+(GamePresets.IsCurrent(device,recipe) ? "matches live driver" : "differs from live driver"));
-            Console.WriteLine("\n  1  apply this setup\n  2  change style\n  3  preview response checks\n  4  in-game checklist\n  5  built-in or personal speed range\n  6  health check\n  0  back");
+            Console.WriteLine("\n  1  apply this setup\n  2  change style\n  3  compare response checks\n  4  in-game checklist\n  5  built-in or personal speed range\n  6  health check\n  7  customize effects\n  0  back");
             try {
                 string action=Ask("choose");Device fresh=Selected();RequirePresetMouse(device.Path,fresh);
-                if(action=="1" || action=="3") {PresetCommand(new string[]{"preset",action=="1" ? "apply" : "preview",name},fresh);Finish();}
+                if(action=="1" || action=="3") {
+                    GamePresetPreview preview=GamePresets.Preview(fresh,name,effects);PrintPresetResult(preview);
+                    if(action=="1") {
+                        if(!preview.Assessment.ProcessingChecksPassed) throw new InvalidOperationException("processing model failed / nothing applied");
+                        bool accept=false;
+                        if(!preview.Assessment.ModelChecksPassed) {
+                            Console.WriteLine("  this draft adds a post-flick tail / input delay is not measured");
+                            try {if(Ask("1 apply this reviewed draft / 0 keep editing")!="1") throw new ArgumentException("choose 1 or 0");accept=true;}
+                            catch(OperationCanceledException) {continue;}
+                        }
+                        fresh=Selected();RequirePresetMouse(device.Path,fresh);PrintPresetResult(GamePresets.Apply(fresh,name,effects,accept,preview));
+                    }
+                    Finish();
+                }
                 else if(action=="2") {
                     try {
-                        Console.WriteLine("\n  1  balanced / bounded fast turns\n  2  steady / smaller ramp + gain stability\n  3  linear / flat 1x reference\n  0  keep current");
+                        Console.WriteLine("\n  1  balanced / bounded fast turns\n  2  steady / smaller ramp + gain stability\n  3  linear / flat base curve\n  0  keep current");
                         style=MapChoice(Ask("choose"),new string[]{"balanced","steady","linear"});if(style=="linear") personal=false;
                     }catch(OperationCanceledException) {}
-                }else if(action=="4") {Screen("in-game checklist / manual");PrintGameSteps(GamePresets.Get(name));Finish();}
+                }else if(action=="4") {Screen("in-game checklist / manual");PrintGameSteps(recipe);Finish();}
                 else if(action=="5") {
                     try {
                         Console.WriteLine("\n  1  built-in range\n  2  use measured personal range\n  3  record two motion captures\n  0  keep current");string range=Ask("choose");
@@ -226,7 +239,8 @@ internal static partial class Program {
                         else throw new ArgumentException("choose 1..3 or 0");
                     }catch(OperationCanceledException) {}
                 }else if(action=="6") {HealthCheck();Finish();}
-                else throw new ArgumentException("choose 1..6 or 0");
+                else if(action=="7") effects=EffectsMenu(game,style,personal,fresh,effects);
+                else throw new ArgumentException("choose 1..7 or 0");
             }catch(OperationCanceledException) {return;}
             catch(Exception e) {Console.WriteLine("  "+Error(e));Finish();}
         }
@@ -239,17 +253,22 @@ internal static partial class Program {
         Console.WriteLine("  windows setup / "+(status.WindowsMatch ? "matches" : "different / apply sets pointer 10 and acceleration off"));
         Console.WriteLine("  checked now / game sensitivity and fov stay manual");
         if(status.LastAppliedRecipe!=null) Console.WriteLine("  last applied / "+status.LastAppliedRecipe+" / "+(status.LastAppliedMatches==true ? "selected mouse still matches" : status.LastAppliedMatches==false ? "changed since apply" : "not confirmed"));
+        if(status.LastAppliedMatches==true && status.LastAppliedControls!=null) PrintEffects(Aim.ReadPreset(status.LastAppliedControls));
+        PrintSession(status.Session);
     }
     private static void PrintRecipe(GameRecipe recipe) {
-        Console.WriteLine("  style / "+recipe.Style+" / settled slow "+(recipe.MicroDamping ? "0.9" : "1")+"x / fast "+N(recipe.Curve.Limit)+"x");
+        Console.WriteLine("  style / "+recipe.Style+" / base curve "+N(recipe.Curve.Base)+"x -> "+N(recipe.Curve.Base*recipe.Curve.Limit)+"x");
         Console.WriteLine("  range / "+(recipe.Personal ? "measured" : "built-in starting point")+" / "+N(recipe.Curve.Start)+".."+N(recipe.Curve.End)+" counts/ms");
-        Console.WriteLine("  gain stability / "+(recipe.Stability ? "4 ms" : "off")+" / micro damping "+(recipe.MicroDamping ? "0.9x" : "off"));
-        Console.WriteLine("  smoothing + snap + direction reduction / off\n  dpi + game sens / kept / replaces current aim filters\n  windows pointer / 10 of 20 + accel off / desktop only");
+        PrintEffects(recipe.Controls());
+        Console.WriteLine("  effects / "+(recipe.Effects!=null && recipe.Effects.Customized ? "custom draft / preview before applying" : "style defaults / customize with 7"));
+        Console.WriteLine("  dpi + game sens / kept / replaces current aim filters\n  windows pointer / 10 of 20 + accel off / desktop only");
         if(recipe.Personal) Console.WriteLine("  personal / repeat if physical dpi changes / stage is unknown");
     }
     private static void PrintGameSteps(GameRecipe recipe) {
         Console.WriteLine("  "+recipe.Game+" / "+recipe.Engine+"\n  "+recipe.InputPath+"\n");
         foreach(string step in recipe.GameSteps) Console.WriteLine("  - "+step);
+        if(recipe.Effects!=null && recipe.Effects.Customized) Console.WriteLine("  - match the complete effects draft in the trainer and target game; style alone is not enough");
+        Console.WriteLine("  repeat draft / preset preview "+recipe.Id+(recipe.Effects==null ? "" : " "+String.Join(" ",recipe.Effects.Arguments())));
         Console.WriteLine("\n  after applying / slow corrections, flick stop, then tracking\n  compare linear with your chosen style / same game sens and dpi\n  input gaps: test mouse > hz / frame-time or network issues: game telemetry\n  undo full setup / game setup > 5 / preset undo");
     }
     private static void PresetCommand(string[] words,Device selected=null) {
@@ -258,27 +277,13 @@ internal static partial class Program {
         if(words.Length==2 && words[1]=="recover") {GameRecovery.Restore();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  interrupted preset recovered / windows + driver + saved files verified");return;}
         if(words.Length==2 && words[1]=="list") {GameRecipe[] recipes=GamePresets.List();if(json) Console.WriteLine(Store.Json.Serialize(recipes));else foreach(GameRecipe entry in recipes) Console.WriteLine("  "+entry.Id+" / "+entry.Engine);return;}
         if(words.Length==2 && words[1]=="undo") {GamePresets.Undo();if(json) Console.WriteLine("{\"restored\":true}");else Console.WriteLine("  previous windows + driver settings restored / verified");return;}
-        if(words.Length<3 || words.Length>5 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|tune|undo|recover or preset show|preview|apply <name> [balanced|steady|linear] [personal]");
-        string name=words[2];bool hasStyle=false,hasPersonal=false;
-        for(int i=3;i<words.Length;i++) {
-            if(words[i]=="personal" && !hasPersonal) hasPersonal=true;
-            else if((words[i]=="balanced" || words[i]=="steady" || words[i]=="linear") && !hasStyle) {hasStyle=true;if(words[i]!="balanced") name+="-"+words[i];}
-            else throw new ArgumentException("use one style and optional personal");
-        }
-        if(hasPersonal) name+="-personal";
-        GameRecipe recipe=GamePresets.Get(name);
-        if(words[1]=="show") {if(recipe.Personal) recipe=GamePresets.Build(selected ?? Selected(),name);if(json) Console.WriteLine(Store.Json.Serialize(recipe));else {PrintRecipe(recipe);foreach(string decision in recipe.Decisions) Console.WriteLine("  "+decision);PrintGameSteps(recipe);}return;}
+        if(words.Length<3 || (words[1]!="show" && words[1]!="preview" && words[1]!="apply")) throw new ArgumentException("use preset list|status|tune|undo|recover or preset show|preview|apply <name> [style] [personal] [effects]");
+        PresetRequest request=PresetRequest.Parse(words);string name=request.Name;GameRecipe recipe=GamePresets.Get(name);
+        if(request.AcceptTail && words[1]!="apply") throw new ArgumentException("accept-tail is only for apply / preview first");
+        if(words[1]=="show") {recipe=GamePresets.Build(recipe.Personal ? selected ?? Selected() : null,name,request.Effects);if(json) Console.WriteLine(Store.Json.Serialize(recipe));else {PrintRecipe(recipe);foreach(string decision in recipe.Decisions) Console.WriteLine("  "+decision);PrintGameSteps(recipe);}return;}
         Device device=selected ?? Selected();
-        GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(device,recipe.Id) : GamePresets.Apply(device,recipe.Id);
-        if(json) Console.WriteLine(Store.Json.Serialize(result));else {
-            Console.WriteLine("  "+(result.Applied ? "applied / windows + driver readback verified / aim tools included" : "preview / nothing applied"));
-            if(!result.Applied) {
-                Console.WriteLine("  selected mouse stack / "+(result.Stack.RawAccelPresent==true && result.Stack.Started==true && result.Stack.ProblemCode==0 ? "driver started" : "not confirmed / apply blocked until checked"));
-                Console.WriteLine("  official engine checks / "+(result.Assessment.ModelChecksPassed ? "passed" : "failed")+" / simulation");
-                foreach(PresetTrial trial in result.Assessment.Trials) Console.WriteLine("  "+N(trial.IntervalMs)+" ms / small "+N(trial.SmallMotionRatio)+"x / fast "+N(trial.FastMotionRatio)+"x / tail "+trial.FlickTailPeakCounts+" counts / wrong-way "+trial.WrongWayReports);
-            }
-            Console.WriteLine("  in-game settings remain manual / preset show "+recipe.Id+"\n  undo both / preset undo");
-        }
+        GamePresetPreview result=words[1]=="preview" ? GamePresets.Preview(device,recipe.Id,request.Effects) : GamePresets.Apply(device,recipe.Id,request.Effects,request.AcceptTail);
+        if(json) Console.WriteLine(Store.Json.Serialize(result));else PrintPresetResult(result);
     }
     private static void DampingMenu() {
         Console.WriteLine("  micro damping / reduces all slow motion, including corrections\n  1 off    2 light 0.85x    3 balanced 0.75x    4 custom    0 back");string choice=Ask("choose");
@@ -318,7 +323,7 @@ internal static partial class Program {
             if(status.Enabled==true && status.OutputHalfLifeMs>0) Console.WriteLine("  output averaging can magnify corrections after flicks / tune mouse > motion filters > remove flick tail");
             Console.WriteLine("  stability "+(status.StabilityEnabled==true ? "on" : "off")+" / input "+F(status.InputHalfLifeMs.Value)+" ms / scale "+F(status.ScaleHalfLifeMs.Value)+" ms\n  smooth "+(status.OutputHalfLifeMs>0 ? F(status.OutputHalfLifeMs.Value)+" ms" : "off")+" / output half-life");
             Console.WriteLine("  snap "+(status.SnapDegrees>0 ? F(status.SnapDegrees.Value)+" degrees" : "off"));
-            if(status.Enabled==true && status.LookupInputSmoothingRisk==true) Console.WriteLine("  legacy lut speed smoothing / may suppress flick corrections / reapply curve or preset");
+            if(status.Enabled==true && status.LookupInputSmoothingRisk==true) Console.WriteLine("  legacy lut speed smoothing / may suppress flick corrections / aim flick-tail preview");
             if(status.Directions!=null && !status.Directions.Neutral) Console.WriteLine("  scales / left "+N(status.Directions.Left)+" / right "+N(status.Directions.Right)+" / up "+N(status.Directions.Up)+" / down "+N(status.Directions.Down));
             Console.WriteLine("  micro "+(status.DampingEnabled==null ? "unknown / unrecognized table" : status.DampingEnabled==true ? N(status.DampingLowScale.Value)+"x -> 1x at "+N(status.DampingRecoverySpeed.Value)+" "+status.CurveSpeedUnit : "off"));
             if(status.LookupData!=null && status.LookupData.Length>=4) Console.WriteLine(status.LookupIsSensitivity==true ? "  curve table / base "+N(status.LookupData[1])+"x / fast "+N(status.LookupData[status.LookupData.Length-1])+"x / speeds in "+status.CurveSpeedUnit : "  custom velocity table / not a helox sensitivity curve");
@@ -533,6 +538,7 @@ internal static partial class Program {
         while(true) {ConsoleKey key=Console.ReadKey(true).Key;if(key==ConsoleKey.Enter || key==ConsoleKey.Escape) break;}
     }
     private static void Help() {
+        Console.WriteLine("\n  preset preview|apply <game> [style] [personal] [effects]\n  effects: smooth=ms stability=on|off micro=scale recovery=speed snap=degrees\n  directions: left=scale right=scale up=scale down=scale\n  accept-tail: apply only / acknowledge the modeled flick-tail warning\n  measure last           inspect this mouse's last valid delivery test");
         Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
         Console.WriteLine("\n  aim controls preview|recover   recover exact recipe controls / no driver write\n  aim flick-tail preview|apply   remove output and legacy lut speed averaging");
         Console.WriteLine("\n  aim curve              curve builder / preview then apply\n  aim curve preview|apply <base> <start> <end> <limit> <shape>\n  aim curve natural      return to natural acceleration\n  aim snap on [0..5] / off   axis direction filter / default off\n  aim directions preview|apply <left> <right> <up> <down> / off\n  aim damp on [low scale recovery speed] / off\n  aim damp preview <low scale> <recovery speed>\n  aim bypass on|off       bypass all / enable current profile\n  aim events             recent application crashes and shutdown timing");
@@ -556,6 +562,7 @@ internal static partial class Program {
         Console.WriteLine("  backend files / "+(report.Driver!=null && Maintenance.BackendVerified(report.Driver) ? "verified" : "not verified"));
         Console.WriteLine("  aim / "+report.Aim.State+(report.Aim.State=="ready" ? " / "+(report.Aim.Enabled==true ? "enabled" : "bypassed")+" / "+report.Aim.Mode : ""));
         Console.WriteLine("  mouse stack / "+(report.Stack.RawAccelPresent==true && report.Stack.Started==true && report.Stack.ProblemCode==0 ? "raw accel started" : "not confirmed"));
+        PrintSession(report.Session);
         if(report.Presets!=null) Console.WriteLine("  recipe / "+(report.Presets.DriverMatches.Length>0 ? String.Join(" + ",report.Presets.DriverMatches) : "custom setup"));
         foreach(ServiceReading reading in report.Vanguard) Console.WriteLine("  "+reading.Name+" / "+reading.State+(reading.ErrorCode.HasValue ? " / error "+reading.ErrorCode.Value : ""));
         foreach(string note in report.Notes) Console.WriteLine("  note / "+note.ToLowerInvariant());
@@ -700,6 +707,7 @@ internal static partial class Program {
         if(json) Console.WriteLine(Store.Json.Serialize(new {applied=true,readback=Settings.Read()}));else Console.WriteLine("  applied / verified");
     }
     private static void Measure(string[] words) {
+        if(words.Length==2 && words[1]=="last") {LastInputTest();return;}
         if(words.Length>2) throw new ArgumentException("use measure [seconds]");
         int seconds=words.Length==2 ? Integer(words[1]) : 10;
         if(seconds<3 || seconds>30) throw new ArgumentException("duration: 3..30 seconds");
@@ -710,13 +718,7 @@ internal static partial class Program {
             result.Comparison=Analysis.CompareRates(previous,result);
             Store.Save(Path.Combine(Store.Root,"rate.json"),result);
             if(json) Console.WriteLine(Store.Json.Serialize(result));
-            else {
-                Console.WriteLine("  ~"+F(result.ActiveHz)+" hz / observed input\n  p95 "+F(result.P95IntervalMs)+" ms / p99 "+F(result.P99IntervalMs.Value)+" ms\n  slow intervals "+result.SlowIntervals+" / long gaps "+result.IdleGaps+" / max "+F(result.MaxGapMs.Value)+" ms\n  "+result.Quality);
-                Console.WriteLine("  including gaps ~"+F(result.DeliveredHz.Value)+" hz / gap time "+F(result.GapPercent.Value)+"%\n  slow threshold "+F(result.SlowThresholdMs.Value)+" ms / heuristic, not lost-packet count");
-                PrintComparison(result.Comparison);
-                if(result.IdleGaps>0 || result.SlowIntervals>0) Console.WriteLine("  repeat without stopping / place receiver near mouse, away from usb 3 hubs\n  smooth reduces movement fluctuations; it cannot recover missing reports");
-                Console.WriteLine("  home / return to menu");
-            }
+            else PrintRate(result);
         }
     }
     private static string Signed(double value) {return value.ToString("+0.0;-0.0;0.0",CultureInfo.InvariantCulture);}

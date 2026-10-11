@@ -1,5 +1,13 @@
 # verification
 
+## flexible game effects and input history / 0.19.0
+
+pure regressions cover every effect override, immutable drafts, honest recipe descriptions, repeatable CLI arguments, duplicate/invalid options, disabled micro-strength retention, history scoping and freshness, and successful/failed running-game queries. native-engine regressions exercise combined smoothing, stability, damping, snapping and direction scales at 1/2/4/8 ms output half-lives; processing remains valid and the strong-smoothing tail is reported separately.
+
+the command/menu suite checks an editable 2 ms draft, read-only comparison with the base and live setup, cancellation back to the retained draft, invalid apply options, same-mouse saved history and legacy optional fields. these tests do not launch games or inject input.
+
+local live integration passed 13 driver cases and 21 recipe apply/undo cycles, including customized effects for valorant, cs2 and matched kovaak's practice. checks cover warning refusal before mutation, complete native effect readback, stale driver/windows/effect/game previews, repeat apply with read-only matching preferences, save-failure rollback and forced-exit recovery. the full native driver and windows snapshot was restored. this run captured no motion reports; physical sensor improvement and game input remain unverified.
+
 ## independent smoothing and exact control recovery / 0.18.0
 
 pure regressions check curve-table preservation, native caps, rotation, snapping, direction scales, normalization, constant timing, shared/default profile isolation, bypass, no-op identity and all 15 built-in recipe matches. unknown curves are refused by metadata recovery. output smoothing changes only its half-life; flick-tail repair additionally clears legacy input averaging for LUT curves, retaining scale stability. mixed per-axis timing is preserved.

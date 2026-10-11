@@ -14,6 +14,7 @@ internal static class SelfTest {
         FilterRegression();
         AdjustmentRegression();
         GameRegression();
+        GameEffectsRegression();
         DeviceStackRegression();
         UndoRegression();
         SnapshotRegression();
@@ -470,6 +471,30 @@ internal static class SelfTest {
             Expect(Aim.RecoverableControls(Aim.ConfigureBypass(known,id,true),defaults,id,delegate(Dictionary<string,object> cfg){return cfg;}).Available,"control recovery works while effects are bypassed");
         }
         Expect(!Aim.RecoverableControls(original,defaults,id,delegate(Dictionary<string,object> cfg){return cfg;}).Available,"imported or personal curve is not guessed as a built-in recipe");
+    }
+    private static void GameEffectsRegression() {
+        GameEffects effects=new GameEffects {SmoothMs=2,Stability=true,MicroScale=.95,MicroRecovery=1,SnapDegrees=1,Directions=new AimDirections {Up=.9,Down=.9}};
+        GameRecipe recipe=GamePresets.Build(null,"valorant",effects);AimPreset controls=recipe.Controls();
+        Expect(controls.Smooth && controls.SmoothMs==2 && controls.Stability && controls.Damping.Active && controls.Damping.LowScale==.95 && controls.Damping.RecoverySpeed==1 && controls.SnapDegrees==1 && controls.Directions.Up==.9,"complete game effects overlay includes all selected controls");
+        Expect(recipe.Decisions[1].Contains("2 ms") && recipe.MicroDamping && recipe.Stability,"recipe description agrees with its actual customized controls");
+        effects.SmoothMs=8;effects.Directions.Up=.5;
+        Expect(recipe.Controls().SmoothMs==2 && recipe.Controls().Directions.Up==.9 && !GamePresets.Get("valorant").Controls().Smooth,"recipe owns its draft and leaves built-in defaults intact");
+        PresetRequest request=PresetRequest.Parse(new string[]{"preset","preview","valorant","steady","smooth=2","micro=0.95","recovery=1","snap=1","up=0.9","down=0.9"});
+        Expect(request.Name=="valorant-steady" && request.Effects.SmoothMs==2 && request.Effects.Directions.Up==.9 && !request.AcceptTail,"effect command parsing keeps game style separate");
+        List<string> repeat=new List<string>{"preset","preview","valorant"};repeat.AddRange(recipe.Effects.Arguments());
+        Expect(Aim.SameValue(recipe.Controls().ToMap(),GamePresets.Build(null,"valorant",PresetRequest.Parse(repeat.ToArray()).Effects).Controls().ToMap()),"exported effect arguments reproduce the exact complete controls");
+        Expect(new GameEffects {MicroScale=1}.Apply(GamePresets.Get("kovaaks-tracking").Controls()).Damping.LowScale==.9,"micro off keeps a useful remembered on strength");
+        foreach(string[] invalid in new string[][] {
+            new string[]{"smooth=NaN"},new string[]{"smooth=13"},new string[]{"smooth=-1"},new string[]{"snap=6"},new string[]{"left=0"},new string[]{"micro=0"},new string[]{"recovery=1"},new string[]{"micro=off","recovery=1"},new string[]{"smooth=1","smooth=2"},new string[]{"stability=yes"},new string[]{"balanced","steady"},new string[]{"personal","personal"},new string[]{"unknown=1"},new string[]{"accept-tail","accept-tail"},new string[]{"smooth=1=2"}
+        }) {List<string> args=new List<string>{"preset","preview","valorant"};args.AddRange(invalid);bool refused=false;try {PresetRequest.Parse(args.ToArray());}catch(ArgumentException) {refused=true;}Expect(refused,"invalid or duplicate game effect is rejected before activation");}
+        DateTime now=DateTime.UtcNow;RateResult rate=new RateResult {Reports=101,Intervals=100,ActiveHz=125,MedianIntervalMs=8,P95IntervalMs=8,DevicePath="mouse",MeasuredUtc=now.ToString("o")};
+        Expect(Program.History(rate,"mouse",now).Available && Program.History(rate,"mouse",now).Recent,"validated legacy history with optional fields remains readable");
+        Expect(!Program.History(rate,"peer",now).Available && !Program.History(rate,null,now).Available,"history never reports another or unidentified mouse");
+        Expect(!Program.History(rate,"mouse",now.AddDays(2)).Recent && !Program.History(rate,"mouse",now.AddMinutes(-6)).Recent,"old and future history is explicit");
+        GameSessionReport session=GameSession.Read(delegate(string name){return name=="VALORANT" || name=="VALORANT-Win64-Shipping" || name=="cs2";});
+        Expect(session.QuerySucceeded && session.RunningGames.Length==2,"running-game query deduplicates launch and shipping names");
+        session=GameSession.Read(delegate(string name){throw new InvalidOperationException("fixture denied");});
+        Expect(!session.QuerySucceeded && session.Error!=null && session.RunningGames.Length==0,"failed game query stays unknown rather than claiming absence");
     }
     private static void GameRegression() {
         Dictionary<string,object> defaults=Aim.Parse(File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"..","tests","fixtures","rawaccel-default.json")));

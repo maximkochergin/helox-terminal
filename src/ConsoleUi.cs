@@ -42,14 +42,15 @@ internal static partial class Program {
         int number=Integer(choice);if(number<1 || number>values.Length) throw new ArgumentException("choose 1.."+values.Length+" or 0");return values[number-1];
     }
     private static void TestMenu() {
-        Browse("test mouse / choose what to check","  1  health overview\n  2  hz and input gaps\n  3  dpi estimate\n  4  current response model\n  5  live driver verification\n  6  shutdown errors",delegate(string c) {
+        Browse("test mouse / choose what to check","  1  health overview\n  2  hz and input gaps\n  3  dpi estimate\n  4  current response model\n  5  live driver verification\n  6  shutdown errors\n  7  last input test",delegate(string c) {
             if(c=="1") HealthCheck();
             else if(c=="2") Measure(new string[]{"measure"});
             else if(c=="3") DpiCheck();
             else if(c=="4") AimCommand(new string[]{"aim","response"});
             else if(c=="5") {AimAction("21");return;}
             else if(c=="6") PrintShutdown(ShutdownDiagnostics.Read());
-            else throw new ArgumentException("choose 1..6 or 0");Finish();
+            else if(c=="7") LastInputTest();
+            else throw new ArgumentException("choose 1..7 or 0");Finish();
         });
     }
     private static void TuneMovement() {

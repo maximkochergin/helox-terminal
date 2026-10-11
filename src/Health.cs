@@ -44,6 +44,7 @@ public sealed class HealthReport {
     public Dictionary<string,object> Driver {get;set;}
     public DeviceStackReport Stack {get;set;}
     public GamePresetStatus Presets {get;set;}
+    public GameSessionReport Session {get;set;}
     public ServiceReading[] Vanguard {get;set;}
     public string[] Notes {get;set;}
     public string[] Errors {get;set;}
@@ -53,7 +54,7 @@ public sealed class HealthReport {
 internal static class Health {
     internal static HealthReport Read(Device device,string selectionNote) {
         List<string> notes=new List<string>(),errors=new List<string>();
-        HealthReport report=new HealthReport {Version=Program.Version,CheckedUtc=DateTime.UtcNow.ToString("o"),Mouse=device,
+        HealthReport report=new HealthReport {Version=Program.Version,CheckedUtc=DateTime.UtcNow.ToString("o"),Mouse=device,Session=GameSession.Read(),
             Vanguard=new ServiceReading[]{ServiceProbe.Read("vgk"),ServiceProbe.Read("vgc")},
             Source="read-only configuration + device stack + service control manager / no game launch or input injection"};
         if(selectionNote!=null) notes.Add(selectionNote);
@@ -73,7 +74,7 @@ internal static class Health {
             try {report.Presets=GamePresets.Status(device);}catch(Exception e) {errors.Add("preset check: "+e.Message);}
             if(report.Aim.Enabled!=true) notes.Add("aim effects bypassed / apply a game recipe or tune mouse > driver > bypass");
             if(report.Aim.OutputHalfLifeMs>0) notes.Add("output averaging active / tune mouse > motion filters > remove flick tail");
-            if(report.Aim.LookupInputSmoothingRisk==true) notes.Add("legacy curve speed smoothing / reapply curve or preset");
+            if(report.Aim.LookupInputSmoothingRisk==true) notes.Add("legacy curve speed smoothing / aim flick-tail preview / preserves the live curve");
             if(report.Stack.RawAccelPresent!=true || report.Stack.Started!=true || report.Stack.ProblemCode!=0) notes.Add("selected mouse's started raw accel stack is not confirmed / aim doctor");
         }else notes.Add(report.Aim.Note);
         if(GameRecovery.Pending) notes.Add("game recovery pending / close games, then preset recover");

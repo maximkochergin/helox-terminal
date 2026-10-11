@@ -20,18 +20,24 @@ public sealed class GameRecipe {
     public AimCurve Curve {get;set;}
     public bool Stability {get;set;}
     public bool MicroDamping {get;set;}
+    public GameEffects Effects {get;set;}
     public Dictionary<string,object> DriverControls {get {return Controls().ToMap();}}
     internal AimPreset Controls() {
-        return new AimPreset {Precision=true,Smooth=false,SmoothMs=2,GainLimit=Math.Max(1.1,Curve.Limit),Stability=Stability,StabilityMs=8,
+        AimPreset controls=new AimPreset {Precision=true,Smooth=false,SmoothMs=2,GainLimit=Math.Max(1.1,Curve.Limit),Stability=Stability,StabilityMs=8,
             SnapDegrees=0,SnapStrength=1,Directions=new AimDirections(),Damping=new AimDamping {Enabled=MicroDamping,LowScale=.9,RecoverySpeed=.75},Curve=Curve.Copy(),SpeedUnit="counts/ms"};
+        return Effects==null ? controls : Effects.Apply(controls);
     }
 }
 public sealed class GamePresetPreview {
+    internal Dictionary<string,object> SourceAim;
+    internal Settings SourceWindows;
     public GameRecipe Recipe {get;set;}
     public Settings Windows {get;set;}
     public string[] WindowsChanges {get;set;}
     public AimResponse Response {get;set;}
     public PresetAssessment Assessment {get;set;}
+    public PresetAssessment BaseAssessment {get;set;}
+    public AimResponse CurrentResponse {get;set;}
     public DeviceStackReport Stack {get;set;}
     public bool Applied {get;set;}
     public bool GameSettingsApplied {get;set;}
@@ -43,6 +49,8 @@ public sealed class GamePresetStatus {
     public bool GameSettingsVerified {get;set;}
     public string LastAppliedRecipe {get;set;}
     public bool? LastAppliedMatches {get;set;}
+    public Dictionary<string,object> LastAppliedControls {get;set;}
+    public GameSessionReport Session {get;set;}
 }
 internal static class GamePresets {
     // Names and unrelated devices are not part of the selected mouse's processing.
@@ -73,12 +81,13 @@ internal static class GamePresets {
         return Aim.Locked(delegate {
             Dictionary<string,object> current=Aim.Active();Settings windows=Settings.Read();
             GamePresetStatus result=new GamePresetStatus {DriverMatches=Matches(current,Aim.Defaults(),Aim.Id(device)),WindowsMatch=windows.Same(Windows(windows)),
-                Source="live driver + windows readback / identical training recipes share a match",GameSettingsVerified=false};
+                Source="live driver + windows readback / identical training recipes share a match",GameSettingsVerified=false,Session=GameSession.Read()};
             if(File.Exists(UndoPath)) {
                 try {
                     Dictionary<string,object> last=ReadUndo(UndoPath);object lastDevice;
                     if(last.TryGetValue("deviceId",out lastDevice) && String.Equals(lastDevice as string,Aim.Id(device),StringComparison.OrdinalIgnoreCase)) {
                         result.LastAppliedRecipe=(string)last["game"];result.LastAppliedMatches=SameSelected(current,Aim.Map(last["afterAim"]),Aim.Id(device));
+                        object controls;if(Aim.Map(last["afterPresets"]).TryGetValue(Aim.Id(device),out controls)) result.LastAppliedControls=Aim.Map(controls);
                     }
                 }catch {result.LastAppliedMatches=null;}
             }
@@ -121,13 +130,19 @@ internal static class GamePresets {
             "hardware dpi + game sensitivity / kept / physical dpi stage must stay unchanged"};
         return result;
     }
-    internal static GameRecipe Build(Device device,string name) {
+    internal static GameRecipe Build(Device device,string name,GameEffects effects=null) {
         GameRecipe recipe=Get(name);
+        if(effects!=null) {effects.Check();recipe.Effects=effects.Copy();}
         if(recipe.Personal) {
             if(recipe.Style=="linear") throw new ArgumentException("linear is a reference / use balanced or steady with personal tuning");
             MovementTuning tuning=PresetTuning.Read(device);recipe.Movement=tuning;
             recipe.Curve.Start=Math.Round(tuning.SlowP90*1.1,3);
             recipe.Curve.End=Math.Round(Math.Max(recipe.Curve.Start+.1,tuning.FastP75),3);recipe.Curve.Check();
+        }
+        AimPreset controls=recipe.Controls();recipe.Stability=controls.Stability;recipe.MicroDamping=controls.Damping.Active;
+        if(recipe.Effects!=null && recipe.Effects.Customized) {
+            if(recipe.Style=="linear") recipe.Purpose="flat base curve with custom effects / not an unfiltered 1x reference";
+            recipe.Decisions=new string[]{"custom effects / see driver controls and compare the response model","output smoothing / "+(controls.Smooth ? controls.SmoothMs+" ms / adds delay and can amplify post-flick corrections" : "off"),"gain stability / "+(controls.Stability ? "on / LUT speed averaging remains off" : "off"),"micro damping / "+(controls.Damping.Active ? "reduces all slow movement, including intended corrections" : "off"),"snap and direction scales / explicitly selected / can change direction and slow sensitivity","hardware dpi + game sensitivity / unchanged / in-game settings remain manual"};
         }
         return recipe;
     }
@@ -142,12 +157,14 @@ internal static class GamePresets {
         config["Use constant time interval based on polling rate"]=false;
         config["minimumTime"]=.0625;config["maximumTime"]=100.0;return result;
     }
-    internal static GamePresetPreview Preview(Device device,string name) {
-        GameRecipe recipe=Build(device,name);Dictionary<string,object> before=Aim.Active();string id=Aim.Id(device);
+    internal static GamePresetPreview Preview(Device device,string name,GameEffects effects=null) {
+        GameRecipe recipe=Build(device,name,effects);Dictionary<string,object> before=Aim.Active();string id=Aim.Id(device);
         Settings windowsBefore=Settings.Read(),windows=Windows(windowsBefore);
         AimResponse response=AimResponseTest.Run(Configure(before,Aim.Defaults(),id,recipe),id,8);
         response.IntervalSource="8 ms example / not measured hardware polling";response.Readback.Note="proposed game preset / not activated";Aim.DescribeDamping(response.Readback,recipe.Controls());
-        return new GamePresetPreview {Recipe=recipe,Windows=windows,WindowsChanges=windows.PreviewChanges(windowsBefore),Response=response,Stack=DeviceStack.Read(device),Assessment=PresetAssessment.Run(Configure(before,Aim.Defaults(),id,recipe),id),Applied=false,GameSettingsApplied=false};
+        AimResponse current=AimResponseTest.Run(before,id,8);current.IntervalSource="8 ms example / live configuration / not a game measurement";
+        GameRecipe baseline=Get(name);baseline.Curve=recipe.Curve.Copy();baseline.Movement=recipe.Movement;
+        return new GamePresetPreview {SourceAim=before,SourceWindows=windowsBefore,Recipe=recipe,Windows=windows,WindowsChanges=windows.PreviewChanges(windowsBefore),Response=response,CurrentResponse=current,Stack=DeviceStack.Read(device),Assessment=PresetAssessment.Run(Configure(before,Aim.Defaults(),id,recipe),id),BaseAssessment=PresetAssessment.Run(Configure(before,Aim.Defaults(),id,baseline),id),Applied=false,GameSettingsApplied=false};
     }
     internal static void RequireStartedStack(DeviceStackReport stack) {
         if(stack==null || stack.RawAccelPresent!=true || stack.Started!=true || stack.ProblemCode!=0)
@@ -172,17 +189,19 @@ internal static class GamePresets {
             throw new IOException("game preset failed: "+original.Message+(failures.Count==0 ? "; previous settings and saved files restored" : "; rollback failed: "+String.Join(" / ",failures.ToArray())+" / preset recover"));
         }
     }
-    internal static GamePresetPreview Apply(Device device,string name) {
+    internal static GamePresetPreview Apply(Device device,string name,GameEffects effects=null,bool acceptTail=false,GamePresetPreview preview=null) {
         Get(name);GamePresetPreview result=null;
         Store.Locked(delegate {result=Aim.Locked(delegate {
             LiveVerify.RequireNoRecovery();
-            GameRecipe recipe=Build(device,name);
+            GameRecipe recipe=Build(device,name,effects);
             DeviceStackReport stack=DeviceStack.Read(device);RequireStartedStack(stack);
             Dictionary<string,object> before=Aim.Active();string id=Aim.Id(device);Settings beforeWindows=Settings.Read(),afterWindows=Windows(beforeWindows);
+            if(preview!=null && (recipe.Id!=preview.Recipe.Id || !SameSelected(before,preview.SourceAim,id) || !beforeWindows.Same(preview.SourceWindows) || !Aim.SameValue(recipe.Controls().ToMap(),preview.Recipe.Controls().ToMap()))) throw new InvalidOperationException("setup changed since preview / preview again / nothing applied");
             Dictionary<string,object> after=Aim.Canonical(Configure(before,Aim.Defaults(),id,recipe));
             AimResponse response=AimResponseTest.Run(after,id,8);response.IntervalSource="8 ms example / not measured hardware polling";
             PresetAssessment assessment=PresetAssessment.Run(after,id);
-            if(!assessment.ModelChecksPassed) throw new InvalidOperationException("recipe failed flick/reversal model checks / nothing applied");
+            if(!assessment.ProcessingChecksPassed) throw new InvalidOperationException("recipe failed processing model checks / nothing applied");
+            if(!assessment.ModelChecksPassed && !acceptTail) throw new InvalidOperationException("filter adds a flick tail / preview and explicitly use accept-tail to apply / nothing changed");
             string preferences=Path.Combine(Store.Root,"aim-presets.json");Dictionary<string,object> saved=Aim.Saved(preferences);
             if(File.Exists(UndoPath)) ReadUndo(UndoPath);
             string aimBackup=Path.Combine(Store.Root,"aim-before.json");if(File.Exists(aimBackup)) Aim.Validate(Aim.Parse(File.ReadAllText(aimBackup)));
@@ -193,7 +212,7 @@ internal static class GamePresets {
             bool preferencesChanged=!saved.TryGetValue(id,out previousControls) || !Aim.SameValue(previousControls,controls);
             saved[id]=controls;
             Dictionary<string,object> live=CommitPair(beforeWindows,before,afterWindows,after,delegate(Settings s){s.Apply();},Aim.Write,delegate(Dictionary<string,object> read) {
-                Store.Save(preferences,saved);if(!beforeWindows.Same(afterWindows)) Store.Save(Path.Combine(Store.Root,"undo.json"),beforeWindows);
+                if(preferencesChanged) Store.Save(preferences,saved);if(!beforeWindows.Same(afterWindows)) Store.Save(Path.Combine(Store.Root,"undo.json"),beforeWindows);
                 // Preserve the useful undo when applying an identical recipe again.
                 if(preferencesChanged || !beforeWindows.Same(afterWindows) || !Aim.SameValue(before,read)) Store.Save(UndoPath,new Dictionary<string,object>{{"game",name},{"deviceId",id},{"beforeWindows",beforeWindows},{"beforeAim",before},{"afterWindows",afterWindows},{"afterAim",read},{"afterPresets",saved},{"previousPresets",Encode(files.Bytes(preferences))},{"previousWindowsUndo",Encode(files.Bytes(Path.Combine(Store.Root,"undo.json")))}});
                 GameRecovery.Complete();

@@ -1,10 +1,32 @@
 # game presets
 
+## custom effects / 0.19.0
+
+open `1 game setup`, choose a game, then `7 customize effects`. the style chooses the acceleration curve; the effects draft separately sets output smoothing, gain stability, micro damping, snapping and direction scales. `style default` inherits the chosen style, so changing styles updates only inherited choices. explicit effect choices remain in the draft. `0` keeps the draft and returns; no driver write happens until `apply`.
+
+the default tactical recipes keep output averaging off. it adds delay and can magnify a correction after a flick; it is optional rather than a universal improvement. the [released filter guide](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/doc/Guide.md) distinguishes output averaging from sensitivity-scale stability. micro damping reduces intended slow corrections as well as fluctuations, snapping bends near-axis motion, and direction scales also change low-speed sensitivity. physical dpi and the game's sensitivity setting stay manual.
+
+`3 compare response checks` shows the live configuration, the same base recipe without overrides, and the effects draft. four example delivery intervals use the official native engine. a modeled flick-to-micro peak above 3 counts is a helox review threshold, not a latency measurement or anticheat limit. invalid/non-finite processing or wrong-direction reversal output blocks application. a tail warning is separate: the menu requires an explicit choice to apply the reviewed draft; CLI apply requires `accept-tail`. readback and undo cover the complete controls, including these overrides.
+
+the menu rechecks the selected mouse, its configuration, windows settings, the game and the built curve before applying a preview. a changed personal range or effects draft requires another preview. comparisons use the same already-built personal range, avoiding a second inconsistent calibration read. repeating an identical recipe skips preference writes, including when the already-matching preferences file is read-only, and preserves useful undo.
+
+```text
+preset show valorant steady smooth=2 micro=0.95 snap=1
+preset preview cs2 steady smooth=2 stability=on micro=0.95 recovery=1
+preset apply cs2 steady smooth=2 stability=on micro=0.95 recovery=1 accept-tail
+preset preview kovaaks-valorant steady smooth=off up=0.9 down=0.9
+preset undo
+```
+
+numbers use a dot or comma. output half-life is `0`/`off` or `1..12` ms; `micro=1`/`off` disables damping while retaining a useful remembered strength, otherwise `0.25..<1` sets its low-speed multiplier. `recovery=0.1..20` requires an active explicit micro scale. snapping is `0..5` degrees; each direction scale is `0.25..1`. duplicate/unknown options fail before mutation. `preset show` prints a command that repeats the draft; use the same complete effect values in a target game and its matched trainer setup.
+
+`preset status` now shows the controls from the last applied setup when it still matches, even if a custom filter combination differs from every built-in recipe. it also reports detected running Valorant, CS2 and Kovaak's processes. this checks process names only, not the game's mouse path, sensitivity, fov or anticheat acceptance. game settings remain manual; there is no automatic game switching, game-file edit or background process.
+
 open `1 game setup`, choose your game, then `1 apply`, `2 change style`, `3 preview checks` or `4 in-game checklist`. kovaak's opens a second choice: match valorant, match cs2 or tracking practice. `5 undo or recover` in the game menu restores the previous windows settings, complete driver configuration and saved aim choices together. profiles save windows settings; game recipes specify the complete selected-mouse processing chain.
 
 each game has three styles. `balanced` uses the table below. `steady` keeps settled slow sensitivity at 1x, disables micro damping, enables 4 ms scale averaging and lowers the fast-turn limit to 1.15x for valorant, 1.2x for cs2 or 1.25x for tracking practice. `linear` disables stability and damping and uses a constant 1x table: a reference for comparison with the same game sensitivity. matched training recipes use identical controls for the same style.
 
-`preset tune` or `game setup > 4` records two eight-second captures: continuous slow corrections and normal fast sweeps. input must be untransformed; bypass effects first through `tune mouse > driver > bypass`. the tool does not change or bypass settings automatically. the personalized ramp starts at 110% of the slow phase's 90th-percentile speed and reaches the existing bounded limit at the fast phase's 75th-percentile speed. reports are combined into path-length windows of at least 1 ms, including valid high-rate and same-timestamp batches. short, poorly separated, invalid-timestamp or stale captures are rejected. tuning is tied to the selected device and expires after seven days. repeat after changing the physical dpi stage; the tool cannot detect that stage. the measured interval describes raw delivery, not configured polling. no game process is read.
+`preset tune` or `game setup > 4` records two eight-second captures: continuous slow corrections and normal fast sweeps. input must be untransformed; bypass effects first through `tune mouse > driver > bypass`. the tool does not change or bypass settings automatically. the personalized ramp starts at 110% of the slow phase's 90th-percentile speed and reaches the existing bounded limit at the fast phase's 75th-percentile speed. reports are combined into path-length windows of at least 1 ms, including valid high-rate and same-timestamp batches. short, poorly separated, invalid-timestamp or stale captures are rejected. tuning is tied to the selected device and expires after seven days. repeat after changing the physical dpi stage; the tool cannot detect that stage. the measured interval describes raw delivery, not configured polling. movement capture does not read game data.
 
 choose `5 built-in or personal speed range` in the recipe screen, or append `personal` to a command. this changes ramp speeds, keeps the style's limits and preserves matched game/trainer processing. `linear` does not use a speed range. a personalized last-applied recipe is checked against its saved full readback; unrelated mouse selections do not inherit its label.
 

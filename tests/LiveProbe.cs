@@ -76,16 +76,16 @@ internal static class LiveProbe {
                         timing["Time in ms after which an output is weighted at half its original value."]=8.0;
                         timing["Time in ms after which scale is weighted at half its original value."]=4.0;
                     }
-                    Call(Aim,"Write",legacy);File.Delete(prefsPath);Settings tailWindows=Settings.Read();
+                    Call(Aim,"Write",legacy);File.WriteAllText(prefsPath,"{}");byte[] emptyPrefs=File.ReadAllBytes(prefsPath);Settings tailWindows=Settings.Read();
                     Device target=(Device)Call(App.GetType("Helox.Program",true),"Selected");
                     foreach(string guard in new string[]{"RepairTail","RecoverControls"}) {
                         bool rejected=false;try {Call(Aim,guard,target,true,recipeConfig);}catch(InvalidOperationException e) {rejected=e.Message.Contains("mouse setup changed");}
-                        Expect(rejected && Same(legacy,Call(Aim,"Active")) && !File.Exists(prefsPath),"stale filter/recovery preview changed state");
+                        Expect(rejected && Same(legacy,Call(Aim,"Active")) && Convert.ToBase64String(emptyPrefs)==Convert.ToBase64String(File.ReadAllBytes(prefsPath)),"stale "+guard+" changed native state or empty controls");
                     }
                     Dictionary<string,object> tailPreview=Command("aim flick-tail preview");
-                    Expect(!(bool)tailPreview["Applied"] && (bool)tailPreview["Changed"] && Same(legacy,Call(Aim,"Active")) && !File.Exists(prefsPath),"tail preview changed live driver or metadata");
+                    Expect(!(bool)tailPreview["Applied"] && (bool)tailPreview["Changed"] && Same(legacy,Call(Aim,"Active")) && Convert.ToBase64String(emptyPrefs)==Convert.ToBase64String(File.ReadAllBytes(prefsPath)),"tail preview changed live driver or metadata");
                     Dictionary<string,object> tailApplied=Command("aim flick-tail apply"),tailRead=Map(tailApplied["Readback"]);
-                    Expect((bool)tailApplied["Applied"] && Convert.ToDouble(tailRead["InputHalfLifeMs"])==0 && Convert.ToDouble(tailRead["OutputHalfLifeMs"])==0 && Convert.ToDouble(tailRead["ScaleHalfLifeMs"])==4 && tailWindows.Same(Settings.Read()) && !File.Exists(prefsPath),"tail repair lost stability, modified windows or fabricated metadata");
+                    Expect((bool)tailApplied["Applied"] && Convert.ToDouble(tailRead["InputHalfLifeMs"])==0 && Convert.ToDouble(tailRead["OutputHalfLifeMs"])==0 && Convert.ToDouble(tailRead["ScaleHalfLifeMs"])==4 && tailWindows.Same(Settings.Read()) && Convert.ToBase64String(emptyPrefs)==Convert.ToBase64String(File.ReadAllBytes(prefsPath)),"tail repair lost stability, modified windows or fabricated metadata");
                     Expect(Convert.ToInt64(Map(tailApplied["Response"])["AfterFlickPeakCounts"])<Convert.ToInt64(Map(tailApplied["BeforeResponse"])["AfterFlickPeakCounts"]) && Convert.ToInt32(Map(tailApplied["Response"])["ReversalWrongWayReports"])==0,"tail repair did not improve the modeled flick recovery");
                     Expect(Same(Call(Aim,"Canonical",Call(Aim,"ConfigureSmoothing",legacy,(string)read["DeviceId"],false,4.0,true)),Call(Aim,"Active")),"tail repair changed an unrelated profile field");
                     Expect(!(bool)Command("aim flick-tail apply")["Changed"],"clean tail repair did not remain a no-op");
@@ -119,15 +119,20 @@ internal static class LiveProbe {
                 Expect((bool)Command("preset undo")["restored"],"live preset undo failed");
                 Expect(Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"combined undo changed original native state");undos++;
             }
+            undos+=CustomPresets(root,before,windows);
             Console.WriteLine("live / forced preference write failure + independent rollback");
             string prefs=Path.Combine(root,"aim-presets.json");if(!File.Exists(prefs)) File.WriteAllText(prefs,"{}");FileAttributes attrs=File.GetAttributes(prefs);
+            byte[] originalPrefs=File.ReadAllBytes(prefs);Type failureGame=App.GetType("Helox.GamePresets",true);string failureId=(string)Command("aim status")["DeviceId"];
+            GameRecipe failureRecipe=(GameRecipe)Call(failureGame,"Get","valorant");
+            object failureNative=Call(Aim,"Canonical",Call(failureGame,"Configure",before,Call(Aim,"Defaults"),failureId,failureRecipe));
+            Dictionary<string,object> failurePrefs=Map(Call(Aim,"Saved",prefs));failurePrefs[failureId]=failureRecipe.DriverControls;File.WriteAllText(prefs,Json.Serialize(failurePrefs));Call(Aim,"Write",failureNative);
             try {
                 File.SetAttributes(prefs,attrs|FileAttributes.ReadOnly);
                 Dictionary<string,object> failedSmooth=Command("aim smooth on 2",true);
-                Expect(((string)failedSmooth["error"]).Contains("previous settings and saved files restored") && Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"independent smoothing persistence failure did not roll back");
-                Dictionary<string,object> failed=Command("preset apply valorant",true);
+                Expect(((string)failedSmooth["error"]).Contains("previous settings and saved files restored") && Same(failureNative,Call(Aim,"Active")) && windows.Same(Settings.Read()),"independent smoothing persistence failure did not roll back");
+                Dictionary<string,object> failed=Command("preset apply cs2",true);
                 Expect(((string)failed["error"]).Contains("previous settings and saved files restored"),"persistence failure did not report verified recovery");
-            }finally {File.SetAttributes(prefs,attrs);}
+            }finally {File.SetAttributes(prefs,attrs);File.WriteAllBytes(prefs,originalPrefs);Call(Aim,"Write",before);}
             Expect(Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"failed persistence changed native state");
             Console.WriteLine("live / interrupted verification guard + snapshot restoration");
             string recoveryPath=Path.Combine(root,"verify-recovery.json");File.WriteAllText(recoveryPath,Json.Serialize(before));
@@ -150,6 +155,41 @@ internal static class LiveProbe {
         if(driverRestored && windowsRestored) try {Files.GetMethod("Restore",Instance).Invoke(files,new object[0]);}catch(Exception e) {recovery.Add("files: "+e.Message);}
         if(failure!=null || recovery.Count>0) throw new IOException((failure==null ? "live verification recovery failed" : failure.Message)+(recovery.Count==0 ? "" : "; "+String.Join(" / ",recovery.ToArray())));
         Console.WriteLine(Json.Serialize(summary));
+    }
+    private static int CustomPresets(string root,object before,Settings windows) {
+        Console.WriteLine("live / custom game effects, warned apply, readback, readonly no-op and undo");
+        string prefs=Path.Combine(root,"aim-presets.json"),undo=Path.Combine(root,"game-undo.json");
+        string previousPrefs=File.Exists(prefs) ? Convert.ToBase64String(File.ReadAllBytes(prefs)) : null;
+        string previousUndo=File.Exists(undo) ? Convert.ToBase64String(File.ReadAllBytes(undo)) : null;
+        Dictionary<string,object> refused=Command("preset apply valorant steady smooth=8",true);
+        Expect(((string)refused["error"]).Contains("accept-tail") && Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()) && previousPrefs==(File.Exists(prefs) ? Convert.ToBase64String(File.ReadAllBytes(prefs)) : null) && previousUndo==(File.Exists(undo) ? Convert.ToBase64String(File.ReadAllBytes(undo)) : null) && !File.Exists(Path.Combine(root,"game-recovery.json")),"unreviewed smoothing tail changed settings or backups");
+        int count=0;
+        foreach(string name in new string[]{"valorant","cs2","kovaaks-valorant"}) {
+            string command="preset apply "+name+" steady smooth=2 micro=0.95 recovery=1 snap=1 up=0.9 down=0.9 accept-tail";
+            Dictionary<string,object> applied=Command(command),read=Map(Map(applied["Response"])["Readback"]);
+            Expect((bool)applied["Applied"] && !(bool)applied["GameSettingsApplied"] && Convert.ToDouble(read["OutputHalfLifeMs"])==2 && Convert.ToDouble(read["InputHalfLifeMs"])==0 && Convert.ToDouble(read["ScaleHalfLifeMs"])==4 && Convert.ToDouble(read["SnapDegrees"])==1 && (bool)read["DampingEnabled"] && Math.Abs(Convert.ToDouble(Map(read["Directions"])["Up"])-.9)<1e-6,"custom effects not applied to live native profile");
+            Dictionary<string,object> status=Command("preset status"),controls=Map(status["LastAppliedControls"]);
+            Expect((bool)status["LastAppliedMatches"] && (bool)controls["smooth"] && Convert.ToDouble(controls["smoothMs"])==2 && Convert.ToDouble(Map(controls["damping"])["lowScale"])==.95,"custom recipe status lost actual applied effects");
+            string priorUndo=Convert.ToBase64String(File.ReadAllBytes(undo));object active=Call(Aim,"Active");FileAttributes attributes=File.GetAttributes(prefs);
+            try {File.SetAttributes(prefs,attributes|FileAttributes.ReadOnly);Command(command);Expect(Same(active,Call(Aim,"Active")) && priorUndo==Convert.ToBase64String(File.ReadAllBytes(undo)),"identical custom recipe overwrote useful undo");}
+            finally {File.SetAttributes(prefs,attributes);}
+            Command("preset undo");count++;
+            Expect(Same(before,Call(Aim,"Active")) && windows.Same(Settings.Read()),"custom recipe undo did not restore complete previous state");
+        }
+        Console.WriteLine("live / game draft stale-driver, windows, effect and game guards");
+        Type game=App.GetType("Helox.GamePresets",true);Device target=(Device)Call(App.GetType("Helox.Program",true),"Selected");
+        GameEffects draft=new GameEffects {SmoothMs=2};GamePresetPreview preview=(GamePresetPreview)Call(game,"Preview",target,"valorant",draft);
+        string id=(string)Command("aim status")["DeviceId"];
+        bool enabled=(bool)Command("aim status")["Enabled"];object moved=Call(Aim,"ConfigureBypass",before,id,enabled);Call(Aim,"Write",moved);
+        try {ExpectStale(game,target,"valorant",draft,preview);Expect(Same(moved,Call(Aim,"Active")),"stale driver preview modified active state");}finally {Call(Aim,"Write",before);}
+        Settings changed=Json.Deserialize<Settings>(Json.Serialize(windows));changed.Speed=windows.Speed==10 ? 11 : 10;changed.Apply();
+        try {ExpectStale(game,target,"valorant",draft,preview);Expect(changed.Same(Settings.Read()),"stale windows preview modified current settings");}finally {windows.Apply();}
+        draft.SmoothMs=1;ExpectStale(game,target,"valorant",draft,preview);draft.SmoothMs=2;ExpectStale(game,target,"kovaaks-valorant",draft,preview);
+        return count;
+    }
+    private static void ExpectStale(Type game,Device device,string name,GameEffects effects,GamePresetPreview preview) {
+        bool stopped=false;try {Call(game,"Apply",device,name,effects,true,preview);}catch(InvalidOperationException e) {stopped=e.Message.Contains("setup changed since preview");}
+        Expect(stopped,"stale game draft was applied");
     }
     private static void CrashAndActivation(string root,object before) {
         string checkpoint=Path.Combine(root,"game-recovery.json"),undoPath=Path.Combine(root,"undo.json");

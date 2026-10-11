@@ -43,7 +43,8 @@ public sealed class AimDamping {
     }
 }
 internal static class AimFilterNumbers {
-    internal static void Range(double n,double min,double max,string message) {if(double.IsNaN(n) || double.IsInfinity(n) || n<min || n>max) throw new ArgumentException(message);}
+    internal static bool Finite(double n) {return !double.IsNaN(n) && !double.IsInfinity(n);}
+    internal static void Range(double n,double min,double max,string message) {if(!Finite(n) || n<min || n>max) throw new ArgumentException(message);}
     internal static Dictionary<string,object> Map(object value,int count,string name) {Dictionary<string,object> map=value as Dictionary<string,object>;if(map==null || map.Count!=count) throw new ArgumentException("invalid saved "+name);return map;}
     internal static double Number(Dictionary<string,object> map,string key) {object n;if(!map.TryGetValue(key,out n) || (!(n is int) && !(n is long) && !(n is double) && !(n is decimal))) throw new ArgumentException("invalid saved "+key);return Convert.ToDouble(n);}
 }

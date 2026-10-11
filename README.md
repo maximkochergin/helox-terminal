@@ -21,7 +21,7 @@ opening helox leaves settings unchanged. no account, telemetry or background app
 | pointer | windows speed, acceleration, scrolling and buttons |
 | input | delivered hz, report timing, gaps and known-distance dpi estimation |
 | aim tools | personal acceleration curves, filter previews and selected-mouse bypass |
-| game presets | complete driver setups for valorant, cs2 and matched kovaak's practice |
+| game presets | editable effect drafts, response comparisons and full setup undo |
 | profiles | saved windows settings, previews and undo |
 | maintenance | driver checks, recovery, uninstall and data cleanup |
 
@@ -54,9 +54,11 @@ launch.bat status --json
 launch.bat health
 launch.bat health --mouse 0 --json
 launch.bat measure 10 --json
+launch.bat measure last
 launch.bat calibrate 20
 launch.bat preset status
 launch.bat preset preview cs2 steady
+launch.bat preset preview cs2 steady smooth=2 micro=0.95
 launch.bat aim response
 launch.bat aim resume
 launch.bat check

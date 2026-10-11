@@ -755,6 +755,13 @@ internal static partial class Aim {
             if(!recipe.MicroDamping && (response.AfterFlickPeakCounts>2 || response.AfterFlickZeroReports!=0)) throw new Exception("undamped game recipe swallowed a micro correction");
             foreach(int output in response.AfterFlickY) if(output<0) throw new Exception("game recipe reversed correction direction");
         }
+        foreach(double outputMs in new double[]{1,2,4,8}) {
+            GameRecipe custom=GamePresets.Build(null,"valorant-steady",new GameEffects {SmoothMs=outputMs,MicroScale=.95,Stability=true,SnapDegrees=1,Directions=new AimDirections {Up=.9,Down=.9}});
+            Dictionary<string,object> customConfig=Canonical(GamePresets.Configure(defaults,defaults,id,custom));
+            PresetAssessment review=PresetAssessment.Run(customConfig,id);AimStatus state=Describe(customConfig,id);DescribeDamping(state,custom.Controls());
+            if(!review.ProcessingChecksPassed || state.OutputHalfLifeMs!=outputMs || state.InputHalfLifeMs!=0 || state.ScaleHalfLifeMs!=4 || state.SnapDegrees!=1 || state.DampingEnabled!=true || Math.Abs(state.Directions.Up-.9)>1e-6) throw new Exception("custom game effects native readback/model failed");
+            if(outputMs==8 && (review.ModelChecksPassed || review.Warnings.Length==0)) throw new Exception("output smoothing tail was hidden by the game assessment");
+        }
         double unfilteredSpread=0;
         foreach(double halfLife in new double[]{0,8,10,12}) {
             Dictionary<string,object> cfg=Configure(defaults,defaults,id,true,false,2,1.4,halfLife>0,halfLife>0 ? halfLife : 8,true,new AimCurve());

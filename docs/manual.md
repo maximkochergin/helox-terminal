@@ -7,7 +7,7 @@ mouse controls for windows, with lowercase text, a numbered menu and a batch lau
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.18.0
+  helox / 0.19.0
   ----------------------------------------
   mouse     selected mouse
   windows   speed 10/20 / accel on / desktop
@@ -31,6 +31,8 @@ a sole connected raw-input mouse is selected automatically, regardless of brand.
 `4 windows pointer` controls desktop settings; raw input games bypass windows acceleration. `2 tune mouse` offers acceleration and filters through the official signed raw accel driver. `1 game setup` applies [complete game recipes](game-presets.md) for valorant, cs2 and matched kovaak's practice, with combined undo and explicit manual sensitivity/fov steps. `setup` enables windows acceleration and sets pointer speed to 10/20; existing active thresholds are preserved.
 
 ## aim tools
+
+game setup now has `7 customize effects`. choose smoothing, gain stability, micro damping, snapping and direction scales as part of one recipe. `3 compare response checks` compares the draft with its base recipe and the live configuration. output averaging is optional; a visible flick-tail warning requires an explicit choice before applying. customized controls support resume, full undo and live status. [effects and commands](game-presets.md#custom-effects--0190).
 
 open `2 tune mouse > 3 driver > 1 install driver`, approve windows uac, close the official installer with a keypress, then restart windows once. reopen `launch.bat` and use `1 game setup` for a complete recipe, or `2 tune mouse` for individual controls. submenus return one level with `0`; opening a screen does not apply settings.
 
@@ -89,6 +91,8 @@ hardware dpi/polling writes, current sensor dpi, configured polling, battery and
 
 ## tests and recovery
 
+`3 test mouse > 7 last input test` or `measure last` opens the selected mouse's validated saved delivery test without capturing input or changing settings. it labels older/future history and shows missing legacy fields as `unavailable`. delivery intervals, pauses and batching are separate from sensor spinout and game latency. `health` and `preset status` also show detected supported game processes; a running process does not verify mouse response inside that game.
+
 `3` captures 10 seconds of continuous mouse movement. reported hz uses average active report delivery, which avoids enormous median-based values caused by queued batches. p95/p99 intervals, slow intervals, long gaps and maximum gap expose uneven delivery. long gaps are excluded from active hz but remain visible; a pause cannot be distinguished from a wireless interruption. this is an input measurement, not configured usb polling or click latency.
 
 for wireless stutters, repeat the capture without stopping and compare with the receiver close to the mouse, away from active usb 3 devices/cables. [intel's measurements](https://www.benq.com/content/dam/newb2b/Support/FAQ/intel_white%20paper_usb3%20interference.pdf) document 2.4 ghz interference and receiver placement effects. smoothing cannot recreate missing packets or raise hardware polling rate.
@@ -145,7 +149,9 @@ aim verify restore
 preset list
 preset status
 preset tune
-preset show|preview|apply <name> [balanced|steady|linear] [personal]
+preset show|preview|apply <name> [balanced|steady|linear] [personal] [effects]
+preset preview cs2 steady smooth=2 micro=0.95 recovery=1
+preset apply cs2 steady smooth=2 micro=0.95 recovery=1 accept-tail
 preset undo
 preset recover
 aim tracking
@@ -168,6 +174,7 @@ set wheel 0..100|page
 set doubleclick 200..900
 set swap on|off
 measure 3..30
+measure last
 dpi
 calibrate <cm>
 profile save|show|apply <name>

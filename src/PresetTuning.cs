@@ -75,16 +75,22 @@ public sealed class PresetTrial {
 public sealed class PresetAssessment {
     public PresetTrial[] Trials {get;set;}
     public bool ModelChecksPassed {get;set;}
+    public bool ProcessingChecksPassed {get;set;}
+    public string[] Warnings {get;set;}
     public bool? GameInputVerified {get;set;}
     public string Source {get;set;}
     internal static PresetAssessment Run(Dictionary<string,object> cfg,string id) {
-        List<PresetTrial> trials=new List<PresetTrial>();bool passed=true;
+        List<PresetTrial> trials=new List<PresetTrial>();bool passed=true,processing=true;
         foreach(double interval in new double[]{8,4,2,1}) {
             AimResponse response=AimResponseTest.Run(cfg,id,interval);
             trials.Add(new PresetTrial {IntervalMs=interval,SmallMotionRatio=response.SmallMotionRatio,FastMotionRatio=response.FastMotionRatio,FlickTailPeakCounts=response.AfterFlickPeakCounts,WrongWayReports=response.ReversalWrongWayReports});
-            if(response.ReversalWrongWayReports!=0 || response.AfterFlickPeakCounts>3) passed=false;
+            if(response.AfterFlickPeakCounts>3) passed=false;
+            if(response.ReversalWrongWayReports!=0 || !AimFilterNumbers.Finite(response.SmallMotionRatio) || !AimFilterNumbers.Finite(response.FastMotionRatio) || response.SmallMotionRatio<0 || response.FastMotionRatio<0) processing=false;
         }
-        return new PresetAssessment {Trials=trials.ToArray(),ModelChecksPassed=passed,Source="official engine model at 125 / 250 / 500 / 1000 hz intervals / not measured hardware rates or game results"};
+        List<string> warnings=new List<string>();
+        if(!processing) warnings.Add("processing model failed / invalid response or wrong-direction reversal / application blocked");
+        if(!passed) warnings.Add("flick-to-micro tail exceeds 3 counts in the model / output averaging can magnify a correction / compare before applying");
+        return new PresetAssessment {Trials=trials.ToArray(),ModelChecksPassed=passed && processing,ProcessingChecksPassed=processing,Warnings=warnings.ToArray(),Source="official engine model at 125 / 250 / 500 / 1000 hz intervals / not measured hardware rates or game results"};
     }
 }
 }

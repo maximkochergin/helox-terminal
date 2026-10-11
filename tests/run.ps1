@@ -91,6 +91,41 @@ if ($aimStatus.State -eq 'ready') {
 }
 $recipes = & $executable preset list --json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $recipes.Count -ne 5 -or $recipes[0].Id -ne 'valorant' -or $recipes[1].Engine -ne 'source 2') { throw 'game recipe list failed' }
+foreach ($recipeName in @('valorant','cs2','kovaaks-valorant')) {
+    $customRecipe = & $executable preset show $recipeName steady smooth=2 micro=0.95 recovery=1 snap=1 up=0.9 down=0.9 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or !$customRecipe.Effects.Customized -or !$customRecipe.DriverControls.smooth -or $customRecipe.DriverControls.smoothMs -ne 2 -or !$customRecipe.DriverControls.stability -or !$customRecipe.DriverControls.damping.enabled -or $customRecipe.DriverControls.snapDegrees -ne 1 -or $customRecipe.DriverControls.directions.up -ne 0.9) { throw 'complete custom game recipe missing selected effects' }
+}
+foreach ($arguments in @(@('preset','apply','valorant','smooth=NaN'),@('preset','apply','valorant','smooth=1','smooth=2'),@('preset','apply','valorant','snap=6'),@('preset','apply','valorant','recovery=1'),@('preset','apply','valorant','left=0'),@('preset','show','valorant','accept-tail'),@('preset','apply','valorant-steady','balanced'))) {
+    $invalidDraft = & $executable @arguments --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 1 -or !$invalidDraft.error -or $invalidDraft.Applied) { throw 'invalid game effect command accepted' }
+}
+if ($aimStatus.State -eq 'ready') {
+    $customPreview = & $executable preset preview valorant steady smooth=8 micro=0.95 snap=1 --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $customPreview.Applied -or !$customPreview.Assessment.ProcessingChecksPassed -or $customPreview.Assessment.ModelChecksPassed -or !$customPreview.Assessment.Warnings -or !$customPreview.BaseAssessment.ModelChecksPassed -or !$customPreview.CurrentResponse -or $customPreview.Response.Readback.OutputHalfLifeMs -ne 8) { throw 'custom filter preview hid a tail or changed the driver' }
+    $customCancel = "1`n1`n7`n1`n4`n0`n3`n0`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($customCancel -join "`n") -notmatch 'output smoothing / 2 ms' -or ($customCancel -join "`n") -notmatch 'tail base' -or ($customCancel -join "`n") -match 'applied /') { throw 'custom effect draft or preview cancellation failed' }
+    $warnedCancel = "1`n1`n7`n1`n4`n0`n1`n0`n4`n0`n0`n0`n0" | & $executable
+    if ($LASTEXITCODE -ne 0 -or ($warnedCancel -join "`n") -notmatch 'repeat draft / preset preview valorant smooth=2' -or ($warnedCancel -join "`n") -match 'applied /') { throw 'warning cancellation discarded the effects draft or applied it' }
+}
+if ($status.receiver.Path) {
+    $savedHistoryPath = Join-Path $env:LOCALAPPDATA 'helox-terminal\rate.json'
+    $savedHistoryBytes = if (Test-Path -LiteralPath $savedHistoryPath) { [IO.File]::ReadAllBytes($savedHistoryPath) } else { $null }
+    try {
+        $historyFixture = @{Reports=101;Intervals=100;ActiveHz=125;MedianIntervalMs=8;P95IntervalMs=8;DevicePath=$status.receiver.Path;MeasuredUtc=[DateTime]::UtcNow.ToString('o')}
+        [IO.File]::WriteAllText($savedHistoryPath,($historyFixture | ConvertTo-Json -Compress))
+        $lastInput = & $executable measure last --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or !$lastInput.Available -or !$lastInput.Recent -or $lastInput.Rate.ActiveHz -ne 125) { throw 'selected mouse history unreadable' }
+        $lastScreen = & $executable measure last
+        if ($LASTEXITCODE -ne 0 -or ($lastScreen -join "`n") -notmatch 'unavailable' -or ($lastScreen -join "`n") -notmatch 'last input test / read only') { throw 'legacy history optional fields failed' }
+        $historyFixture.DevicePath = 'fixture-other-mouse'
+        [IO.File]::WriteAllText($savedHistoryPath,($historyFixture | ConvertTo-Json -Compress))
+        $lastOther = & $executable measure last --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $lastOther.Available -or $lastOther.Rate) { throw 'history leaked another mouse test' }
+    } finally {
+        if ($null -eq $savedHistoryBytes) { if (Test-Path -LiteralPath $savedHistoryPath) { Remove-Item -LiteralPath $savedHistoryPath } }
+        else { [IO.File]::WriteAllBytes($savedHistoryPath,[byte[]]$savedHistoryBytes) }
+    }
+}
 $recipeCancel = "1`n1`n0`n0`n0" | & $executable
 if ($LASTEXITCODE -ne 0 -or ($recipeCancel -join "`n") -notmatch 'style / balanced' -or ($recipeCancel -join "`n") -notmatch 'replaces current aim filters' -or ($recipeCancel -join "`n") -match 'applied /') { throw 'recipe explanation or cancellation failed' }
 foreach ($recipe in $recipes) {
