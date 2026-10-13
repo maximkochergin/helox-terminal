@@ -50,6 +50,7 @@ public sealed class HealthReport {
     public string[] Errors {get;set;}
     public bool? GameInputVerified {get;set;}
     public string Source {get;set;}
+    public StartupReport Startup {get;set;}
 }
 internal static class Health {
     internal static HealthReport Read(Device device,string selectionNote) {
@@ -58,6 +59,8 @@ internal static class Health {
             Vanguard=new ServiceReading[]{ServiceProbe.Read("vgk"),ServiceProbe.Read("vgc")},
             Source="read-only configuration + device stack + service control manager / no game launch or input injection"};
         if(selectionNote!=null) notes.Add(selectionNote);
+        report.Startup=Startup.Status();
+        if(WindowsRecovery.Pending) notes.Add("windows recovery pending / recover or saved profiles > 6");
         try {report.Windows=Settings.Read();}catch(Exception e) {errors.Add("windows: "+e.Message);}
         try {report.Driver=Maintenance.Doctor();}catch(Exception e) {errors.Add("driver: "+e.Message);}
         report.Stack=DeviceStack.Read(device);

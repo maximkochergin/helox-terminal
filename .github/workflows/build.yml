@@ -8,22 +8,41 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: compile
         shell: powershell
         run: .\build.ps1
+      - name: release tag matches application
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $version = (.\bin\helox.exe version --json | ConvertFrom-Json).version
+          if ($LASTEXITCODE -ne 0 -or $env:GITHUB_REF_NAME -ne ('v' + $version)) { throw 'release tag does not match compiled version' }
       - name: regression checks
         shell: powershell
         run: |
           .\bin\helox.exe check
           if ($LASTEXITCODE -ne 0) { throw 'regression checks failed' }
+      - name: command contracts
+        shell: powershell
+        run: .\tests\commands.ps1
       - name: build recovery checks
         shell: powershell
         run: .\tests\build.ps1
+      - name: launcher checks
+        shell: powershell
+        run: .\tests\launch.ps1
       - name: cleanup safety checks
         shell: powershell
         run: .\tests\maintenance.ps1
@@ -33,12 +52,18 @@ jobs:
       - name: inherited shell module checks
         shell: powershell
         run: .\tests\shell.ps1
+      - name: package integrity and publication recovery checks
+        shell: powershell
+        run: .\tests\package.ps1
       - name: package
         shell: powershell
         run: .\package.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: helox-terminal
-          path: dist/helox-terminal-v*.zip
+          path: |
+            dist/helox-terminal-v*.zip
+            dist/helox-terminal-v*.zip.sha256
+          if-no-files-found: error
 
 # native settings tests belong on an interactive windows desktop, not a hosted runner.

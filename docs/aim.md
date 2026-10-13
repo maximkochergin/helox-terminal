@@ -1,5 +1,9 @@
 # aim tools / research notes
 
+## final operation and recovery / 0.20.0
+
+0.20.0 adds opt-in sign-in restoration through `startup on`, persistent menu mouse selection, desktop interruption recovery and checkpoints for all aim writes. the signed backend and its processing algorithms remain pinned to the same official release. the [operation guide](operations.md) documents safe restoration conditions, diagnostics, removal and the final release policy. older dated sections below retain the evidence available at the time; their historical absence of startup restoration is superseded by this optional helper.
+
 ## independent filter controls / 0.18.0
 
 output smoothing now edits the live selected-mouse profile instead of rebuilding its curve from saved parameters. imported curves, native caps, rotation, direction scales, calibration and input timing stay intact. shared/default profiles are copied before editing. the output toggle leaves input and sensitivity-scale averaging untouched; stale or missing curve metadata no longer prevents this independent edit.
@@ -84,7 +88,7 @@ live application requires installation and restart. the current machine now repo
 
 for a physical comparison, run `3` while continuously moving in circles, enable only precision or smooth, repeat the same movement and test tracking/flick tasks in kovaaks. compare p95/p99, long gaps and feel. delivery timing does not measure smoothing quality or end-to-end latency. expect radio gaps to need receiver/surface/power troubleshooting rather than a stronger ema.
 
-the complete original driver snapshot is restored by `aim restore`; it also restores its original device overrides. the snapshot is retained across sessions. no automatic startup application or reboot is performed. driver transforms cannot recover missing reports, and output smoothing does not remove directional hand tremor.
+the complete original driver snapshot is restored by `aim restore`; it also restores its original device overrides. the snapshot is retained across sessions. reboot is never automatic. optional sign-in restoration in 0.20.0 applies saved controls only after explicit `startup on` and the helper's state checks. driver transforms cannot recover missing reports, and output smoothing does not remove directional hand tremor.
 
 ## saved presets
 

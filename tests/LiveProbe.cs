@@ -26,13 +26,13 @@ internal static class LiveProbe {
         }
     }
     [STAThread] private static int Main() {
-        try {Run();return 0;}catch(Exception e) {Console.Error.WriteLine(e.Message);return 1;}
+        try {Run();return 0;}catch(Exception e) {Console.Error.WriteLine(e);return 1;}
     }
     private static void Run() {
         Call(App.GetType("Helox.LiveVerify",true),"RequireClosedGames");
         string root=(string)App.GetType("Helox.Store",true).GetField("Root",Static).GetValue(null);
-        Expect(!File.Exists(Path.Combine(root,"verify-recovery.json")) && !File.Exists(Path.Combine(root,"game-recovery.json")),"restore unfinished recovery first");
-        string[] paths={"aim-presets.json","game-undo.json","undo.json","original.json","aim-before.json","verify-recovery.json","game-recovery.json","game-tuning.json"};
+        Expect(!File.Exists(Path.Combine(root,"verify-recovery.json")) && !File.Exists(Path.Combine(root,"game-recovery.json")) && !File.Exists(Path.Combine(root,"windows-recovery.json")),"restore unfinished recovery first");
+        string[] paths={"aim-presets.json","game-undo.json","undo.json","original.json","aim-before.json","verify-recovery.json","game-recovery.json","windows-recovery.json","game-tuning.json"};
         for(int i=0;i<paths.Length;i++) paths[i]=Path.Combine(root,paths[i]);
         object files=Files.GetConstructor(Instance,null,new Type[]{typeof(string[])},null).Invoke(new object[]{paths});
         object before=Call(Aim,"Active");Settings windows=Settings.Read();Exception failure=null;
@@ -146,14 +146,15 @@ internal static class LiveProbe {
             Expect(((string)Command("aim status")["Note"]).Contains("unfinished verification"),"recovery status missing");
             Expect((bool)Command("aim verify restore")["restored"] && !File.Exists(recoveryPath) && Same(before,Call(Aim,"Active")),"snapshot restoration failed");
             CrashAndActivation(root,before);
-            summary=new Dictionary<string,object>{{"DriverCases",steps.Count},{"PresetsAppliedAndUndone",undos},{"IndependentSmoothing",true},{"LegacyTailRepair",true},{"ExactControlsRecovery",true},{"StaleAdjustmentPreviewBlocked",true},{"IdempotentReapply",true},{"PreferenceOnlyUndo",true},{"PersistenceFailureRecovered",true},{"RecoveryGuardAndRestore",true},{"ForcedExitRecovered",true},{"BlockingActivationVerified",true},{"CorruptUndoBlocked",true},{"RawReports",proof["CapturedMotionReports"]},{"GameInputVerified",null}};
+            GenericControlsRecovery(root,before);
+            summary=new Dictionary<string,object>{{"DriverCases",steps.Count},{"PresetsAppliedAndUndone",undos},{"IndependentSmoothing",true},{"LegacyTailRepair",true},{"ExactControlsRecovery",true},{"StaleAdjustmentPreviewBlocked",true},{"IdempotentReapply",true},{"PreferenceOnlyUndo",true},{"PersistenceFailureRecovered",true},{"RecoveryGuardAndRestore",true},{"ForcedExitRecovered",true},{"GenericControlForcedExitRecovered",true},{"MalformedControlsEscapeHatches",true},{"BlockingActivationVerified",true},{"CorruptUndoBlocked",true},{"RawReports",proof["CapturedMotionReports"]},{"GameInputVerified",null}};
         }catch(Exception e) {failure=e;}
         // Attempt independent native recovery. Preserve recovery evidence if the driver cannot be restored.
         List<string> recovery=new List<string>();bool driverRestored=false,windowsRestored=false;
         try {if(File.Exists(Path.Combine(root,"game-recovery.json")) || !Same(before,Call(Aim,"Active"))) Call(Aim,"Write",before);driverRestored=Same(before,Call(Aim,"Active"));Expect(driverRestored,"native restore mismatch");}catch(Exception e) {recovery.Add("driver: "+e.Message);}
         try {if(!windows.Same(Settings.Read())) windows.Apply();windowsRestored=windows.Same(Settings.Read());Expect(windowsRestored,"windows restore mismatch");}catch(Exception e) {recovery.Add("windows: "+e.Message);}
         if(driverRestored && windowsRestored) try {Files.GetMethod("Restore",Instance).Invoke(files,new object[0]);}catch(Exception e) {recovery.Add("files: "+e.Message);}
-        if(failure!=null || recovery.Count>0) throw new IOException((failure==null ? "live verification recovery failed" : failure.Message)+(recovery.Count==0 ? "" : "; "+String.Join(" / ",recovery.ToArray())));
+        if(failure!=null || recovery.Count>0) throw new IOException((failure==null ? "live verification recovery failed" : failure.Message)+(recovery.Count==0 ? "" : "; "+String.Join(" / ",recovery.ToArray())),failure);
         Console.WriteLine(Json.Serialize(summary));
     }
     private static int CustomPresets(string root,object before,Settings windows) {
@@ -222,12 +223,53 @@ internal static class LiveProbe {
         string id=(string)Command("aim status")["DeviceId"];
         object after=Call(game,"Configure",before,Call(Aim,"Defaults"),id,Call(game,"Get","valorant"));
         if(Same(before,Call(Aim,"Canonical",after))) after=Call(game,"Configure",before,Call(Aim,"Defaults"),id,Call(game,"Get","cs2"));
-        object native=Call(Aim,"Validate",after);Call(recovery,"Begin",initial,before,saved);
+        object native=Call(Aim,"Validate",after);Call(recovery,"Begin",initial,before,saved,false);
         Stopwatch activation=Stopwatch.StartNew();native.GetType().GetMethod("Activate").Invoke(native,new object[0]);activation.Stop();
         Expect(activation.ElapsedMilliseconds>=900 && Same(Call(Aim,"Canonical",after),Call(Aim,"Active")),"synchronous activation did not finish before returning");
         Console.WriteLine("live / native Activate blocked "+activation.ElapsedMilliseconds+" ms / immediate readback matched");
         Call(recovery,"Restore");
         Expect(!File.Exists(checkpoint) && Same(before,Call(Aim,"Active")) && initial.Same(Settings.Read()),"activation checkpoint recovery failed");
+    }
+    private static void GenericControlsRecovery(string root,object before) {
+        string preferences=Path.Combine(root,"aim-presets.json"),checkpoint=Path.Combine(root,"game-recovery.json");
+        string[] paths={preferences,Path.Combine(root,"game-undo.json"),Path.Combine(root,"undo.json")};
+        object saved=Files.GetConstructor(Instance,null,new Type[]{typeof(string[])},null).Invoke(new object[]{paths});
+        Settings windows=Settings.Read();
+        Console.WriteLine("live / ordinary control persistence failure + exact saved-file rollback");
+        Command("aim precision on 1.2");object active=Call(Aim,"Active");
+        object original=Call(Aim,"Parse",File.ReadAllText(Path.Combine(root,"aim-before.json")));
+        if(Same(active,original)) {Command("aim precision on 1.6");active=Call(Aim,"Active");}
+        byte[] controls=File.ReadAllBytes(preferences);string controlsBytes=Convert.ToBase64String(controls);
+        FileAttributes attributes=File.GetAttributes(preferences);
+        try {
+            File.SetAttributes(preferences,attributes|FileAttributes.ReadOnly);
+            string strength=Convert.ToDouble(Command("aim status")["GainLimit"])==1.2 ? "1.6" : "1.2";
+            Dictionary<string,object> failed=Command("aim precision on "+strength,true);
+            Expect(((string)failed["error"]).Contains("previous settings and saved files restored") && Same(active,Call(Aim,"Active")) && controlsBytes==Convert.ToBase64String(File.ReadAllBytes(preferences)) && !File.Exists(checkpoint) && windows.Same(Settings.Read()),"ordinary control persistence failure lost driver, preferences or desktop state");
+        }finally {File.SetAttributes(preferences,attributes);}
+        Console.WriteLine("live / forced exit during precision, bypass and restore + durable recovery");
+        string changedStrength=Convert.ToDouble(Command("aim status")["GainLimit"])==1.2 ? "1.6" : "1.2";
+        foreach(string command in new string[]{"aim precision on "+changedStrength,"aim bypass on","aim restore"}) {
+            KillAtCheckpoint(command,checkpoint);
+            Dictionary<string,object> captured=Json.Deserialize<Dictionary<string,object>>(File.ReadAllText(checkpoint));
+            Expect((int)captured["version"]==2,"ordinary control interruption lacks exact-byte checkpoint");
+            foreach(string mutation in new string[]{"aim precision off","aim bypass on","aim restore","set speed 12"}) Expect(((string)Command(mutation,true)["error"]).Contains("unfinished game preset"),"ordinary control interruption allowed another setting write");
+            Expect((bool)Command("preset recover")["restored"] && !File.Exists(checkpoint) && Same(active,Call(Aim,"Active")) && controlsBytes==Convert.ToBase64String(File.ReadAllBytes(preferences)) && windows.Same(Settings.Read()),"interrupted "+command+" did not recover complete previous state");
+        }
+        Console.WriteLine("live / corrupt saved bytes do not disable bypass or original restore");
+        byte[] broken=new byte[]{0xff,0xfe,0x00,0x80};string brokenBytes=Convert.ToBase64String(broken);
+        foreach(string path in paths) File.WriteAllBytes(path,broken);
+        Expect(!(bool)Map(Command("aim bypass on")["readback"])["Enabled"] && (bool)Map(Command("aim bypass off")["readback"])["Enabled"],"malformed saved files blocked the bypass escape hatch");
+        foreach(string path in paths) Expect(brokenBytes==Convert.ToBase64String(File.ReadAllBytes(path)),"bypass interpreted or changed malformed saved bytes");
+        Expect(Same(active,Call(Aim,"Active")),"bypass roundtrip changed processing beyond its enabled flag");
+        attributes=File.GetAttributes(preferences);
+        try {
+            File.SetAttributes(preferences,attributes|FileAttributes.ReadOnly);
+            Dictionary<string,object> failed=Command("aim restore",true);
+            Expect(((string)failed["error"]).Contains("previous settings and saved files restored") && Same(active,Call(Aim,"Active")) && brokenBytes==Convert.ToBase64String(File.ReadAllBytes(preferences)) && !File.Exists(checkpoint),"failed reset lost malformed preferences or active processing");
+        }finally {File.SetAttributes(preferences,attributes);}
+        Expect((bool)Command("aim restore")["restored"] && Same(original,Call(Aim,"Active")) && Map(Call(Aim,"Saved",preferences)).Count==0 && windows.Same(Settings.Read()),"original restore could not reset malformed saved controls");
+        Call(Aim,"Write",before);Files.GetMethod("Restore",Instance).Invoke(saved,new object[0]);
     }
     private static void KillAtCheckpoint(string args,string checkpoint) {
         ProcessStartInfo info=new ProcessStartInfo(App.Location,args+" --json") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};

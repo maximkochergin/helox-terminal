@@ -1,13 +1,13 @@
 # input filters
 
-open `2 tune mouse > 2 motion filters`. new filters start off; opening this release does not apply them. these controls configure the unchanged, signed raw accel 1.7.1 driver. they use mouse input only. there is no screen capture, game process access, target detection or input injection.
+open `2 tune mouse > 2 motion filters`. new filters start off; opening this release does not apply them. these controls configure the unchanged, signed raw accel 1.7.1 driver. they use mouse input only. there is no screen capture, game memory access, target detection or input injection. supported-game process names are used only for diagnostics and safe-write checks.
 
 | menu | control | effect |
 | --- | --- | --- |
-| 16 | angle snapping | redirects input close to a horizontal or vertical axis |
-| 18 | direction scales | independently attenuates left, right, up and down |
-| 19 | micro damping | reduces sensitivity at low speed and smoothly recovers |
-| 20 | bypass all | disables every raw accel effect for the selected mouse |
+| `2 > 2 > 3` | angle snapping | redirects input close to a horizontal or vertical axis |
+| `2 > 2 > 4` | direction scales | independently attenuates left, right, up and down |
+| `2 > 2 > 5` | micro damping | reduces sensitivity at low speed and smoothly recovers |
+| `2 > 3 > 5` | bypass all | disables every raw accel effect for the selected mouse |
 
 ## direction scales
 
@@ -56,6 +56,8 @@ output smoothing edits the effective selected-mouse profile directly, including 
 filter writes keep a durable recovery checkpoint before activation. a save failure restores the previous driver and saved files; an interrupted process leaves `preset recover` available. finish recovery before making another change. this uses the same combined recovery mechanism as game setup.
 
 `aim bypass on` disables processing only for the selected hardware id, without reading saved presets or requiring a valid original backup. it preserves profiles, peer devices, calibration and timing. `aim bypass off` enables the current profile; it does not load a saved preset. bypass is temporary driver state and does not rewrite the saved choice. changing an effect to on or resuming also explicitly enables processing. use `aim restore` for the separate original snapshot across all devices.
+
+when 0.20.0 automatic sign-in restoration is enabled, a live bypass is retained until the driver resets. bypass itself is not saved for resume: after reboot, a cold driver can receive the enabled saved profile again. to keep effects disabled across sign-ins, use `startup off` then `aim bypass on`. [startup policy](operations.md#optional-sign-in-restoration).
 
 externally changed lookup data, interpretation, rotation, domain/range weights, norm, component mode or input speed cap block ordinary curve-component rebuilding from stale parameters. independent output smoothing, flick-tail repair and bypass remain available for an inspectable valid configuration. an unreadable driver or rejected activation is reported, with the existing rollback path; bypass cannot be guaranteed when the driver itself cannot be read or written.
 

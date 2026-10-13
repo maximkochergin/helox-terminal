@@ -390,10 +390,8 @@ internal static partial class Aim {
             if(curve!=null || snap.HasValue || directions!=null || damping!=null) throw new ArgumentException("smoothing changes output averaging only");
             return AdjustSmoothing(device,on,smoothMs,false);
         }
-        using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
-            bool held=false;try {
-                try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
-                if(!held) throw new InvalidOperationException("aim settings busy / retry");
+        AimStatus applied=null;
+        Store.Locked(delegate {applied=Locked(delegate {
                 LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();string id=Id(device);AimStatus status=Describe(before,id);
                 CheckUnit(status,expectedUnit);
@@ -405,9 +403,8 @@ internal static partial class Aim {
                 string backup=Path.Combine(Store.Root,"aim-before.json");
                 if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
                 presets[id]=preset.ToMap();
-                AimStatus result=Describe(Commit(before,after,Write,delegate {Store.Save(preferences,presets);}),id);DescribeDamping(result,preset);return result;
-            }finally {if(held) mutex.ReleaseMutex();}
-        }
+                AimStatus result=Describe(CommitDurable(before,after,delegate {if(!SameValue(Saved(preferences),presets)) Store.Save(preferences,presets);}),id);DescribeDamping(result,preset);return result;
+        });});return applied;
     }
     internal static Dictionary<string,object> ConfigurePreset(Dictionary<string,object> current,Dictionary<string,object> defaults,string id,AimPreset preset,bool enable=false) {
         return Configure(current,defaults,id,preset.Precision,preset.Smooth,preset.SmoothMs,preset.GainLimit,preset.Stability,preset.StabilityMs,enable,preset.Curve,preset.SnapDegrees,preset.Directions,preset.Damping);
@@ -426,16 +423,13 @@ internal static partial class Aim {
         }return cfg;
     }
     internal static AimStatus Bypass(Device device,bool bypass) {
-        using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
-            bool held=false;try {
-                try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
-                if(!held) throw new InvalidOperationException("aim settings busy / retry");
+        AimStatus applied=null;
+        Store.Locked(delegate {applied=Locked(delegate {
                 LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();string id=Id(device);
                 Dictionary<string,object> after=ConfigureBypass(before,id,bypass);Validate(after);
-                AimStatus result=Describe(Commit(before,after,Write,delegate {}),id);DescribeSavedControls(result);return result;
-            }finally {if(held) mutex.ReleaseMutex();}
-        }
+                AimStatus result=Describe(CommitDurable(before,after,delegate {}),id);DescribeSavedControls(result);return result;
+        });});return applied;
     }
     internal static AimCurve Draft(Device device) {
         string id=Id(device);object value;Dictionary<string,object> saved=Saved(Path.Combine(Store.Root,"aim-presets.json"));
@@ -478,19 +472,24 @@ internal static partial class Aim {
             return readback;
         });
     }
+    // Called with Store then Aim held, including ordinary toggles and the bypass escape hatch.
+    // The checkpoint covers interruption and exact saved-file recovery, not only caught errors.
+    internal static Dictionary<string,object> CommitDurable(Dictionary<string,object> before,Dictionary<string,object> after,Action save) {
+        Settings windows=Settings.Read();
+        SavedFiles files=new SavedFiles(new string[]{Path.Combine(Store.Root,"aim-presets.json"),Path.Combine(Store.Root,"game-undo.json"),Path.Combine(Store.Root,"undo.json")});
+        GameRecovery.Begin(windows,before,files,true);
+        return GamePresets.CommitPair(windows,before,windows,after,delegate(Settings s){s.Apply();},Write,
+            delegate(Dictionary<string,object> read) {save();GameRecovery.Complete();},files.Restore,GameRecovery.Complete);
+    }
     internal static void Restore() {
         string path=Path.Combine(Store.Root,"aim-before.json");
         if(!File.Exists(path)) throw new InvalidOperationException("no aim backup yet");
-        using(Mutex mutex=new Mutex(false,"Local\\helox-aim-settings")) {
-            bool held=false;try {
-                try {held=mutex.WaitOne(5000);}catch(AbandonedMutexException) {held=true;}
-                if(!held) throw new InvalidOperationException("aim settings busy / retry");
+        Store.Locked(delegate {Locked(delegate {
                 LiveVerify.RequireNoRecovery();
                 Dictionary<string,object> before=Active();
                 Dictionary<string,object> after=Parse(File.ReadAllText(path));Validate(after);
-                Commit(before,after,Write,delegate {Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());});
-            }finally {if(held) mutex.ReleaseMutex();}
-        }
+                CommitDurable(before,after,delegate {Store.Save(Path.Combine(Store.Root,"aim-presets.json"),new Dictionary<string,object>());});return true;
+        });});
     }
     internal static void TestEngine() {
         if(!File.Exists(Path.Combine(Root,"wrapper.dll"))) {Console.WriteLine("  aim engine tests skipped / aim prepare first");return;}

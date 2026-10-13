@@ -94,16 +94,13 @@ internal static partial class Aim {
     private static Dictionary<string,object> CommitSmoothing(Dictionary<string,object> before,Dictionary<string,object> after,string id,Dictionary<string,object> saved,AimPreset controls,bool on,double ms) {
         string preferences=Path.Combine(Store.Root,"aim-presets.json"),backup=Path.Combine(Store.Root,"aim-before.json");
         if(File.Exists(backup)) Validate(Parse(File.ReadAllText(backup)));else Store.Save(backup,before);
-        SavedFiles files=new SavedFiles(new string[]{preferences,Path.Combine(Store.Root,"game-undo.json"),Path.Combine(Store.Root,"undo.json")});Settings windows=Settings.Read();
-        GameRecovery.Begin(windows,before,files);
-        return GamePresets.CommitPair(windows,before,windows,after,delegate(Settings s){s.Apply();},Write,delegate(Dictionary<string,object> live) {
+        return CommitDurable(before,after,delegate {
             if(controls!=null) {
                 controls.Smooth=on;if(on) controls.SmoothMs=ms;
                 // Preserve a valid curve's metadata; unknown imported curves are never reconstructed.
                 saved[id]=controls.ToMap();if(!SameValue(Saved(preferences),saved)) Store.Save(preferences,saved);
             }
-            GameRecovery.Complete();
-        },files.Restore,GameRecovery.Complete);
+        });
     }
     private static AimStatus AdjustSmoothing(Device device,bool on,double? strength,bool tail) {
         AimStatus result=null;

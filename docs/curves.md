@@ -48,4 +48,4 @@ five degrees is a helox limit, not an established permissible level for vanguard
 
 the report covers application error event 1000 and user32 shutdown request event 1074. it does not rule out unlogged popups, .net-runtime-only events, hangs or kernel failures. unmatched timing stays unknown if the shutdown journal is unavailable or its scan is incomplete. timing proximity is not proof of the cause. filenames are reported without full executable paths or account details. no third-party program is removed or disabled.
 
-raw accel profiles normally reset on reboot. `aim resume` reapplies saved choices; opening the terminal does not automatically apply them.
+raw accel profiles normally reset on reboot. `aim resume` reapplies saved choices; opening the terminal does not automatically apply them. 0.20.0 adds optional sign-in restoration through `startup on`; see [operation and recovery](operations.md) for skip conditions and removal.

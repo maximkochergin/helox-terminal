@@ -111,7 +111,7 @@ public static class Analysis {
         return DateTime.TryParseExact(value,"o",CultureInfo.InvariantCulture,DateTimeStyles.RoundtripKind,out parsed) && parsed.Kind!=DateTimeKind.Unspecified;
     }
     internal static bool ValidHistory(RateResult result) {
-        return result!=null && result.Reports>=101 && result.Intervals>=100 && result.Intervals<=result.Reports-1 && result.IdleGaps>=0 &&
+        return result!=null && result.Reports>=101 && result.Intervals>=100 && result.Intervals<=result.Reports-1 && result.IdleGaps>=0 && result.IdleGaps<=result.Reports-1-result.Intervals &&
             Positive(result.ActiveHz) && Positive(result.MedianIntervalMs) && Positive(result.P95IntervalMs) && result.P95IntervalMs>=result.MedianIntervalMs && Timestamp(result.MeasuredUtc) &&
             (!result.P99IntervalMs.HasValue || (Positive(result.P99IntervalMs.Value) && result.P99IntervalMs.Value>=result.P95IntervalMs)) &&
             (!result.MaxGapMs.HasValue || (Finite(result.MaxGapMs.Value) && result.MaxGapMs.Value>=0)) &&
@@ -169,12 +169,14 @@ public static class Analysis {
         return sorted[lo]+(sorted[hi]-sorted[lo])*(index-lo);
     }
     public static RateResult Rate(List<Sample> samples) {
+        if(samples==null) throw new InvalidOperationException("invalid capture timestamps / repeat test");
         List<double> times=new List<double>(); int gaps=0,batched=0; double total=0,maxGap=0,gapDuration=0;
         foreach(Sample sample in samples)
-            if(sample==null || double.IsNaN(sample.Ms) || double.IsInfinity(sample.Ms))
+            if(sample==null || !Finite(sample.Ms) || sample.Ms<0)
                 throw new InvalidOperationException("invalid capture timestamps / repeat test");
         for(int i=1;i<samples.Count;i++) {
             double delta=samples[i].Ms-samples[i-1].Ms;
+            if(!Finite(delta)) throw new InvalidOperationException("invalid capture timestamps / repeat test");
             maxGap=Math.Max(maxGap,delta);
             if(delta>50) {gaps++;gapDuration+=delta;continue;}
             if(delta<0) throw new InvalidOperationException("capture timestamps out of order / repeat test");

@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: version
-      placeholder: "0.5.0 / windows 11"
+      placeholder: "0.20.0 / windows 11 x64"
     validations:
       required: true
   - type: textarea
@@ -20,4 +20,4 @@ body:
     id: diagnostics
     attributes:
       label: diagnostics
-      description: optional error or status output; remove device paths and personal information before posting
+      description: error, health --json or aim doctor --json output; remove device paths and personal information before posting. Include verify-package.ps1 output for extraction problems.

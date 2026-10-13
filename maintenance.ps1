@@ -58,10 +58,11 @@ function Remove-DataTree([string]$Target,[string]$Expected) {
     }
     if (Test-Path -LiteralPath $Target) { throw 'data cleanup incomplete' }
 }
-function Invoke-ResetPreparation([string]$Target,[string]$Expected,[scriptblock]$Validate,[scriptblock]$RestoreWindows,[scriptblock]$RestoreAim,[scriptblock]$Uninstall) {
+function Invoke-ResetPreparation([string]$Target,[string]$Expected,[scriptblock]$Validate,[scriptblock]$RestoreWindows,[scriptblock]$RestoreAim,[scriptblock]$Uninstall,[scriptblock]$StartupOff={}) {
     # Finish nonmutating checks before either restoration or driver removal.
     $null=Test-DataDeleteAccess $Target $Expected
     & $Validate
+    & $StartupOff
     if (Test-Path -LiteralPath (Join-Path $Target 'original.json')) { & $RestoreWindows }
     else { Write-Host 'no original windows backup / current windows settings left unchanged' }
     if (Test-Path -LiteralPath (Join-Path $Target 'aim-before.json')) { & $RestoreAim }
@@ -124,7 +125,7 @@ try {
     if ($ParentId -le 0 -or $ParentId -eq $PID) { throw 'reset requires a closing helox session' }
     $parent=Get-Process -Id $ParentId -ErrorAction SilentlyContinue
     if ($null -ne $parent -and !$parent.WaitForExit(60000)) { throw 'helox did not close / data kept' }
-    if (@(Get-Process -Name helox -ErrorAction SilentlyContinue).Count -gt 0) { throw 'close other helox sessions and retry / data kept' }
+    if (@(Get-Process -Name helox,helox-startup -ErrorAction SilentlyContinue).Count -gt 0) { throw 'close other helox sessions or wait for startup and retry / data kept' }
     $exe=Join-Path $PSScriptRoot 'bin\helox.exe'
     Invoke-ResetPreparation $dataRoot $dataRoot {
         & $exe maintenance-validate
@@ -139,6 +140,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'original aim snapshot could not be restored / data kept' }
     } {
         & (Join-Path $PSScriptRoot 'install-aim.ps1') -Uninstall
+    } {
+        & $exe maintenance-startup-off
+        if ($LASTEXITCODE -ne 0) { throw 'startup could not be disabled / data kept' }
     }
     $gates=@();$held=@()
     try {

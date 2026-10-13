@@ -12,7 +12,15 @@ mouse controls for windows 10/11. a numbered terminal menu, launched from a batc
 
 ![illustration of the helox home menu](docs/assets/terminal.svg)
 
-opening helox leaves settings unchanged. no account, telemetry or background app.
+opening helox leaves settings unchanged. the mouse chosen in the menu is remembered. no account, telemetry or resident background app.
+
+## final release / 0.20.0
+
+this release completes the planned feature work with persistent mouse selection, opt-in saved-aim restoration at sign-in, and interrupted-write recovery for desktop and aim settings. the [full project status in russian](docs/status-0.20.0-ru.md) explains capabilities, checks and remaining physical limits.
+
+after choosing and applying your setup, enable `startup on` once if you want saved aim choices restored after signing in. the one-shot helper checks the mouse, driver, games and pending recovery, then exits. `startup status` reports its registration and last result. [operation and recovery](docs/operations.md).
+
+no further feature releases are planned. changes in windows, drivers or games may still require compatibility or security fixes; this release does not promise permanent compatibility with external software.
 
 ## controls
 
@@ -38,7 +46,7 @@ hardware dpi, configured polling rate and battery are not read automatically. me
 
 basic features use .net framework 4.x. aim tools require 64-bit windows, the raw accel prerequisites, administrator rights for installation and a restart. [installation](docs/manual.md#aim-tools).
 
-after reboot, use `2 tune mouse → 3 driver → 3 resume saved` to restore saved aim choices. if an active built-in curve has lost its saved controls, `2 → 3 → 7 recover saved controls` can recognize it without changing the driver. `preset status` checks which recipe matches the live driver. interrupted preset/filter writes keep a recovery snapshot; close games and use `1 game setup → 5 undo or recover` or `preset recover`.
+after reboot, use `2 tune mouse → 3 driver → 3 resume saved` to restore saved aim choices, or enable optional sign-in restoration with `startup on`. if an active built-in curve has lost its saved controls, `2 → 3 → 7 recover saved controls` can recognize it without changing the driver. `preset status` checks which recipe matches the live driver. interrupted aim/preset writes keep a recovery snapshot; close games and use `1 game setup → 5 undo or recover` or `preset recover`. interrupted desktop writes use `5 saved profiles → 6 recover interrupted change` or `recover`.
 
 known-distance dpi estimation is available through `calibrate <cm>`. the mouse-body shortcut in `3 test mouse → 3 dpi estimate` currently uses verified gxt 929 dimensions only. [measurement details](docs/manual.md#tests-and-recovery).
 
@@ -61,6 +69,9 @@ launch.bat preset preview cs2 steady
 launch.bat preset preview cs2 steady smooth=2 micro=0.95
 launch.bat aim response
 launch.bat aim resume
+launch.bat startup status
+launch.bat startup on
+launch.bat recover
 launch.bat check
 ```
 
@@ -76,7 +87,7 @@ powershell.exe -noprofile -executionpolicy bypass -file .\build.ps1
 powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 ```
 
-the launcher builds if the executable is missing. rebuild after source changes.
+the launcher builds if the executable is missing. rebuild after source changes. release archives include both executables, source, tests, docs, a file manifest and a `.zip.sha256` sidecar. verify a fresh extraction with `powershell.exe -noprofile -executionpolicy bypass -file .\verify-package.ps1`; compare the archive hash with the published release hash for origin verification. rebuilding changes files covered by the manifest. [package checks](docs/operations.md#release-package).
 
 the full tests temporarily change windows preferences and restore them; `check` does not apply settings. `tests\live.ps1` separately verifies actual driver writes, recipe apply/undo and failure recovery with games closed. [verification](docs/verification.md).
 

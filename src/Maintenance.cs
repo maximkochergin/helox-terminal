@@ -78,6 +78,7 @@ internal static class Maintenance {
         });
     }
     internal static void Uninstall() {
+        Startup.SetOff();
         ProcessStartInfo start=Start("install-aim.ps1","-Uninstall");start.UseShellExecute=false;
         using(Process process=Process.Start(start)) {process.WaitForExit();if(process.ExitCode!=0) throw new IOException("driver removal failed / see message above / data kept");}
     }

@@ -23,7 +23,7 @@ public sealed class LiveVerifyReport {
 }
 internal static class LiveVerify {
     internal static readonly string RecoveryPath=Path.Combine(Store.Root,"verify-recovery.json");
-    internal static void RequireNoRecovery() {GameRecovery.RequireNoRecovery();if(File.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");}
+    internal static void RequireNoRecovery() {GameRecovery.RequireNoRecovery();if(File.Exists(RecoveryPath) || Directory.Exists(RecoveryPath)) throw new InvalidOperationException("unfinished live verification snapshot / aim verify restore first");}
     internal static void RequireClosedGames() {
         GameSessionReport session=GameSession.Read();
         if(!session.QuerySucceeded) throw new InvalidOperationException("running games could not be checked / temporary verification stopped");

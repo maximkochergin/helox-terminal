@@ -71,7 +71,8 @@ internal static class Store {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         string temp=path+"."+Guid.NewGuid().ToString("n")+".tmp";
         try {
-            File.WriteAllText(temp,Json.Serialize(value));
+            byte[] bytes=System.Text.Encoding.UTF8.GetBytes(Json.Serialize(value));
+            using(FileStream file=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None)) {file.Write(bytes,0,bytes.Length);file.Flush(true);}
             try {File.Move(temp,path);}
             catch(IOException) {if(!File.Exists(path)) throw;File.Replace(temp,path,null);}
         }finally {if(File.Exists(temp)) File.Delete(temp);}
@@ -124,11 +125,11 @@ internal static class Store {
         }
     }
     internal static void Apply(Settings settings,bool backup) {
-        Locked(delegate {GameRecovery.RequireNoRecovery();settings.Validate();if(backup) Backup();Change(settings);});
+        Locked(delegate {LiveVerify.RequireNoRecovery();settings.Validate();if(backup) Backup();Change(settings);});
     }
     internal static void Update(Action<Settings> edit) {
         Locked(delegate {
-            GameRecovery.RequireNoRecovery();Settings current=Settings.Read();edit(current);current.Validate();Backup();Change(current);
+            LiveVerify.RequireNoRecovery();Settings current=Settings.Read();edit(current);current.Validate();Backup();Change(current);
         });
     }
     internal static void CommitChange(Settings before,Settings after,Action<Settings> apply,Action<Settings> saveUndo) {
@@ -143,12 +144,15 @@ internal static class Store {
         }
     }
     private static void Change(Settings settings) {
-        CommitChange(Settings.Read(),settings,delegate(Settings value) {value.Apply();},
-            delegate(Settings value) {Save(Path.Combine(Root,"undo.json"),value);});
+        Settings before=Settings.Read();if(before.Same(settings)) return;
+        string undo=Path.Combine(Root,"undo.json");SavedFiles files=new SavedFiles(new string[]{undo});
+        WindowsRecovery.Commit(before,settings,delegate(Settings value) {value.Apply();},delegate(Settings value) {Save(undo,value);},
+            delegate {WindowsRecovery.RequireNone();Save(WindowsRecovery.PathName,WindowsRecovery.Snapshot(before,files.Bytes(undo)));},
+            files.Restore,delegate {File.Delete(WindowsRecovery.PathName);});
     }
     internal static void Undo() {
         Locked(delegate {
-            GameRecovery.RequireNoRecovery();
+            LiveVerify.RequireNoRecovery();
             string path=Path.Combine(Root,"undo.json");
             if(!File.Exists(path)) throw new InvalidOperationException("nothing to undo yet");
             Settings previous=Load<Settings>(path);Change(previous);

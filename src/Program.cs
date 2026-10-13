@@ -5,7 +5,7 @@ using System.IO;
 
 namespace Helox {
 internal static partial class Program {
-    internal const string Version="0.19.0";
+    internal const string Version="0.20.0";
     private static string selectedPath;
     private static string commandMousePath;
     private static bool json;
@@ -13,7 +13,7 @@ internal static partial class Program {
         try {
             if(args.Length>0) {
                 string[] words=Arguments(args);
-                if(!(words.Length==1 && (words[0]=="maintenance-validate" || words[0]=="maintenance-restore" || words[0]=="maintenance-aim-restore"))) Maintenance.CheckStartup();
+                if(!(words.Length==1 && (words[0]=="maintenance-validate" || words[0]=="maintenance-restore" || words[0]=="maintenance-aim-restore" || words[0]=="maintenance-startup-off"))) Maintenance.CheckStartup();
                 Run(words);return 0;
             }
             Maintenance.CheckStartup();
@@ -90,11 +90,12 @@ internal static partial class Program {
             case "9":GameMenu();return;
             case "5":
                 Profile(new string[]{"profile","list"});
-                Console.WriteLine("\n  1  save     2  load     3  restore original\n  4  undo last change    5  preview     0  back");
+                Console.WriteLine("\n  1  save     2  load     3  restore original\n  4  undo last change    5  preview\n  6  recover interrupted windows change     0  back");
                 string profile=Ask("choose");
                 if(profile=="0") {Home();return;}
                 if(profile=="3") Run(new string[]{"restore"});
                 else if(profile=="4") Run(new string[]{"undo"});
+                else if(profile=="6") Run(new string[]{"recover"});
                 else if(profile=="1") Profile(new string[]{"profile","save",Ask("profile name / 0 back")});
                 else if(profile=="2" || profile=="5") {
                     List<string> names=Store.Profiles();if(names.Count==0) throw new ArgumentException("no saved profiles yet");
@@ -102,7 +103,7 @@ internal static partial class Program {
                     int saved=Integer(Ask("profile number / 0 back"));if(saved<1 || saved>names.Count) throw new ArgumentException("profile number out of range");
                     Profile(new string[]{"profile",profile=="5" ? "show" : "apply",names[saved-1]});
                 }
-                else throw new ArgumentException("choose 1..5 or 0");
+                else throw new ArgumentException("choose 1..6 or 0");
                 Finish();return;
             case "6":
                 Console.WriteLine("\n  1  choose mouse     2  advanced commands     3  faq\n  4  check driver     5  uninstall driver\n  6  reset all helox data + driver\n  7  shutdown errors  8  health check\n  0  back");
@@ -538,6 +539,7 @@ internal static partial class Program {
         while(true) {ConsoleKey key=Console.ReadKey(true).Key;if(key==ConsoleKey.Enter || key==ConsoleKey.Escape) break;}
     }
     private static void Help() {
+        Console.WriteLine("\n  version [--json]        executable version\n  startup on|off|status|run  one-shot sign-in aim resume / opt in\n  recover                restore interrupted windows change");
         Console.WriteLine("\n  preset preview|apply <game> [style] [personal] [effects]\n  effects: smooth=ms stability=on|off micro=scale recovery=speed snap=degrees\n  directions: left=scale right=scale up=scale down=scale\n  accept-tail: apply only / acknowledge the modeled flick-tail warning\n  measure last           inspect this mouse's last valid delivery test");
         Console.WriteLine("\n  preset list / status / show|preview|apply <name> / undo / recover\n  aim verify             temporary real driver writes + restore\n  aim verify restore     recover an interrupted verification");
         Console.WriteLine("\n  aim controls preview|recover   recover exact recipe controls / no driver write\n  aim flick-tail preview|apply   remove output and legacy lut speed averaging");
@@ -547,7 +549,7 @@ internal static partial class Program {
     }
     private static Device Selected() {
         List<Device> devices=Device.List();
-        string requested=commandMousePath ?? selectedPath;
+        string requested=commandMousePath ?? selectedPath ?? MouseSelection.Read(MouseSelection.PathName);
         if(requested!=null) {
             foreach(Device d in devices) if(String.Equals(d.Path,requested,StringComparison.OrdinalIgnoreCase)) return d;
             throw new InvalidOperationException("selected mouse disconnected; choose mouse again");
@@ -560,6 +562,7 @@ internal static partial class Program {
         if(json) {Console.WriteLine(Store.Json.Serialize(report));return;}
         Console.WriteLine("\n  health / read only / "+report.CheckedUtc+"\n  mouse / "+(device==null ? "not selected" : (device.Product ?? "mouse device").ToLowerInvariant()));
         Console.WriteLine("  backend files / "+(report.Driver!=null && Maintenance.BackendVerified(report.Driver) ? "verified" : "not verified"));
+        PrintStartup(report.Startup);
         Console.WriteLine("  aim / "+report.Aim.State+(report.Aim.State=="ready" ? " / "+(report.Aim.Enabled==true ? "enabled" : "bypassed")+" / "+report.Aim.Mode : ""));
         Console.WriteLine("  mouse stack / "+(report.Stack.RawAccelPresent==true && report.Stack.Started==true && report.Stack.ProblemCode==0 ? "raw accel started" : "not confirmed"));
         PrintSession(report.Session);
@@ -588,7 +591,7 @@ internal static partial class Program {
         if(devices.Count==0) throw new InvalidOperationException("no mice detected");
         for(int i=0;i<devices.Count;i++) Console.WriteLine("  "+(i+1)+"  "+(devices[i].Product ?? "mouse device").ToLowerInvariant()+(devices[i].TrustCandidate ? " / trust" : ""));
         Device chosen=ResolveChoice(devices,Integer(Ask("mouse number / 0 back")),Device.List());
-        selectedPath=chosen.Path;
+        MouseSelection.Save(chosen);selectedPath=chosen.Path;
         Console.WriteLine("  selected / "+(chosen.Product ?? "mouse device").ToLowerInvariant());
     }
     private static void Devices() {
@@ -601,7 +604,8 @@ internal static partial class Program {
         Device d=null;string note=null;try {d=Selected();}catch(Exception e) {note=Error(e);}
         return new {version=Version,receiver=d,receiverStatus=d==null ? "unselected or disconnected" : "enumerated; mouse power and link not confirmed",
             selectionNote=note,windows=Settings.Read(),dossier=MouseDossier.Read(d),hardwareDpi=(int?)null,hardwarePollingHz=(int?)null,batteryPercent=(int?)null,
-            selectedDeviceStack=DeviceStack.Read(d),
+            selectedDeviceStack=DeviceStack.Read(d),startup=Startup.Status(),
+            recovery=new {windows=WindowsRecovery.Pending,aim=GameRecovery.Pending,verification=File.Exists(LiveVerify.RecoveryPath) || Directory.Exists(LiveVerify.RecoveryPath)},
             hardwareControl="unsupported: no verified vendor protocol",gameAcceleration=Aim.Read(d),
             lastDpi=Last<DpiResult>("dpi.json",d),lastRate=Last<RateResult>("rate.json",d)};
     }
@@ -621,6 +625,7 @@ internal static partial class Program {
         Settings s=Settings.Read();
         Console.WriteLine("  windows   speed "+s.Speed+"/20 / accel "+(s.Acceleration==0 ? "off" : "on")+" / desktop");
         if(GameRecovery.Pending) Console.WriteLine("  recovery  game preset interrupted / game setup > 5");
+        if(WindowsRecovery.Pending) Console.WriteLine("  recovery  windows change interrupted / saved profiles > 6");
         AimStatus aim=Aim.Read(d);
         Console.WriteLine(aim.State=="ready" ? "  aim       "+(aim.Mode=="lut" ? "custom curve" : aim.Mode=="noaccel" ? "linear" : "acceleration")+" / "+(aim.Enabled==true ? "enabled" : "bypassed")+" / smooth "+(aim.OutputHalfLifeMs>0 ? F(aim.OutputHalfLifeMs.Value)+" ms" : "off") : "  aim       "+aim.State+" / tune mouse > driver");
         DpiResult dpi=Last<DpiResult>("dpi.json",d);RateResult rate=Last<RateResult>("rate.json",d);
@@ -645,6 +650,7 @@ internal static partial class Program {
         }
         Settings settings=Settings.Read();
         PrintAim(Aim.Read(device));
+        PrintStartup(Startup.Status());
         PrintStack(DeviceStack.Read(device));
         Console.WriteLine("\n  windows / live\n  wheel           "+(settings.WheelLines==-1 ? "page" : settings.WheelLines+" lines")+" / doubleclick "+settings.DoubleClickMs+" ms\n  buttons         "+(settings.SwapButtons==0 ? "normal" : "swapped"));
         DpiResult lastDpi=Last<DpiResult>("dpi.json",device);RateResult lastRate=Last<RateResult>("rate.json",device);
@@ -778,7 +784,7 @@ internal static partial class Program {
         else throw new ArgumentException("use profile save|show|apply <name> or profile list");
     }
     private static void Faq() {
-        Console.WriteLine("\n  game acceleration?\n  2 tune mouse > 3 driver / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n  2 > 1 > 1 curve builder / preview first, then apply.\n\n  mouse jerks?\n  3 > 2 test hz / gaps. 2 > 1 > 4 stability averages acceleration changes.\n  2 > 2 output smoothing averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off, including snap.\n\n  shutdown popup?\n  6 > 7 or aim events / inspect application crashes and timing.\n\n  undo settings?\n  2 > 3 > 4 undo aim restores previous driver settings for all devices.\n  5 > 4 undoes the last windows change; 5 > 3 restores original.\n  aim resets on reboot; 2 > 3 > 3 resume saved restores your preset.\n\n  home / return to menu");
+        Console.WriteLine("\n  game acceleration?\n  2 tune mouse > 3 driver / install signed raw accel driver / restart once.\n  precision: slow corrections 1x / choose fast-motion limit 1.2, 1.4 or 1.6x.\n  2 > 1 > 1 curve builder / preview first, then apply.\n\n  mouse jerks?\n  3 > 2 test hz / gaps. 2 > 1 > 4 stability averages acceleration changes.\n  2 > 2 output smoothing averages movement magnitude, adding lag.\n  for wireless gaps: receiver close to mouse, away from usb 3 hubs.\n\n  dpi / hz show ?\n  hardware values cannot be read yet. use the physical dpi button.\n  dpi estimate requires aim filters off, including snap.\n\n  shutdown popup?\n  6 > 7 or aim events / inspect application crashes and timing.\n\n  undo settings?\n  2 > 3 > 4 restores the original aim snapshot for all devices.\n  5 > 4 undoes the last windows change; 5 > 3 restores original.\n  interrupted windows change / 5 > 6 or recover.\n  aim resets on reboot; 2 > 3 > 3 resumes saved settings.\n  2 > 3 > 8 enables one hidden sign-in resume; no resident app.\n\n  home / return to menu");
     }
     private static void Run(string[] words) {
         if(words[0]=="cleanup") {
@@ -788,6 +794,10 @@ internal static partial class Program {
         if(json && (words[0]=="help" || words[0]=="faq" || words[0]=="home" || words[0]=="clear" || words[0]=="selftest" || words[0]=="check"))
             throw new ArgumentException("json is not supported for this command");
         switch(words[0].ToLowerInvariant()) {
+            case "version":if(words.Length!=1) break;if(json) Console.WriteLine(Store.Json.Serialize(new {version=Version}));else Console.WriteLine(Version);return;
+            case "startup":StartupCommand(words);return;
+            case "recover":if(words.Length!=1) break;WindowsRecovery.Restore();if(json) Console.WriteLine(Store.Json.Serialize(new {restored=true,readback=Settings.Read()}));else Console.WriteLine("  interrupted windows change recovered / settings + undo verified");return;
+            case "maintenance-startup-off":if(words.Length!=1) break;Startup.SetOff();Console.WriteLine("  startup disabled");return;
             case "maintenance-validate":if(words.Length!=1) break;Maintenance.ValidateReset();Console.WriteLine("  reset backups validated / no settings changed");return;
             case "maintenance-restore":if(words.Length!=1) break;Run(new string[]{"restore"});return;
             case "maintenance-aim-restore":
@@ -840,7 +850,7 @@ internal static partial class Program {
                 }return;
             case "help":if(words.Length!=1) break;Help();return;
             case "home":case "clear":if(words.Length!=1 || json) break;Home();return;
-            case "selftest":if(words.Length!=1) break;GameRecovery.RequireNoRecovery();SelfTest.Run();return;
+            case "selftest":if(words.Length!=1) break;LiveVerify.RequireNoRecovery();SelfTest.Run();return;
             case "check":if(words.Length!=1) break;SelfTest.Run(false);return;
         }throw new ArgumentException("unknown choice / type home or help");
     }

@@ -1,5 +1,36 @@
 # verification
 
+## final operation and recovery / 0.20.0
+
+the final checks distinguish pure managed regressions, native-engine calculations, interactive Windows preference tests, real driver integration and release-delivery fixtures. a successful configuration readback does not establish physical sensor accuracy, game camera behavior or anticheat acceptance.
+
+local release checks on 2026-10-13:
+
+| check | result and scope |
+| --- | --- |
+| `tests/run.ps1` | passed: official native engine, Windows preference mutation/readback/restoration, managed checks, command/menu/profile/undo contracts and script/launcher/package fixtures |
+| `tests/final-live.ps1` | passed: forced exit during a desktop write recovered; ten startup cases; complete pre-test driver, Windows, saved-file and owned HKCU Run state restored |
+| expanded `tests/live.ps1` | passed: 13 real driver cases, 21 recipe apply/undo cycles, independent smoothing/tail repair/control recovery, stale-preview refusal, persistence/forced-exit recovery and malformed-controls escape hatches |
+| inherited PowerShell 7 module-path case | skipped: `pwsh.exe` unavailable; the conditional test did not reproduce this environment locally |
+| actual Windows restart/sign-in | not performed; hidden-helper execution and simulated cold driver state were tested separately |
+| physical sensor/game comparison | not performed; `GameInputVerified` remains null |
+
+the ten startup cases include failed `startup off` with a read-only file and registration rollback, hidden already-matching execution, factory-default driver restoration, captured DPI 1600/1000 Hz constant calculation timing retention, latest saved snapping, and skips for bypass/external state, pending recovery, a disconnected mouse and disabled registration. DPI and Hz here are software calculation parameters, not hardware readings. `DesktopForcedExitRecovered` and `FullStateRestored` were true; `ActualWindowsSignInTested` was false.
+
+expanded live integration also verified idempotent reapply, preference-only undo, generic precision/bypass/original-restore hard exits, mutation guards, byte-exact recovery of malformed saved controls and refusal of corrupt undo. `GenericControlForcedExitRecovered`, `MalformedControlsEscapeHatches`, `BlockingActivationVerified` and the other recovery checks passed. synchronous native activation took 1007 ms in this run, with immediate full readback verified; this is a configuration-write delay, not input latency. the success summary was emitted after restoring the complete original driver/Windows state and saved-file bytes. the passive capture contained zero motion reports. no physical sensor improvement or game input was verified; `GameInputVerified` remained null.
+
+new managed regressions cover interrupted desktop writes and prior undo restoration, checkpoint retention on failed recovery, persistent mouse-selection validation, conservative startup policy, opaque byte-exact aim recovery and malformed raw-input captures/history. legacy version-1 game checkpoints remain strictly validated; version 2 permits damaged saved controls to be restored as exact bounded bytes without interpreting them. complete driver/windows snapshots remain validated in both formats.
+
+delivery fixtures check both executable outputs, retained binaries on compilation/replacement failure, concurrent build exclusion, hidden helper GUI subsystem, launcher paths/arguments/exit codes, package version consistency, the zip/hash pair, file manifests and extraction tampering. backend fixtures check pinned offline preparation, locked file reuse/refusal, upstream-settings retention and junction refusal. real driver removal and user-data purge are not performed by these fixtures.
+
+`tests/commands.ps1` provides hosted-safe read-only contracts for version, status, health, startup registration/recovery fields and malformed-command refusal. it compares live Windows and aim state before/after without settings writes, registry writes or driver installation. `tests/final-live.ps1` is a separate local test with games closed; it temporarily writes driver state, Windows preferences and the project's HKCU Run value, then restores them. it is excluded from hosted CI.
+
+startup integration distinguishes already-matched no-op, factory-default driver restoration and refusal to overwrite a custom/global/peer/bypassed configuration. manually executing the helper or simulating factory defaults is not an actual Windows restart/sign-in test. the helper runs once and has no retry loop. check its last result after the first actual sign-in.
+
+safe-game checks cover detected supported process names only. they do not verify unknown games or eliminate a game-start race after the query. bypass is live state rather than saved resume metadata: an enabled startup helper can restore the enabled saved profile after a cold driver reset. disable startup before bypassing when that disabled effect state should persist across sign-ins.
+
+the inherited PowerShell 7 module-path regression is conditional on `pwsh.exe`; an unavailable PowerShell 7 installation is a skip, not a passing reproduction. older sections below refer to the named historical versions.
+
 ## flexible game effects and input history / 0.19.0
 
 pure regressions cover every effect override, immutable drafts, honest recipe descriptions, repeatable CLI arguments, duplicate/invalid options, disabled micro-strength retention, history scoping and freshness, and successful/failed running-game queries. native-engine regressions exercise combined smoothing, stability, damping, snapping and direction scales at 1/2/4/8 ms output half-lives; processing remains valid and the strong-smoothing tail is reported separately.
@@ -141,7 +172,7 @@ these are calculation and regression checks. no new filter is activated on the u
 7. power the mouse off while leaving the receiver attached. status may still enumerate the receiver; a capture without motion should fail without saving a result.
 8. select the trust device and disconnect its receiver. measurements must report the missing selected device, without switching to the touchpad.
 9. in the legacy console, click/drag during a test. capture should keep running; the original quick-edit mode should return afterward.
-10. run menu item 4. use a fingertip beside the mouse nose, slide forward until the rear edge reaches it, and repeat three times. confirm the displayed value is labeled as an estimate with pass spread. escape must cancel without overwriting history.
+10. open `3 test mouse > 3 dpi estimate` on the gxt 929. use a fingertip beside the mouse nose, slide forward until the rear edge reaches it, and repeat three times. confirm the displayed value is labeled as an estimate with pass spread. escape must cancel without overwriting history. other mice use `calibrate <cm>` with a known distance.
 11. compare status for the trust receiver and another selected mouse. only matching hid collections should appear; trust model facts should not be attached to an unrelated device.
 
 physical movement and distance calibration are not covered by the automated tests.

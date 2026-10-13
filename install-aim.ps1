@@ -1,21 +1,44 @@
-param([switch]$PrepareOnly,[switch]$Uninstall)
+param([switch]$PrepareOnly,[switch]$Uninstall,[switch]$FunctionsOnly)
 $ErrorActionPreference = 'Stop'
 # Prefer this host's built-ins when a parent passes PowerShell 7 module paths.
 if ($PSVersionTable.PSEdition -eq 'Desktop') {
     $env:PSModulePath=(Join-Path $PSHOME 'Modules')+[IO.Path]::PathSeparator+$env:PSModulePath
 }
+function Assert-BackendPath([string]$Target,[string]$Allowed) {
+    $full=[IO.Path]::GetFullPath($Target).TrimEnd('\')
+    $boundary=[IO.Path]::GetFullPath($Allowed).TrimEnd('\')
+    if (![string]::Equals($full,$boundary,[StringComparison]::OrdinalIgnoreCase) -and !$full.StartsWith($boundary+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'backend path escaped data folder / setup stopped' }
+    $path=$full
+    while (![string]::Equals($path,$boundary,[StringComparison]::OrdinalIgnoreCase)) {
+        if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'linked backend path / setup stopped' }
+        $path=Split-Path $path -Parent
+    }
+    if ((Test-Path -LiteralPath $boundary) -and ((Get-Item -LiteralPath $boundary -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'linked backend data folder / setup stopped' }
+}
+function Get-BackendFiles([string]$Target,[string]$Allowed) {
+    Assert-BackendPath $Target $Allowed
+    $pending=New-Object 'Collections.Generic.Stack[string]';$pending.Push($Target)
+    while ($pending.Count -gt 0) {
+        $entry=Get-Item -LiteralPath $pending.Pop() -Force
+        Assert-BackendPath $entry.FullName $Allowed
+        if ($entry.PSIsContainer) { foreach ($child in Get-ChildItem -LiteralPath $entry.FullName -Force) { $pending.Push($child.FullName) } }
+        else { $entry }
+    }
+}
+if ($FunctionsOnly) { return }
+if ($PrepareOnly -and $Uninstall) { throw 'choose prepare or uninstall' }
 $release = 'https://github.com/RawAccelOfficial/rawaccel/releases/download/v1.7.1/RawAccel_v1.7.1.zip'
 $expected = '770FE3AE0919CA3C4D412F58C985EB27F5434DECAD809F7E8206DE4E8852EEC4'
 $root = Join-Path $env:LOCALAPPDATA 'helox-terminal\rawaccel-1.7.1'
 $archive = Join-Path $root 'official.zip'
-New-Item -ItemType Directory -Force -Path $root | Out-Null
 $gate = New-Object Threading.Mutex($false, 'Local\helox-aim-installer')
 $held = $false
 $aimGate=$null;$aimHeld=$false
 try {
-if ($PrepareOnly -and $Uninstall) { throw 'choose prepare or uninstall' }
 try { $held = $gate.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
 if (!$held) { throw 'another aim setup is running; close it and retry' }
+Assert-BackendPath $archive $env:LOCALAPPDATA
+New-Item -ItemType Directory -Force -Path $root | Out-Null
 if ($Uninstall) {
     $aimGate=New-Object Threading.Mutex($false,'Local\helox-aim-settings')
     try { $aimHeld=$aimGate.WaitOne(0) } catch [Threading.AbandonedMutexException] { $aimHeld=$true }
@@ -45,15 +68,19 @@ if (!(Test-Path -LiteralPath $archive) -or (Get-FileHash -LiteralPath $archive -
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $download = Join-Path $root ([guid]::NewGuid().ToString('n') + '.tmp')
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri $release -OutFile $download
+        Invoke-WebRequest -UseBasicParsing -Uri $release -OutFile $download -TimeoutSec 60
         if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expected) { throw 'official package hash mismatch; retry setup' }
-        Move-Item -LiteralPath $download -Destination $archive -Force
+        if (Test-Path -LiteralPath $archive) { [IO.File]::Replace($download,$archive,[NullString]::Value) }
+        else { [IO.File]::Move($download,$archive) }
     } finally { if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download } }
 }
 $stage = Join-Path $root ([guid]::NewGuid().ToString('n') + '.stage')
 try {
     Expand-Archive -LiteralPath $archive -DestinationPath $stage
-    foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse) {
+    $files=@(Get-BackendFiles $stage $root)
+    # Validate every destination before repairing any cached backend file.
+    foreach ($file in $files) { Assert-BackendPath (Join-Path $root $file.FullName.Substring($stage.Length+1)) $env:LOCALAPPDATA }
+    foreach ($file in $files) {
         $relative = $file.FullName.Substring($stage.Length + 1)
         $destination = Join-Path $root $relative
         # Loaded assemblies are locked by the open cli. Verified equal files need no replacement.
@@ -66,7 +93,10 @@ try {
     $resolvedStage = [IO.Path]::GetFullPath($stage)
     $allowedRoot = [IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
     if (!$resolvedStage.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'invalid extraction cleanup path' }
-    if (Test-Path -LiteralPath $resolvedStage) { Remove-Item -LiteralPath $resolvedStage -Recurse -Force }
+    if (Test-Path -LiteralPath $resolvedStage) {
+        $null=@(Get-BackendFiles $resolvedStage $root)
+        Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+    }
 }
 $backend = Join-Path $root 'RawAccel'
 $driver = Join-Path $backend 'driver\rawaccel.sys'
@@ -99,7 +129,7 @@ if ($Uninstall) {
     Write-Host 'driver removed / restart windows to unload it and finish pending file deletion'
     return
 }
-if ($PrepareOnly) { Write-Host 'prepared / driver not installed'; exit 0 }
+if ($PrepareOnly) { Write-Host 'prepared / driver not installed'; return }
 $installer = Join-Path $backend 'installer.exe'
 # The official installer requires UAC and a final keypress; its window is intentional.
 $process = Start-Process -FilePath $installer -WorkingDirectory $backend -Verb RunAs -PassThru -Wait

@@ -8,9 +8,9 @@ internal static class GameRecovery {
     internal static readonly string PathName=Path.Combine(Store.Root,"game-recovery.json");
     internal static readonly string[] FileNames={"aim-presets.json","game-undo.json","undo.json"};
     internal static bool Pending {get {return File.Exists(PathName) || Directory.Exists(PathName);}}
-    internal static void RequireNoRecovery() {if(Pending) throw new InvalidOperationException("unfinished game preset / preset recover first");}
-    internal static Dictionary<string,object> Snapshot(Settings windows,Dictionary<string,object> aim,Dictionary<string,object> files) {
-        Dictionary<string,object> snapshot=new Dictionary<string,object>{{"version",1},{"windows",windows},{"aim",aim},{"files",files}};
+    internal static void RequireNoRecovery() {WindowsRecovery.RequireNone();if(Pending) throw new InvalidOperationException("unfinished game preset / preset recover first");}
+    internal static Dictionary<string,object> Snapshot(Settings windows,Dictionary<string,object> aim,Dictionary<string,object> files,bool opaqueFiles=false) {
+        Dictionary<string,object> snapshot=new Dictionary<string,object>{{"version",opaqueFiles ? 2 : 1},{"windows",windows},{"aim",aim},{"files",files}};
         // Validate the actual serialized shape, including all saved recovery bytes, before mutation.
         return Read(Aim.Parse(Store.Json.Serialize(snapshot)));
     }
@@ -18,13 +18,13 @@ internal static class GameRecovery {
         string[] fields={"version","windows","aim","files"};
         if(snapshot==null || snapshot.Count!=fields.Length) throw new ArgumentException("invalid game recovery snapshot");
         foreach(string key in fields) if(!snapshot.ContainsKey(key)) throw new ArgumentException("invalid game recovery snapshot");
-        if(!(snapshot["version"] is int) || (int)snapshot["version"]!=1) throw new ArgumentException("unsupported game recovery snapshot");
+        if(!(snapshot["version"] is int) || ((int)snapshot["version"]!=1 && (int)snapshot["version"]!=2)) throw new ArgumentException("unsupported game recovery snapshot");
         GamePresets.ReadWindows(snapshot["windows"]);AimConfigGuard.Check(Aim.Map(snapshot["aim"]));
         Dictionary<string,object> files=Aim.Map(snapshot["files"]);
         if(files==null || files.Count!=FileNames.Length) throw new ArgumentException("invalid game recovery files");
         foreach(string name in FileNames) {
             if(!files.ContainsKey(name)) throw new ArgumentException("invalid game recovery files");
-            byte[] bytes=GamePresets.Decode(files[name]);if(bytes==null) continue;
+            byte[] bytes=GamePresets.Decode(files[name]);if(bytes==null || (int)snapshot["version"]==2) continue;
             Dictionary<string,object> json=Aim.Parse(new UTF8Encoding(false,true).GetString(bytes).TrimStart('\uFEFF'));
             if(name=="aim-presets.json") Aim.ValidateSaved(json);
             else if(name=="game-undo.json") GamePresets.ValidateUndo(json);
@@ -32,10 +32,13 @@ internal static class GameRecovery {
         }
         return snapshot;
     }
-    internal static void Begin(Settings windows,Dictionary<string,object> aim,SavedFiles saved) {
+    internal static void Begin(Settings windows,Dictionary<string,object> aim,SavedFiles saved,bool opaqueFiles=false) {
         RequireNoRecovery();Dictionary<string,object> files=new Dictionary<string,object>();
         foreach(string name in FileNames) {byte[] bytes=saved.Bytes(Path.Combine(Store.Root,name));files.Add(name,bytes==null ? null : Convert.ToBase64String(bytes));}
-        Store.Save(PathName,Snapshot(windows,aim,files));
+        // A control reset/bypass must still work when saved preferences are broken.
+        // Version 2 retains those exact bytes without interpreting them as settings;
+        // the live driver/Windows snapshots and fixed file paths remain validated.
+        Store.Save(PathName,Snapshot(windows,aim,files,opaqueFiles));
     }
     internal static void Complete() {File.Delete(PathName);}
     internal static void Recover(Dictionary<string,object> snapshot,Action<Dictionary<string,object>> driver,Action<Settings> windows,Action<Dictionary<string,object>> files,Action complete) {

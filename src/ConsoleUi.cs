@@ -33,13 +33,30 @@ internal static partial class Program {
         Browse("tune mouse / driver effects","  1  acceleration     curve and fast-turn response\n  2  motion filters   smoothing, snapping and damping\n  3  driver           install, restore and bypass\n  4  current setup    full live readback",delegate(string c) {
             if(c=="1") Browse("acceleration / slow sensitivity stays 1x","  1  curve builder\n  2  simple acceleration\n  3  acceleration off\n  4  gain stability on\n  5  gain stability off\n  6  tracking starting point",delegate(string n) {AimAction(MapChoice(n,new string[]{"15","1","2","11","12","13"}));});
             else if(c=="2") Browse("motion filters / optional / preview where offered","  1  output smoothing on\n  2  output smoothing off\n  3  angle snapping\n  4  direction scales\n  5  micro damping\n  6  remove flick tail",delegate(string n) {AimAction(MapChoice(n,new string[]{"3","4","16","18","19","22"}));});
-            else if(c=="3") Browse("driver / selected mouse","  1  install driver\n  2  check driver\n  3  resume saved settings\n  4  undo last aim change\n  5  bypass or enable effects\n  6  uninstall shared driver\n  7  recover saved controls",delegate(string n) {AimAction(MapChoice(n,new string[]{"5","9","8","6","20","10","23"}));});
+            else if(c=="3") Browse("driver / selected mouse","  1  install driver\n  2  check driver\n  3  resume saved settings\n  4  restore original aim snapshot\n  5  bypass or enable effects\n  6  uninstall shared driver\n  7  recover saved controls\n  8  automatic sign-in resume",delegate(string n) {if(n=="8") {StartupMenu();return;}AimAction(MapChoice(n,new string[]{"5","9","8","6","20","10","23"}));});
             else if(c=="4") {PrintAim(Aim.Read(OptionalSelected()));Finish();}
             else throw new ArgumentException("choose 1..4 or 0");
         });
     }
     private static string MapChoice(string choice,string[] values) {
         int number=Integer(choice);if(number<1 || number>values.Length) throw new ArgumentException("choose 1.."+values.Length+" or 0");return values[number-1];
+    }
+    private static void PrintStartup(StartupReport report) {
+        Console.WriteLine("  startup / "+report.Note);
+        if(report.LastRun!=null && report.LastRun.ContainsKey("note")) Console.WriteLine("  last sign-in check / "+report.LastRun["note"]);
+    }
+    private static void StartupCommand(string[] words) {
+        if(words.Length!=2 || (words[1]!="on" && words[1]!="off" && words[1]!="status" && words[1]!="run")) throw new ArgumentException("use startup on|off|status|run");
+        if(words[1]=="on") Startup.SetOn(Selected());
+        else if(words[1]=="off") Startup.SetOff();
+        else if(words[1]=="run") {Dictionary<string,object> result=Startup.Run();if(json) Console.WriteLine(Store.Json.Serialize(result));else Console.WriteLine("  startup check / "+result["state"]+" / "+result["note"]);return;}
+        StartupReport report=Startup.Status();if(json) Console.WriteLine(Store.Json.Serialize(report));else PrintStartup(report);
+    }
+    private static void StartupMenu() {
+        PrintStartup(Startup.Status());
+        Console.WriteLine("  restores saved controls for this mouse at sign-in only\n  cold driver only / keeps external settings\n  skips detected supported games / process names only\n  to keep effects off after reboot: startup off + bypass on\n  keep this extracted release in a permanent folder\n  1 enable    2 disable    3 check now    0 back");
+        string choice=Ask("choose");if(choice!="1" && choice!="2" && choice!="3") throw new ArgumentException("choose 1..3 or 0");
+        StartupCommand(new string[]{"startup",choice=="1" ? "on" : choice=="2" ? "off" : "run"});Finish();
     }
     private static void TestMenu() {
         Browse("test mouse / choose what to check","  1  health overview\n  2  hz and input gaps\n  3  dpi estimate\n  4  current response model\n  5  live driver verification\n  6  shutdown errors\n  7  last input test",delegate(string c) {

@@ -7,7 +7,7 @@ mouse controls for windows, with lowercase text, a numbered menu and a batch lau
 download the zip from [releases](https://github.com/maximkochergin/helox-terminal/releases), extract it and run `launch.bat`.
 
 ```text
-  helox / 0.19.0
+  helox / 0.20.0
   ----------------------------------------
   mouse     selected mouse
   windows   speed 10/20 / accel on / desktop
@@ -24,7 +24,7 @@ download the zip from [releases](https://github.com/maximkochergin/helox-termina
 
 type a number and press enter. empty answers, `0` or `back` cancel a prompt. result screens return to the menu with enter or escape. launching alone never changes settings.
 
-`6` > `1` lists mice starting at `1`; `0` goes back. the advanced `devices` / `select <index>` commands use zero-based indices. saving or applying settings keeps the confirmation visible until enter or escape. aim tools remain accessible without a selected mouse for installation and undo; enabling effects still requires a connected selection.
+`6` > `1` lists mice starting at `1`; `0` goes back. choosing a mouse here persists its raw-input path for later launches; a disconnected saved selection is reported rather than replaced. the advanced `devices` / `select <index>` commands use zero-based indices; `select` changes only the current process. saving or applying settings keeps the confirmation visible until enter or escape. aim tools remain accessible without a selected mouse for installation and undo; enabling effects still requires a connected selection.
 
 a sole connected raw-input mouse is selected automatically, regardless of brand. with multiple mice, the existing single trust candidate keeps priority; otherwise choose explicitly in `6 > 1`. an explicitly selected mouse is not silently replaced after disconnection.
 
@@ -58,7 +58,9 @@ settings target the selected hardware id. identical receivers with the same id s
 
 effect switches retain the selected device's existing dpi normalization and timing parameters, including settings inherited from the driver's defaults. off keeps a bypassed device bypassed; on, tracking and resume explicitly enable it. bypassed status labels the displayed values as configured only. readback and response use the kernel's exact hardware-id match. repeating an already restored undo clears saved choices without another activation or filter reset.
 
-driver settings reset on reboot: use `2 tune mouse > 3 driver > 3 resume saved settings` or `aim resume` to reapply the last choices for this mouse. if saved choices are missing while the curve is still active, try `aim controls preview` for exact recipe recovery; otherwise explicitly apply a curve or game setup. no background process or startup task is added. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
+driver settings reset on reboot: use `2 tune mouse > 3 driver > 3 resume saved settings` or `aim resume` to reapply the last choices for this mouse. optional sign-in restoration is available through `startup on`, described in [operation and recovery](operations.md). opening the normal terminal still applies nothing. if saved choices are missing while the curve is still active, try `aim controls preview` for exact recipe recovery; otherwise explicitly apply a curve or game setup. desktop movement also passes through this driver; windows acceleration can additionally affect the desktop. raw input games use the driver-transformed counts. dpi estimation is blocked when a detected raw accel filter transforms counts, including its input speed cap, or when an installed raw accel driver cannot be inspected. an unavailable filter state is unknown rather than silently treated as off.
+
+automatic resume skips detected supported games by process name: Valorant, CS2 and Kovaak's. other games and a game starting after the query are not verified. bypass is temporary live state, separate from saved controls. with startup enabled, a reboot/cold driver can restore the enabled saved profile even if effects were bypassed before reboot. for effects to remain disabled across sign-ins, run `startup off` followed by `aim bypass on`.
 
 the optional installer downloads [raw accel 1.7.1 from its official release](https://github.com/RawAccelOfficial/rawaccel/releases/tag/v1.7.1), checks a pinned sha256 and the driver signature. no third-party binaries are bundled. `aim prepare` downloads and verifies without installing. [mechanics, research and verification](aim.md).
 
@@ -93,7 +95,7 @@ hardware dpi/polling writes, current sensor dpi, configured polling, battery and
 
 `3 test mouse > 7 last input test` or `measure last` opens the selected mouse's validated saved delivery test without capturing input or changing settings. it labels older/future history and shows missing legacy fields as `unavailable`. delivery intervals, pauses and batching are separate from sensor spinout and game latency. `health` and `preset status` also show detected supported game processes; a running process does not verify mouse response inside that game.
 
-`3` captures 10 seconds of continuous mouse movement. reported hz uses average active report delivery, which avoids enormous median-based values caused by queued batches. p95/p99 intervals, slow intervals, long gaps and maximum gap expose uneven delivery. long gaps are excluded from active hz but remain visible; a pause cannot be distinguished from a wireless interruption. this is an input measurement, not configured usb polling or click latency.
+`3 test mouse > 2 hz and input gaps` captures 10 seconds of continuous mouse movement. reported hz uses average active report delivery, which avoids enormous median-based values caused by queued batches. p95/p99 intervals, slow intervals, long gaps and maximum gap expose uneven delivery. long gaps are excluded from active hz but remain visible; a pause cannot be distinguished from a wireless interruption. this is an input measurement, not configured usb polling or click latency.
 
 for wireless stutters, repeat the capture without stopping and compare with the receiver close to the mouse, away from active usb 3 devices/cables. [intel's measurements](https://www.benq.com/content/dam/newb2b/Support/FAQ/intel_white%20paper_usb3%20interference.pdf) document 2.4 ghz interference and receiver placement effects. smoothing cannot recreate missing packets or raise hardware polling rate.
 
@@ -103,15 +105,15 @@ comparison also includes p99, gap-time share, and slow-interval share when both 
 
 the test also shows delivery frequency including long gaps and the percentage of the sampled span spent in gaps over 50 ms. this span starts at the first motion report and ends at the last; time before/after movement is excluded. a pause and interrupted wireless delivery remain indistinguishable. slow intervals use a displayed heuristic threshold of `max(1.75 * median, median + 0.25 ms)`, so a 16 ms interval among 8 ms reports is now detected. this is a timing outlier count, not proof of lost hardware packets. json adds `SpanMs`, `GapDurationMs`, `DeliveredHz`, `GapPercent`, and `SlowThresholdMs`; older history leaves them null.
 
-`4` checks approximate dpi without a ruler or pad marks. keep a fingertip beside the front edge of the mouse, then slide the mouse forward until the rear edge reaches that same stationary fingertip. this gives one mouse-body length of travel. press enter to start and finish each pass. do not rotate, lift or return during a pass. repeat three times; the app uses their median and rejects a spread above 15 percent. the gxt 929 body length is 125 mm according to the manufacturer. repeatability is not absolute accuracy: hand alignment and actual travel still matter.
+`3 test mouse > 3 dpi estimate` checks approximate dpi without a ruler or pad marks. this mouse-body shortcut requires the verified gxt 929 dimensions; other mice can use `calibrate <cm>` with a known distance. keep a fingertip beside the front edge of the mouse, then slide the mouse forward until the rear edge reaches that same stationary fingertip. this gives one mouse-body length of travel. press enter to start and finish each pass. do not rotate, lift or return during a pass. repeat three times; the app uses their median and rejects a spread above 15 percent. the gxt 929 body length is 125 mm according to the manufacturer. repeatability is not absolute accuracy: hand alignment and actual travel still matter.
 
 this is an estimate of delivered raw counts per inch, not a sensor setting read. an external input filter can change those counts. exact automatic dpi cannot be derived from counts alone when the device provides no physical scale or readable setting. the connected mouse's x/y hid descriptors have no distance units or physical range. known-distance calibration remains available as `calibrate <cm>`; comma and dot decimal separators work.
 
 raw accel filter state is checked before and after each dpi pass, including after waiting to start. an active or unreadable filter aborts without saving a new estimate. these boundary checks do not monitor third-party changes throughout a stroke; keep filter settings unchanged during measurement.
 
-`7` shows the detailed dossier. receiver identity, driver metadata and hid values are read locally; model dimensions/range/stage count come from [trust's product specifications](https://www.trust.com/en/product/25307-gxt-929-helox-ultra-lightweight-wireless-gaming-mouse). driver-declared button count and sample rate are labeled separately from physical controls and measured frequency. stored test results include timestamps in detailed status; unknown battery, current dpi, configured hz and mouse power stay unknown.
+`status` shows the detailed dossier. receiver identity, driver metadata and hid values are read locally; model dimensions/range/stage count come from [trust's product specifications](https://www.trust.com/en/product/25307-gxt-929-helox-ultra-lightweight-wireless-gaming-mouse). driver-declared button count and sample rate are labeled separately from physical controls and measured frequency. stored test results include timestamps in detailed status; unknown battery, current dpi, configured hz and mouse power stay unknown.
 
-`5` saves/loads windows profiles or restores the original snapshot. data stays in `%localappdata%\helox-terminal`. history is labeled as history, never current hardware values. there is no telemetry.
+`5 saved profiles` saves/loads windows profiles or restores the original snapshot. data stays in `%localappdata%\helox-terminal`. history is labeled as history, never current hardware values. there is no telemetry.
 
 saved profiles are selected by number when loading.
 
@@ -120,6 +122,10 @@ saved profiles are selected by number when loading.
 `5` > `5` or `profile show <name>` shows only settings that would change, as `current -> saved`. identical profiles show `already matches / no changes`. acceleration modes, both thresholds, page scrolling and swapped buttons are included. this reads current preferences without applying the profile; another app can still change them after the preview. `--json` continues to export the complete saved snapshot. saving profiles shares the settings lock so another helox instance cannot write halfway through the snapshot.
 
 profiles must contain a complete, valid settings snapshot. a damaged original backup blocks new changes so recovery is not silently lost. simultaneous cli instances serialize settings changes and read current values after acquiring the lock.
+
+desktop changes now save `windows-recovery.json` before writing preferences. if the process exits between writes, `recover` or `5 saved profiles > 6 recover interrupted change` restores the saved windows state and previous undo. pending recovery blocks further settings changes; the checkpoint is removed only after successful restoration. aim and preset checkpoints use `preset recover`, and live-verification checkpoints use `aim verify restore`. these checkpoints support process-interruption recovery; disk failure or power loss can still prevent durable storage. [operation and recovery](operations.md).
+
+`2 tune mouse > 3 driver > 4 restore original aim snapshot` restores the complete original driver backup. it is distinct from the most recent combined recipe undo in `1 game setup > 5`. the complete backup includes the driver's other devices and saved aim choices are cleared after restoration.
 
 ## advanced commands
 
@@ -132,6 +138,7 @@ profiles must contain a complete, valid settings snapshot. a damaged original ba
 `2 > 2 > 4` attenuates directions independently; `2 > 2 > 5` softly reduces all slow movement, including wanted corrections. both offer preview before apply and start off. `2 > 3 > 5` bypasses every raw accel effect for the selected mouse, even with damaged saved controls. [filter behavior, interactions and recovery](filters.md).
 
 ```text
+version
 setup
 aim prepare
 aim install
@@ -181,6 +188,8 @@ profile save|show|apply <name>
 profile list
 undo
 restore
+recover
+startup on|off|status|run
 devices
 select <index>
 probe
@@ -194,7 +203,7 @@ command mode: `launch.bat status --json`, `launch.bat probe --json`, `launch.bat
 
 text commands inside the terminal also accept `--json`; the format applies to that command only. use batch command mode for a pure json stream. repeated aim choices that already match the live driver save the preset without activating the same configuration again.
 
-`health` (menu `3 test mouse > 1 health overview`, also `6 > 8`) combines backend file verification, selected mouse stack, live aim settings, preset matches, pending recovery and the `vgk` / `vgc` service states. it reads state without starting services or games and reports issues even when the report command succeeds. an inaccessible service is unknown, not missing. service state uses windows' [query service status](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatus); it does not prove vanguard acceptance or game input. `GameInputVerified` remains null.
+`health` (menu `3 test mouse > 1 health overview`, also `6 > 8`) combines backend file verification, selected mouse stack, live aim settings, preset matches, pending desktop/aim recovery, startup registration and the `vgk` / `vgc` service states. it reads state without starting services or games and reports issues even when the report command succeeds. an inaccessible service is unknown, not missing. service state uses windows' [query service status](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-queryservicestatus); it does not prove vanguard acceptance or game input. `GameInputVerified` remains null.
 
 add `--mouse <index>` to choose a mouse for one command, for example `launch.bat health --mouse 0 --json`. indices are zero-based from `devices`. the option validates that the same device remains connected and does not change the terminal's selected mouse or save a selection.
 
@@ -209,7 +218,9 @@ powershell.exe -noprofile -executionpolicy bypass -file .\tests\run.ps1
 
 the full suite temporarily changes windows preferences and restores them. regressions cover acceleration preservation, queued input timing, calibration timeout, three-pass dpi analysis, descriptor/device scoping, menu navigation, profile validation and input recovery. `tests\live.ps1` separately performs real reversible driver writes, game recipe apply/undo and persistence-failure recovery; close games before running it. [evidence and limits](verification.md). physical mouse-body/ruler measurements still need manual verification.
 
-source builds compile into a temporary directory and replace the executable only after successful compilation. compiler errors keep the previous executable. if replacement is blocked by a file lock, close helox and retry; the previous executable remains intact.
+source builds compile both `helox.exe` and hidden `helox-startup.exe` into a temporary directory before replacing either installed binary. compiler errors keep the previous executables. a folder-specific build lock rejects overlapping builds. if the console executable is locked, the tool attempts to roll back the helper replacement too; close helox and retry. if an additional lock prevents rollback, recovery files remain in the staging directory and the error reports their location.
+
+release archives include a file manifest and SHA256 sidecar. `verify-package.ps1` checks an untouched extraction for missing, changed, unexpected and linked files. compare the archive SHA256 with the GitHub release value to check origin; an included manifest is not a digital signature. rebuilding source changes the executable bytes and therefore invalidates the original manifest comparison. [package contents and checks](operations.md#release-package).
 
 [hardware findings](hardware.md) / [verification](verification.md) / [windows raw input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse)
 

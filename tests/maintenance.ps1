@@ -22,17 +22,20 @@ try {
     $lock=[IO.File]::Open($dll,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     Assert-Rejected { Remove-DataTree $root $root } 'loaded backend'
     $script:resetCalls=0
-    Assert-Rejected { Invoke-ResetPreparation $root $root {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'locked reset preflight'
+    Assert-Rejected { Invoke-ResetPreparation $root $root {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'locked reset preflight'
     if ($script:resetCalls -ne 0) { throw 'locked reset mutated settings or uninstalled driver' }
     if ([IO.File]::ReadAllText((Join-Path $root 'original.json')) -ne 'backup') { throw 'backup removed before lock rejection' }
     $lock.Dispose();$lock=$null
     $script:resetCalls=0
-    Assert-Rejected { Invoke-ResetPreparation $root $root {throw 'invalid aim backup'} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'invalid reset backup'
+    Assert-Rejected { Invoke-ResetPreparation $root $root {throw 'invalid aim backup'} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} } 'invalid reset backup'
     if ($script:resetCalls -ne 0) { throw 'invalid backup allowed reset side effects' }
     $script:resetOrder=New-Object 'Collections.Generic.List[string]'
     [IO.File]::WriteAllText((Join-Path $root 'aim-before.json'),'fixture')
-    Invoke-ResetPreparation $root $root {$script:resetOrder.Add('validate')} {$script:resetOrder.Add('windows')} {$script:resetOrder.Add('aim')} {$script:resetOrder.Add('uninstall')}
-    if (($script:resetOrder -join ',') -ne 'validate,windows,aim,uninstall') { throw 'reset operation order incorrect' }
+    Invoke-ResetPreparation $root $root {$script:resetOrder.Add('validate')} {$script:resetOrder.Add('windows')} {$script:resetOrder.Add('aim')} {$script:resetOrder.Add('uninstall')} {$script:resetOrder.Add('startup-off')}
+    if (($script:resetOrder -join ',') -ne 'validate,startup-off,windows,aim,uninstall') { throw 'reset operation order incorrect' }
+    $script:resetCalls=0
+    Assert-Rejected { Invoke-ResetPreparation $root $root {} {$script:resetCalls++} {$script:resetCalls++} {$script:resetCalls++} {throw 'startup registration locked'} } 'startup removal failure'
+    if ($script:resetCalls -ne 0 -or !(Test-Path -LiteralPath (Join-Path $root 'original.json'))) { throw 'startup removal failure allowed reset mutations' }
     $junction=Join-Path $root 'linked'
     New-Item -ItemType Junction -Path $junction -Target $outside | Out-Null
     Assert-Rejected { Remove-DataTree $root $root } 'linked subtree'

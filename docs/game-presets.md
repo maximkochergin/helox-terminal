@@ -22,7 +22,7 @@ numbers use a dot or comma. output half-life is `0`/`off` or `1..12` ms; `micro=
 
 `preset status` now shows the controls from the last applied setup when it still matches, even if a custom filter combination differs from every built-in recipe. it also reports detected running Valorant, CS2 and Kovaak's processes. this checks process names only, not the game's mouse path, sensitivity, fov or anticheat acceptance. game settings remain manual; there is no automatic game switching, game-file edit or background process.
 
-open `1 game setup`, choose your game, then `1 apply`, `2 change style`, `3 preview checks` or `4 in-game checklist`. kovaak's opens a second choice: match valorant, match cs2 or tracking practice. `5 undo or recover` in the game menu restores the previous windows settings, complete driver configuration and saved aim choices together. profiles save windows settings; game recipes specify the complete selected-mouse processing chain.
+open `1 game setup`, choose your game, then `1 apply`, `2 change style`, `3 compare response checks` or `4 in-game checklist`. kovaak's opens a second choice: match valorant, match cs2 or tracking practice. `5 undo or recover` in the game menu restores the previous windows settings, complete driver configuration and saved aim choices together. profiles save windows settings; game recipes specify the complete selected-mouse processing chain.
 
 each game has three styles. `balanced` uses the table below. `steady` keeps settled slow sensitivity at 1x, disables micro damping, enables 4 ms scale averaging and lowers the fast-turn limit to 1.15x for valorant, 1.2x for cs2 or 1.25x for tracking practice. `linear` disables stability and damping and uses a constant 1x table: a reference for comparison with the same game sensitivity. matched training recipes use identical controls for the same style.
 
@@ -68,7 +68,7 @@ recovery explicitly writes and verifies the original driver configuration becaus
 
 the released backend's one-second delay happens inside synchronous `Activate` / `DeviceIoControl`, before the call returns. immediate readback is therefore sufficient after a successful return; helox no longer adds another 1.2-second wait. real kernel write/readback tests cover this behavior. [released I/O implementation](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/common/rawaccel-io.hpp) / [driver delay](https://github.com/RawAccelOfficial/rawaccel/blob/v1.7.1/driver/driver.cpp).
 
-**in-game settings are manual.** the recipe screen lists the required sensitivity/fov choices; no game configuration file is edited and JSON reports `GameSettingsApplied: false`. do not copy a guessed dpi value into a sensitivity converter. after reboot, `aim resume` restores the saved driver controls; it does not change windows settings.
+**in-game settings are manual.** the recipe screen lists the required sensitivity/fov choices; no game configuration file is edited and JSON reports `GameSettingsApplied: false`. do not copy a guessed dpi value into a sensitivity converter. after reboot, `aim resume` restores the saved driver controls; it does not change windows settings. 0.20.0 also offers opt-in restoration at sign-in through `startup on`; [operation and recovery](operations.md) explains when the helper restores or skips a setup. an expired personal movement capture does not invalidate already-saved aim controls for resume.
 
 ```text
 preset list

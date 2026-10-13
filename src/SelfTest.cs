@@ -8,6 +8,8 @@ namespace Helox {
 internal static class SelfTest {
     private static void Expect(bool ok,string name) {if(!ok) throw new Exception("selftest failed: "+name);}
     internal static void Run(bool native=true) {
+        RuntimeRegression.Run();
+        FinalRegression.Run();
         ConfigGuardRegression();
         AimRegression();
         CurveRegression();

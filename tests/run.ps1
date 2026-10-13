@@ -1,6 +1,12 @@
 $ErrorActionPreference = 'Stop'
+$selectionPath = Join-Path $env:LOCALAPPDATA 'helox-terminal\selected-mouse.json'
+$selectionBefore = if (Test-Path -LiteralPath $selectionPath) { [IO.File]::ReadAllBytes($selectionPath) } else { $null }
+try {
 & (Join-Path $PSScriptRoot 'build.ps1')
+& (Join-Path $PSScriptRoot 'launch.ps1')
+& (Join-Path $PSScriptRoot 'package.ps1')
 & (Join-Path (Split-Path $PSScriptRoot -Parent) 'build.ps1')
+& (Join-Path $PSScriptRoot 'commands.ps1')
 & (Join-Path $PSScriptRoot 'maintenance.ps1')
 & (Join-Path $PSScriptRoot 'shell.ps1')
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'uninstall.ps1')
@@ -291,3 +297,7 @@ try {
     if (Test-Path -LiteralPath $profilePath) { Remove-Item -LiteralPath $profilePath }
 }
 Write-Host 'passed / command status contract, profile preview, undo and validation'
+} finally {
+    if ($null -eq $selectionBefore) { if (Test-Path -LiteralPath $selectionPath) { Remove-Item -LiteralPath $selectionPath } }
+    else { [IO.File]::WriteAllBytes($selectionPath,[byte[]]$selectionBefore) }
+}

@@ -23,6 +23,6 @@ optional snapping, direction scales and micro damping use the same unchanged sig
 1. run `aim doctor` and `aim response` before play. record the current gain, smoothing and stability values.
 2. use the practice range with the same physical dpi stage and game sensitivity. compare repeat slow and fast strokes over similar travel, including small corrections after a flick. opening the terminal applies nothing.
 3. test one component at a time. `aim smooth off` leaves precision/stability in place; restore the recorded output strength with `aim smooth on <ms>`. this isolates output averaging more clearly than changing several filters at once.
-4. recheck `aim status` after a restart or unexpected change. driver choices reset on reboot; `aim resume` reapplies the most recently saved choices, including any off switches used during testing. it is not an undo to an earlier test state.
+4. recheck `aim status` after a restart or unexpected change. driver choices reset on reboot; `aim resume` reapplies the most recently saved choices, including any off switches used during testing. optional 0.20.0 sign-in restoration is enabled with `startup on`; skipped restoration is reported by `startup status`. resume is not an undo to an earlier test state. [operation and recovery](operations.md).
 
 normal game startup is evidence against an explicit launch-time rejection, not proof that every transformed report reached the game. verifying physical feel and in-game consumption remains a manual pass.
